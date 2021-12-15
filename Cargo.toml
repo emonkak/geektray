@@ -1,0 +1,13 @@
+[package]
+name = "keytray"
+version = "0.0.0"
+authors = ["Shota Nozaki <emonkak@gmail.com>"]
+
+[features]
+default = ["xlib"]
+xlib = []
+
+[dependencies]
+nix = "0.20"
+servo-fontconfig = "0.5.1"
+x11 = { version = "2.18.2", features = ["xft", "xinerama", "xlib"] }
