@@ -1,14 +1,14 @@
-use font::FontWeight;
-use font::FontStyle;
+use font::{FontFamily, FontStretch, FontStyle, FontWeight};
 
 pub struct Config {
-    pub icon_size: u32,
-    pub window_width: u32,
-    pub padding: u32,
-    pub font_family: String,
-    pub font_size: u64,
+    pub icon_size: f32,
+    pub window_width: f32,
+    pub padding: f32,
+    pub font_size: f32,
+    pub font_family: FontFamily,
     pub font_weight: FontWeight,
     pub font_style: FontStyle,
+    pub font_stretch: FontStretch,
     pub normal_background: String,
     pub normal_foreground: String,
     pub selected_background: String,
@@ -24,17 +24,18 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            icon_size: 24,
-            window_width: 480,
-            padding: 8,
-            font_family: "Monospace".to_string(),
-            font_size: 12,
-            font_weight: FontWeight::Regular,
+            icon_size: 24.0,
+            window_width: 480.0,
+            padding: 8.0,
+            font_size: 12.0,
+            font_family: FontFamily::SansSerif,
+            font_weight: FontWeight::NORMAL,
             font_style: FontStyle::Normal,
-            normal_background: "#21272b".to_string(),
-            normal_foreground: "#e8eaeb".to_string(),
-            selected_background: "#1c95e6".to_string(),
-            selected_foreground: "#e8eaeb".to_string(),
+            font_stretch: FontStretch::Normal,
+            normal_background: "#21272b".to_owned(),
+            normal_foreground: "#e8eaeb".to_owned(),
+            selected_background: "#1c95e6".to_owned(),
+            selected_foreground: "#e8eaeb".to_owned(),
         }
     }
 }

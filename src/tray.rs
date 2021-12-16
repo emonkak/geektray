@@ -1,115 +1,146 @@
 use std::mem;
 use std::os::raw::*;
-use x11::keysym;
+use std::rc::Rc;
 use x11::xlib;
 
-use context::Context;
-use font::FontRenderer;
-use icon::TrayIcon;
-use layout::Layout;
-use task;
+use app::{Atoms, RenderContext, Styles};
+use geometrics::{Point, Size};
+use tray_item::TrayItem;
 
-const SYSTEM_TRAY_REQUEST_DOCK: i64 = 0;
-const SYSTEM_TRAY_BEGIN_MESSAGE: i64 = 1;
-const SYSTEM_TRAY_CANCEL_MESSAGE: i64 = 2;
-
-pub struct Tray<'a> {
-    context: &'a Context,
-    font_renderer: FontRenderer,
+pub struct Tray {
+    display: *mut xlib::Display,
     window: xlib::Window,
-    layout: Layout<TrayIcon<'a>>,
+    styles: Rc<Styles>,
     selected_icon_index: Option<usize>,
+    position: Point,
+    size: Size,
+    items: Vec<TrayItem>,
 }
 
-impl<'a> Tray<'a> {
-    pub fn new(context: &Context) -> Tray {
+impl Tray {
+    pub fn new(display: *mut xlib::Display, atoms: &Atoms, styles: Rc<Styles>) -> Tray {
         unsafe {
-            let layout = context.get_layout();
-
-            let screen = xlib::XDefaultScreenOfDisplay(context.display);
+            let screen = xlib::XDefaultScreenOfDisplay(display);
+            let screen_number = xlib::XScreenNumberOfScreen(screen);
             let root = xlib::XRootWindowOfScreen(screen);
 
-            let mut attributes: xlib::XSetWindowAttributes = mem::MaybeUninit::uninit().assume_init();
-            attributes.background_pixel = context.normal_background.pixel();
+            let mut attributes: xlib::XSetWindowAttributes =
+                mem::MaybeUninit::uninit().assume_init();
+            attributes.background_pixel = xlib::XWhitePixel(display, screen_number);
             attributes.bit_gravity = xlib::NorthWestGravity;
             attributes.win_gravity = xlib::NorthWestGravity;
 
             let window = xlib::XCreateWindow(
-                context.display,
+                display,
                 root,
                 0,
                 0,
-                layout.width(),
-                layout.height(),
+                1,
+                1,
                 0,
                 xlib::CopyFromParent,
                 xlib::InputOutput as u32,
                 xlib::CopyFromParent as *mut xlib::Visual,
                 xlib::CWBackPixel | xlib::CWBitGravity | xlib::CWWinGravity,
-                &mut attributes
+                &mut attributes,
             );
 
-            let mut protocol_atoms = [
-                context.atoms.WM_DELETE_WINDOW,
-                context.atoms.WM_TAKE_FOCUS,
-                context.atoms.WM_PING,
-            ];
+            let mut protocol_atoms = [atoms.WM_DELETE_WINDOW, atoms.WM_TAKE_FOCUS, atoms.WM_PING];
 
             xlib::XSetWMProtocols(
-                context.display,
+                display,
                 window,
                 protocol_atoms.as_mut_ptr(),
-                protocol_atoms.len() as i32
+                protocol_atoms.len() as i32,
             );
 
             xlib::XSelectInput(
-                context.display,
+                display,
                 window,
-                xlib::KeyPressMask | xlib::KeyReleaseMask | xlib::StructureNotifyMask | xlib::FocusChangeMask | xlib::PropertyChangeMask | xlib::ExposureMask
+                xlib::KeyPressMask
+                    | xlib::KeyReleaseMask
+                    | xlib::StructureNotifyMask
+                    | xlib::FocusChangeMask
+                    | xlib::PropertyChangeMask
+                    | xlib::ExposureMask,
             );
 
-            Tray {
-                context,
-                font_renderer: FontRenderer::new(),
+            Self {
+                display,
                 window,
-                layout,
+                styles,
+                items: Vec::new(),
+                position: Point::ZERO,
+                size: Size::ZERO,
                 selected_icon_index: None,
             }
         }
     }
 
-    pub fn show(&self) {
-        unsafe {
-            xlib::XMapWindow(self.context.display, self.window);
-            xlib::XFlush(self.context.display);
+    pub fn render(&mut self, context: &mut RenderContext) {
+        for item in &mut self.items {
+            item.render(context)
         }
     }
 
-    pub fn hide(&self) {
+    pub fn layout(&mut self, position: Point) -> Size {
+        let mut total_height = 0.0;
+
+        {
+            let mut child_position = position;
+
+            for item in &mut self.items {
+                let child_size = item.layout(child_position);
+                child_position.y += child_size.height;
+                total_height += child_size.height;
+            }
+        }
+
+        let size = Size {
+            width: self.styles.window_width,
+            height: total_height.max(self.styles.icon_size + self.styles.padding * 2.0),
+        };
+
+        if self.position != position || self.size != size {
+            unsafe {
+                let mut size_hints: xlib::XSizeHints = mem::MaybeUninit::zeroed().assume_init();
+                size_hints.flags = xlib::PSize;
+                size_hints.width = size.width as i32;
+                size_hints.height = size.height as i32;
+
+                xlib::XSetWMNormalHints(self.display, self.window, &mut size_hints);
+                xlib::XMoveResizeWindow(
+                    self.display,
+                    self.window,
+                    position.x as _,
+                    position.y as _,
+                    size.width as _,
+                    size.height as _,
+                );
+
+                xlib::XFlush(self.display);
+            }
+
+            self.position = position;
+            self.size = size;
+        }
+
+        println!("Tray.layout(): {:?}", size);
+
+        size
+    }
+
+    pub fn show_window(&self) {
         unsafe {
-            xlib::XUnmapWindow(self.context.display, self.window);
-            xlib::XFlush(self.context.display);
+            xlib::XMapWindow(self.display, self.window);
+            xlib::XFlush(self.display);
         }
     }
 
-    pub fn update_layout(&mut self) {
-        let width = self.layout.width();
-        let height = self.layout.height();
-
+    pub fn hide_window(&self) {
         unsafe {
-            let mut size_hints: xlib::XSizeHints = mem::MaybeUninit::zeroed().assume_init();
-            size_hints.flags = xlib::PSize;
-            size_hints.width = width as i32;
-            size_hints.height = height as i32;
-
-            xlib::XSetWMNormalHints(self.context.display, self.window, &mut size_hints);
-            xlib::XResizeWindow(self.context.display, self.window, width, height);
-        }
-
-        self.layout.update();
-
-        unsafe {
-            xlib::XFlush(self.context.display);
+            xlib::XUnmapWindow(self.display, self.window);
+            xlib::XFlush(self.display);
         }
     }
 
@@ -117,172 +148,56 @@ impl<'a> Tray<'a> {
         self.window
     }
 
-    pub fn on_event(&mut self, event: xlib::XEvent) -> task::CallbackResult<()> {
-        match event.get_type() {
-            xlib::KeyRelease => self.on_key_release(xlib::XKeyEvent::from(event)),
-            xlib::ClientMessage => self.on_client_message(xlib::XClientMessageEvent::from(event)),
-            xlib::DestroyNotify => self.on_destroy_notify(xlib::XDestroyWindowEvent::from(event)),
-            xlib::Expose => self.on_expose(xlib::XExposeEvent::from(event)),
-            xlib::PropertyNotify => self.on_property_notify(xlib::XPropertyEvent::from(event)),
-            xlib::ReparentNotify => self.on_reparent_notify(xlib::XReparentEvent::from(event)),
-            _ => task::Continue,
-        }
+    pub fn find_item(&self, icon_window: xlib::Window) -> Option<&TrayItem> {
+        self.items
+            .iter()
+            .find(|icon| icon.icon_window() == icon_window)
     }
 
-    fn on_key_release(&mut self, event: xlib::XKeyEvent) -> task::CallbackResult<()> {
-        let keysym = unsafe {
-            xlib::XkbKeycodeToKeysym(
-                self.context.display,
-                event.keycode as c_uchar,
-                if event.state & xlib::ShiftMask != 0 { 1 } else { 0 },
-                0
-            )
-        };
-        match keysym as c_uint {
-            keysym::XK_Down | keysym::XK_j => self.select_next_icon(),
-            keysym::XK_Up | keysym::XK_k => self.select_previous_icon(),
-            keysym::XK_Right | keysym::XK_l => self.click_selected_icon(xlib::Button1, xlib::Button1Mask),
-            keysym::XK_Left | keysym::XK_h => self.click_selected_icon(xlib::Button3, xlib::Button3Mask),
-            _ => (),
-        }
-        task::Continue
+    pub fn find_item_mut(&mut self, icon_window: xlib::Window) -> Option<&mut TrayItem> {
+        self.items
+            .iter_mut()
+            .find(|icon| icon.icon_window() == icon_window)
     }
 
-    fn on_client_message(&mut self, event: xlib::XClientMessageEvent) -> task::CallbackResult<()> {
-        if event.message_type == self.context.atoms.WM_PROTOCOLS && event.format == 32 {
-            let protocol = event.data.get_long(0) as xlib::Atom;
-            if protocol == self.context.atoms.WM_DELETE_WINDOW {
-                return task::Return(());
-            }
-        } else if event.message_type == self.context.atoms.NET_SYSTEM_TRAY_OPCODE {
-            let opcode = event.data.get_long(1);
-            if opcode == SYSTEM_TRAY_REQUEST_DOCK {
-                let window = event.data.get_long(2) as xlib::Window;
-                self.add_icon(window);
-                self.update_layout();
-            } else if opcode == SYSTEM_TRAY_BEGIN_MESSAGE {
-                // TODO:
-            } else if opcode == SYSTEM_TRAY_CANCEL_MESSAGE {
-                // TODO:
-            }
-        } else if event.message_type == self.context.atoms.NET_SYSTEM_TRAY_MESSAGE_DATA {
-            // TODO:
-        }
-        task::Continue
+    pub fn add_item(&mut self, tray_item: TrayItem) {
+        self.items.push(tray_item);
     }
 
-    fn on_destroy_notify(&mut self, event: xlib::XDestroyWindowEvent) -> task::CallbackResult<()> {
-        if event.window == self.window {
-            return task::Return(());
-        }
-        if let Some(icon) = self.remove_icon(event.window) {
-            icon.invalidate();
-        }
-        task::Continue
-    }
-
-    fn on_expose(&mut self, _: xlib::XExposeEvent) -> task::CallbackResult<()> {
-        task::Continue
-    }
-
-    fn on_property_notify(&mut self, event: xlib::XPropertyEvent) -> task::CallbackResult<()> {
-        if event.atom == self.context.atoms.XEMBED_INFO {
-            if let Some(index) = self.index_of_icon(event.window) {
-                let icon = self.layout.get_unchecked_mut(index);
-                match self.context.get_xembed_info(event.window) {
-                    Some(embed_info) if embed_info.is_mapped() => {
-                        icon.show();
-                        icon.render(&mut self.font_renderer);
-                    },
-                    _ => {
-                        mem::drop(icon);
-                        self.remove_icon(event.window);
-                    }
-                }
-            }
-        }
-        task::Continue
-    }
-
-    fn on_reparent_notify(&mut self, event: xlib::XReparentEvent) -> task::CallbackResult<()> {
-        if let Some(index) = self.index_of_icon(event.window) {
-            let icon = self.layout.get_unchecked_mut(index);
-            if icon.embedder_window() != event.parent {
-                self.remove_icon(event.window);
-            }
-        }
-        task::Continue
-    }
-
-    fn index_of_icon(&mut self, window: xlib::Window) -> Option<usize> {
-        self.layout.iter().position(|icon| icon.icon_window() == window)
-    }
-
-    fn add_icon(&mut self, icon_window: xlib::Window) {
-        if self.layout.iter().any(|icon| icon.icon_window() == icon_window) {
-            return;
-        }
-
-        if let Some(embed_info) = self.context.get_xembed_info(icon_window) {
-            let rectangle = self.layout.next_item_rectange();
-
-            let mut icon = TrayIcon::new(
-                self.context,
-                self.window,
-                icon_window,
-                rectangle.x,
-                rectangle.y,
-                rectangle.width,
-                rectangle.height
-            );
-
-            if embed_info.is_mapped() {
-                icon.show();
-                icon.render(&mut self.font_renderer);
-            } else {
-                icon.wait_for_embedding();
-            }
-
-            self.context.send_embedded_notify(
-                icon_window,
-                xlib::CurrentTime,
-                icon.embedder_window(),
-                embed_info.version
-            );
-
-            self.layout.add(icon);
-        }
-    }
-
-    fn remove_icon(&mut self, icon_window: xlib::Window) -> Option<TrayIcon> {
-        self.layout.iter()
+    pub fn remove_item(&mut self, icon_window: xlib::Window) -> Option<TrayItem> {
+        if let Some(index) = self
+            .items
+            .iter()
             .position(|icon| icon.icon_window() == icon_window)
-            .map(|index| {
-                let icon = self.layout.remove_unchecked(index);
-                self.update_layout();
-                icon
-            })
+        {
+            Some(self.items.remove(index))
+        } else {
+            None
+        }
     }
 
-    fn click_selected_icon(&mut self, button: c_uint, button_mask: c_uint) {
-        println!("Tray.click_selected_icon({:?}): {:?}", button, self.selected_icon_index);
+    pub fn click_selected_icon(&mut self, button: c_uint, button_mask: c_uint) {
+        println!(
+            "Tray.click_selected_icon({:?}): {:?}",
+            button, self.selected_icon_index
+        );
 
         match self.selected_icon_index {
             Some(index) => {
-                let icon = &self.layout.get_unchecked(index);
-                icon.emit_icon_click(button, button_mask, 10, 10);
-            },
+                let tray_item = &self.items[index];
+                tray_item.emit_click(button, button_mask, 10, 10);
+            }
             _ => (),
         }
     }
 
-    fn select_next_icon(&mut self) {
-        if self.layout.len() == 0 {
+    pub fn select_next_icon(&mut self) {
+        if self.items.len() == 0 {
             return;
         }
 
         let selected_icon_index = match self.selected_icon_index {
-            Some(index) if index < self.layout.len() - 1 => index + 1,
+            Some(index) if index < self.items.len() - 1 => index + 1,
             _ => 0,
         };
 
@@ -291,14 +206,14 @@ impl<'a> Tray<'a> {
         self.update_selected_icon_index(selected_icon_index);
     }
 
-    fn select_previous_icon(&mut self) {
-        if self.layout.len() == 0 {
+    pub fn select_previous_icon(&mut self) {
+        if self.items.len() == 0 {
             return;
         }
 
         let selected_icon_index = match self.selected_icon_index {
             Some(index) if index > 0 => index - 1,
-            _ => self.layout.len() - 1,
+            _ => self.items.len() - 1,
         };
 
         println!("Tray.select_previous_icon(): {}", selected_icon_index);
@@ -306,27 +221,24 @@ impl<'a> Tray<'a> {
         self.update_selected_icon_index(selected_icon_index);
     }
 
-    fn update_selected_icon_index(&mut self, index: usize) {
-        if let Some(prev_selected_icon_index) = self.selected_icon_index {
-            let prev_icon = self.layout.get_unchecked_mut(prev_selected_icon_index);
-            prev_icon.set_selected(false);
-            prev_icon.render(&mut self.font_renderer);
+    fn update_selected_icon_index(&mut self, new_index: usize) {
+        if let Some(index) = self.selected_icon_index {
+            let current_tray_item = &mut self.items[index];
+            current_tray_item.set_selected(false);
         }
 
-        let icon = self.layout.get_unchecked_mut(index);
-        icon.set_selected(true);
-        icon.render(&mut self.font_renderer);
+        let tray_item = &mut self.items[new_index];
+        tray_item.set_selected(true);
 
-        self.selected_icon_index = Some(index);
+        self.selected_icon_index = Some(new_index);
     }
 }
 
-impl<'a> Drop for Tray<'a> {
+impl Drop for Tray {
     fn drop(&mut self) {
-        self.layout.clear();
-
+        self.items.clear();
         unsafe {
-            xlib::XDestroyWindow(self.context.display, self.window);
+            xlib::XDestroyWindow(self.display, self.window);
         }
     }
 }

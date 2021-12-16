@@ -23,7 +23,7 @@ fn x11_get_error_message(display: *mut xlib::Display, error_code: i32) -> String
             display,
             error_code,
             message.as_mut_ptr() as *mut i8,
-            message.len() as i32
+            message.len() as i32,
         );
     }
 
@@ -39,9 +39,9 @@ fn x11_get_request_description(display: *mut xlib::Display, request_code: i32) -
             display,
             "XRequest\0".as_ptr() as *const c_char,
             request_type.as_ptr() as *const c_char,
-            "Unknown\0".as_ptr() as  *const c_char,
+            "Unknown\0".as_ptr() as *const c_char,
             message.as_mut_ptr() as *mut i8,
-            message.len() as i32
+            message.len() as i32,
         );
     }
 
@@ -51,7 +51,7 @@ fn x11_get_request_description(display: *mut xlib::Display, request_code: i32) -
 fn null_terminated_bytes_to_string(cs: &[u8]) -> String {
     let cs = match cs.iter().position(|&c| c == b'\0') {
         Some(null_pos) => &cs[..null_pos],
-        _ => cs
+        _ => cs,
     };
     String::from_utf8_lossy(&cs).into_owned()
 }

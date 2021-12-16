@@ -7,14 +7,27 @@ use x11::xlib;
 
 #[inline]
 pub fn new_atom(display: *mut xlib::Display, null_terminated_name: &str) -> xlib::Atom {
-    assert!(null_terminated_name.chars().last().map_or(false, |c| c == '\0'));
+    assert!(null_terminated_name
+        .chars()
+        .last()
+        .map_or(false, |c| c == '\0'));
     unsafe {
-        xlib::XInternAtom(display, null_terminated_name.as_ptr() as *const c_char, xlib::False)
+        xlib::XInternAtom(
+            display,
+            null_terminated_name.as_ptr() as *const c_char,
+            xlib::False,
+        )
     }
 }
 
 #[inline]
-pub fn send_client_message(display: *mut xlib::Display, destination: xlib::Window, window: xlib::Window, message_type: xlib::Atom, data: xlib::ClientMessageData) -> bool {
+pub fn send_client_message(
+    display: *mut xlib::Display,
+    destination: xlib::Window,
+    window: xlib::Window,
+    message_type: xlib::Atom,
+    data: xlib::ClientMessageData,
+) -> bool {
     let mut client_message_event = xlib::XEvent::from(xlib::XClientMessageEvent {
         type_: xlib::ClientMessage,
         serial: 0,
@@ -32,13 +45,17 @@ pub fn send_client_message(display: *mut xlib::Display, destination: xlib::Windo
             destination,
             xlib::False,
             0xffffff,
-            &mut client_message_event
+            &mut client_message_event,
         ) == xlib::True
     }
 }
 
 #[inline]
-pub fn get_window_property<T: Sized, const N: usize>(display: *mut xlib::Display, window: xlib::Window, property_atom: xlib::Atom) -> Option<Box<[T; N]>> {
+pub fn get_window_property<T: Sized, const N: usize>(
+    display: *mut xlib::Display,
+    window: xlib::Window,
+    property_atom: xlib::Atom,
+) -> Option<Box<[T; N]>> {
     let mut actual_type: xlib::Atom = 0;
     let mut actual_format: i32 = 0;
     let mut nitems: u64 = 0;
@@ -58,7 +75,7 @@ pub fn get_window_property<T: Sized, const N: usize>(display: *mut xlib::Display
             &mut actual_format,
             &mut nitems,
             &mut bytes_after,
-            &mut prop
+            &mut prop,
         )
     };
 
@@ -72,13 +89,12 @@ pub fn get_window_property<T: Sized, const N: usize>(display: *mut xlib::Display
     if result != xlib::Success.into()
         || actual_format != format
         || nitems != N as c_ulong
-        || prop.is_null() {
+        || prop.is_null()
+    {
         return None;
     }
 
-    unsafe {
-        Some(Box::from_raw(prop.cast()))
-    }
+    unsafe { Some(Box::from_raw(prop.cast())) }
 }
 
 #[inline]
@@ -110,7 +126,7 @@ pub fn get_pointer_position(display: *mut xlib::Display, window: xlib::Window) -
             &mut root_y,
             &mut x,
             &mut y,
-            &mut state
+            &mut state,
         );
     }
 
@@ -118,7 +134,14 @@ pub fn get_pointer_position(display: *mut xlib::Display, window: xlib::Window) -
 }
 
 #[inline]
-pub fn move_resize_window(display: *mut xlib::Display, window: xlib::Window, x: i32, y: i32, width: u32, height: u32) {
+pub fn move_resize_window(
+    display: *mut xlib::Display,
+    window: xlib::Window,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+) {
     let mut size_hints: xlib::XSizeHints = unsafe { mem::MaybeUninit::uninit().assume_init() };
     size_hints.flags = xlib::PSize;
     size_hints.width = width as i32;
@@ -129,31 +152,42 @@ pub fn move_resize_window(display: *mut xlib::Display, window: xlib::Window, x: 
         xlib::XMoveResizeWindow(display, window, x, y, width, height);
     }
 }
-
 #[inline]
-pub fn emit_button_event(display: *mut xlib::Display, window: xlib::Window, event_type: c_int, button: c_uint, button_mask: c_uint, x: c_int, y: c_int) -> bool {
-    unsafe {
-        let screen = xlib::XDefaultScreen(display);
-        let root = xlib::XRootWindow(display, screen);
+pub unsafe fn emit_button_event(
+    display: *mut xlib::Display,
+    window: xlib::Window,
+    event_type: c_int,
+    button: c_uint,
+    button_mask: c_uint,
+    x: c_int,
+    y: c_int,
+) -> bool {
+    let screen = xlib::XDefaultScreen(display);
+    let root = xlib::XRootWindow(display, screen);
 
-        let mut event = xlib::XEvent::from(xlib::XButtonEvent {
-            type_: event_type,
-            serial: 0,
-            send_event: xlib::True,
-            display,
-            window,
-            root,
-            subwindow: 0,
-            time: xlib::CurrentTime,
-            x,
-            y,
-            x_root: 0,
-            y_root: 0,
-            state: button_mask,
-            button,
-            same_screen: xlib::True,
-        });
+    let mut event = xlib::XEvent::from(xlib::XButtonEvent {
+        type_: event_type,
+        serial: 0,
+        send_event: xlib::True,
+        display,
+        window,
+        root,
+        subwindow: 0,
+        time: xlib::CurrentTime,
+        x,
+        y,
+        x_root: 0,
+        y_root: 0,
+        state: button_mask,
+        button,
+        same_screen: xlib::True,
+    });
 
-        xlib::XSendEvent(display, xlib::PointerWindow as xlib::Window, xlib::True, xlib::NoEventMask, &mut event) == xlib::True
-    }
+    xlib::XSendEvent(
+        display,
+        xlib::PointerWindow as xlib::Window,
+        xlib::True,
+        xlib::NoEventMask,
+        &mut event,
+    ) == xlib::True
 }
