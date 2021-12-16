@@ -1,6 +1,7 @@
 use std::mem;
 use std::os::raw::*;
 use std::rc::Rc;
+use std::ptr;
 use x11::xlib;
 
 use app::{Atoms, RenderContext, Styles};
@@ -21,14 +22,10 @@ impl Tray {
     pub fn new(display: *mut xlib::Display, atoms: &Atoms, styles: Rc<Styles>) -> Tray {
         unsafe {
             let screen = xlib::XDefaultScreenOfDisplay(display);
-            let screen_number = xlib::XScreenNumberOfScreen(screen);
             let root = xlib::XRootWindowOfScreen(screen);
 
             let mut attributes: xlib::XSetWindowAttributes =
                 mem::MaybeUninit::uninit().assume_init();
-            attributes.background_pixel = xlib::XWhitePixel(display, screen_number);
-            attributes.bit_gravity = xlib::NorthWestGravity;
-            attributes.win_gravity = xlib::NorthWestGravity;
 
             let window = xlib::XCreateWindow(
                 display,
@@ -41,7 +38,7 @@ impl Tray {
                 xlib::CopyFromParent,
                 xlib::InputOutput as u32,
                 xlib::CopyFromParent as *mut xlib::Visual,
-                xlib::CWBackPixel | xlib::CWBitGravity | xlib::CWWinGravity,
+                0,
                 &mut attributes,
             );
 
@@ -78,16 +75,25 @@ impl Tray {
     }
 
     pub fn render(&mut self, context: &mut RenderContext) {
+        unsafe {
+            xlib::XSetWindowBackground(
+                self.display,
+                self.window,
+                self.styles.normal_background.pixel()
+            );
+            xlib::XClearWindow(self.display, self.window);
+        }
+
         for item in &mut self.items {
             item.render(context)
         }
     }
 
-    pub fn layout(&mut self, position: Point) -> Size {
+    pub fn layout(&mut self) -> Size {
         let mut total_height = 0.0;
 
         {
-            let mut child_position = position;
+            let mut child_position = Point::ZERO;
 
             for item in &mut self.items {
                 let child_size = item.layout(child_position);
@@ -100,11 +106,20 @@ impl Tray {
             width: self.styles.window_width,
             height: total_height.max(self.styles.icon_size + self.styles.padding * 2.0),
         };
+        let position = unsafe {
+            let screen_number = xlib::XDefaultScreen(self.display);
+            let display_width = xlib::XDisplayWidth(self.display, screen_number) as f32;
+            let display_height = xlib::XDisplayHeight(self.display, screen_number) as f32;
+            Point {
+                x: display_width / 2.0 - size.width / 2.0,
+                y: display_height / 2.0 - size.height / 2.0,
+            }
+        };
 
         if self.position != position || self.size != size {
             unsafe {
                 let mut size_hints: xlib::XSizeHints = mem::MaybeUninit::zeroed().assume_init();
-                size_hints.flags = xlib::PSize;
+                size_hints.flags = xlib::PSize | xlib::PMinSize | xlib::PMaxSize;
                 size_hints.width = size.width as i32;
                 size_hints.height = size.height as i32;
 
@@ -117,15 +132,11 @@ impl Tray {
                     size.width as _,
                     size.height as _,
                 );
-
-                xlib::XFlush(self.display);
             }
 
             self.position = position;
             self.size = size;
         }
-
-        println!("Tray.layout(): {:?}", size);
 
         size
     }
@@ -177,11 +188,6 @@ impl Tray {
     }
 
     pub fn click_selected_icon(&mut self, button: c_uint, button_mask: c_uint) {
-        println!(
-            "Tray.click_selected_icon({:?}): {:?}",
-            button, self.selected_icon_index
-        );
-
         match self.selected_icon_index {
             Some(index) => {
                 let tray_item = &self.items[index];
@@ -201,8 +207,6 @@ impl Tray {
             _ => 0,
         };
 
-        println!("Tray.select_next_icon(): {}", selected_icon_index);
-
         self.update_selected_icon_index(selected_icon_index);
     }
 
@@ -215,8 +219,6 @@ impl Tray {
             Some(index) if index > 0 => index - 1,
             _ => self.items.len() - 1,
         };
-
-        println!("Tray.select_previous_icon(): {}", selected_icon_index);
 
         self.update_selected_icon_index(selected_icon_index);
     }

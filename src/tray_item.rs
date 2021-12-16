@@ -75,11 +75,6 @@ impl TrayItem {
     }
 
     pub fn render(&self, context: &mut RenderContext) {
-        println!(
-            "TrayItem.render: {:?} (embedder_window: {}) (icon_window: {})",
-            self.icon_title, self.embedder_window, self.icon_window
-        );
-
         unsafe {
             let screen_number = xlib::XDefaultScreen(self.display);
             let visual = xlib::XDefaultVisual(self.display, screen_number);
@@ -130,7 +125,7 @@ impl TrayItem {
                 },
                 Rectangle {
                     x: self.position.x + self.styles.icon_size + self.styles.padding * 2.0,
-                    y: self.position.y,
+                    y: 0.0,
                     width: self.size.width - (self.styles.icon_size + self.styles.padding * 2.0),
                     height: self.size.height,
                 },
@@ -142,8 +137,8 @@ impl TrayItem {
                 background_color.pixel(),
             );
 
-            // xlib::XUnmapWindow(self.display, self.icon_window);
             xlib::XSetSubwindowMode(self.display, gc, xlib::IncludeInferiors);
+            xlib::XClearWindow(self.display, self.embedder_window);
             xlib::XCopyArea(
                 self.display,
                 pixmap,
@@ -156,8 +151,6 @@ impl TrayItem {
                 0,
                 0,
             );
-            // xlib::XMapRaised(self.display, self.icon_window);
-            xlib::XFlush(self.display);
 
             xlib::XFreeGC(self.display, gc);
             xlib::XFreePixmap(self.display, pixmap);
@@ -188,8 +181,6 @@ impl TrayItem {
             self.size = size;
         }
 
-        println!("TrayItem.layout(): {:?}", size);
-
         size
     }
 
@@ -201,7 +192,7 @@ impl TrayItem {
                 xlib::StructureNotifyMask | xlib::PropertyChangeMask,
             );
 
-            utils::move_resize_window(
+            xlib::XMoveResizeWindow(
                 self.display,
                 self.icon_window,
                 self.styles.padding as _,

@@ -1,8 +1,9 @@
-use nix;
 use nix::sys::signal;
 use nix::sys::signalfd;
+use nix;
 use std::env;
 use std::ffi::CString;
+use std::mem::ManuallyDrop;
 use std::os::raw::*;
 use std::ptr;
 use std::rc::Rc;
@@ -14,7 +15,6 @@ use config::Config;
 use error_handler;
 use event_loop::{run_event_loop, ControlFlow, Event};
 use font::FontDescriptor;
-use geometrics::Point;
 use text_renderer::{FontSet, TextRenderer};
 use tray::Tray;
 use tray_item::TrayItem;
@@ -29,7 +29,7 @@ pub struct App {
     display: *mut xlib::Display,
     atoms: Atoms,
     styles: Rc<Styles>,
-    tray: Tray,
+    tray: ManuallyDrop<Tray>,
     text_renderer: TextRenderer,
     previous_selection_owner: xlib::Window,
     old_error_handler:
@@ -57,7 +57,7 @@ impl App {
             display,
             atoms,
             styles,
-            tray,
+            tray: ManuallyDrop::new(tray),
             text_renderer: TextRenderer::new(),
             previous_selection_owner,
             old_error_handler,
@@ -72,7 +72,7 @@ impl App {
             signalfd::SignalFd::new(&mask)
         }?;
 
-        self.tray.layout(Point::ZERO);
+        self.tray.layout();
         self.tray.show_window();
 
         run_event_loop(self.display, &mut signal_fd, move |event| match event {
@@ -131,10 +131,8 @@ impl App {
         } else if event.message_type == self.atoms.NET_SYSTEM_TRAY_OPCODE {
             let opcode = event.data.get_long(1);
             if opcode == SYSTEM_TRAY_REQUEST_DOCK {
-                println!("SYSTEM_TRAY_REQUEST_DOCK");
                 let icon_window = event.data.get_long(2) as xlib::Window;
                 if let Some(embed_info) = get_xembed_info(self.display, &self.atoms, icon_window) {
-                    println!("embed_info: {:?}", embed_info);
                     let icon_title = get_window_title(self.display, &self.atoms, icon_window)
                         .unwrap_or("<No Title>".to_owned());
                     let mut tray_item = TrayItem::new(
@@ -156,10 +154,7 @@ impl App {
                         embed_info.version,
                     );
                     self.tray.add_item(tray_item);
-                    self.tray.layout(Point::ZERO);
-                    // self.tray.render(&mut RenderContext {
-                    //     text_renderer: &mut self.text_renderer,
-                    // });
+                    self.tray.layout();
                 }
             } else if opcode == SYSTEM_TRAY_BEGIN_MESSAGE {
                 // TODO:
@@ -179,15 +174,12 @@ impl App {
         if let Some(mut icon) = self.tray.remove_item(event.window) {
             icon.mark_as_destroyed();
         }
-        self.tray.layout(Point::ZERO);
-        self.tray.render(&mut RenderContext {
-            text_renderer: &mut self.text_renderer,
-        });
+        self.tray.layout();
         ControlFlow::Continue
     }
 
     fn on_expose(&mut self, event: xlib::XExposeEvent) -> ControlFlow {
-        println!("on_expose: {}", event.count);
+        println!("expose: {:?}", event);
         if event.count == 0 {
             self.tray.render(&mut RenderContext {
                 text_renderer: &mut self.text_renderer,
@@ -198,14 +190,10 @@ impl App {
 
     fn on_property_notify(&mut self, event: xlib::XPropertyEvent) -> ControlFlow {
         if event.atom == self.atoms.XEMBED_INFO {
-            println!("XEMBED_INFO");
             if let Some(tray_item) = self.tray.find_item_mut(event.window) {
                 match get_xembed_info(self.display, &self.atoms, event.window) {
                     Some(embed_info) if embed_info.is_mapped() => {
                         tray_item.show_window();
-                        // tray_item.render(&mut RenderContext {
-                        //     text_renderer: &mut self.text_renderer,
-                        // });
                     }
                     _ => {
                         self.tray.remove_item(event.window);
@@ -229,6 +217,7 @@ impl App {
 impl Drop for App {
     fn drop(&mut self) {
         unsafe {
+            ManuallyDrop::drop(&mut self.tray);
             release_tray_selection(self.display, self.previous_selection_owner);
             xlib::XSync(self.display, xlib::False);
             xlib::XCloseDisplay(self.display);
