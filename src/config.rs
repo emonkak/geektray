@@ -27,7 +27,7 @@ impl Default for Config {
             icon_size: 24.0,
             window_width: 480.0,
             padding: 8.0,
-            font_size: 12.0,
+            font_size: 12,
             font_family: FontFamily::SansSerif,
             font_weight: FontWeight::NORMAL,
             font_style: FontStyle::Normal,

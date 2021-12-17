@@ -1,6 +1,7 @@
-use std::cmp;
+use std::collections::hash_map;
 use std::collections::HashMap;
 use std::ffi::CString;
+use std::hash::{Hash, Hasher};
 use std::mem;
 use std::os::raw::*;
 use std::ptr;
@@ -12,20 +13,22 @@ use x11::xrender;
 use color::Color;
 use font::{FontDescriptor, FontFamily, FontStretch, FontStyle};
 use fontconfig as fc;
-use geometrics::Rectangle;
+use geometrics::{Rectangle, Size};
 
 const SERIF_FAMILY: &'static str = "Serif\0";
 const SANS_SERIF_FAMILY: &'static str = "Sans\0";
 const MONOSPACE_FAMILY: &'static str = "Monospace\0";
 
 pub struct TextRenderer {
-    loaded_fonts: HashMap<fc::FcChar32, Option<*mut xft::XftFont>>,
+    display: *mut xlib::Display,
+    font_caches: HashMap<FontKey, *mut xft::XftFont>,
 }
 
 impl TextRenderer {
-    pub fn new() -> Self {
+    pub fn new(display: *mut xlib::Display) -> Self {
         Self {
-            loaded_fonts: HashMap::new(),
+            display,
+            font_caches: HashMap::new(),
         }
     }
 
@@ -33,13 +36,13 @@ impl TextRenderer {
         &mut self,
         display: *mut xlib::Display,
         draw: *mut xft::XftDraw,
-        text: Text,
+        text: &Text,
         bounds: Rectangle,
     ) {
         let origin_x = match text.horizontal_align {
             HorizontalAlign::Left => bounds.x,
             HorizontalAlign::Right => bounds.x + bounds.width,
-            HorizontalAlign::Center => unimplemented!(),
+            HorizontalAlign::Center => (bounds.x + bounds.width / 2.0) - (self.measure_single_line(display, text).width / 2.0),
         };
         let origin_y = match text.vertical_align {
             VerticalAlign::Top => bounds.y,
@@ -47,66 +50,134 @@ impl TextRenderer {
             VerticalAlign::Bottom => bounds.y + bounds.height - text.font_size,
         };
 
-        let mut x_offset = 0;
+        let mut x_offset = 0.0;
 
         for chunk in ChunkIter::new(text.content, &text.font_set) {
-            let font = match self.load_font(display, text.font_set.pattern, chunk.font) {
-                Some(font) => font,
-                _ => continue,
+            let font = if let Some(font) =
+                self.open_font(display, chunk.font, text.font_size, text.font_set.pattern)
+            {
+                font
+            } else {
+                continue;
             };
 
-            unsafe {
-                let mut extents: xrender::XGlyphInfo = mem::MaybeUninit::uninit().assume_init();
+            let extents = unsafe {
+                let mut extents = mem::MaybeUninit::<xrender::XGlyphInfo>::uninit();
                 xft::XftTextExtentsUtf8(
                     display,
                     font,
                     chunk.text.as_ptr(),
                     chunk.text.len() as i32,
-                    &mut extents,
+                    extents.as_mut_ptr(),
                 );
+                extents.assume_init()
+            };
 
-                let ascent = (*font).ascent;
-                let height = cmp::max(text.font_size as i32, ascent);
-                let y_adjustment = (height - ascent) / 2;
+            let ascent = unsafe { (*font).ascent } as f32;
+            let y_adjustment = if text.font_size > ascent {
+                (text.font_size - ascent) / 2.0
+            } else {
+                0.0
+            };
 
+            unsafe {
                 xft::XftDrawStringUtf8(
                     draw,
                     &mut text.color.as_xft_color(),
                     font,
-                    origin_x as i32 + x_offset + (extents.x as i32),
-                    origin_y as i32 + y_adjustment + (extents.height as i32),
+                    (origin_x + x_offset + extents.x as f32).round() as i32,
+                    (origin_y + y_adjustment + extents.height as f32).round() as i32,
                     chunk.text.as_ptr(),
                     chunk.text.len() as i32,
                 );
-
-                x_offset += extents.width as i32;
             }
+
+            x_offset += extents.width as f32;
         }
     }
 
-    fn load_font(
+    pub fn measure_single_line(&mut self, display: *mut xlib::Display, text: &Text) -> Size {
+        let mut measured_size = Size {
+            width: 0.0,
+            height: 0.0,
+        };
+
+        for chunk in ChunkIter::new(text.content, &text.font_set) {
+            let font = if let Some(font) =
+                self.open_font(display, chunk.font, text.font_size, text.font_set.pattern)
+            {
+                font
+            } else {
+                continue;
+            };
+
+            let extents = unsafe {
+                let mut extents = mem::MaybeUninit::<xrender::XGlyphInfo>::uninit();
+                xft::XftTextExtentsUtf8(
+                    display,
+                    font,
+                    chunk.text.as_ptr(),
+                    chunk.text.len() as i32,
+                    extents.as_mut_ptr(),
+                );
+                extents.assume_init()
+            };
+
+            measured_size.width += extents.width as f32;
+            measured_size.height += measured_size.height.max(extents.height as f32);
+        }
+
+        measured_size
+    }
+
+    fn open_font(
         &mut self,
         display: *mut xlib::Display,
-        pattern: *mut fc::FcPattern,
         font: *mut fc::FcPattern,
+        font_size: f32,
+        fontset_pattern: *mut fc::FcPattern,
     ) -> Option<*mut xft::XftFont> {
-        *self
-            .loaded_fonts
-            .entry(unsafe { fc::FcPatternHash(font) })
-            .or_insert_with(|| unsafe {
-                let pattern = fc::FcFontRenderPrepare(ptr::null_mut(), pattern, font);
+        unsafe {
+            let pattern = fc::FcFontRenderPrepare(ptr::null_mut(), fontset_pattern, font);
 
-                let font = xft::XftFontOpenPattern(display, pattern.cast());
-                if font.is_null() {
+            fc::FcPatternDel(pattern, fc::FC_PIXEL_SIZE.as_ptr() as *mut c_char);
+            fc::FcPatternAddDouble(
+                pattern,
+                fc::FC_PIXEL_SIZE.as_ptr() as *mut c_char,
+                font_size as f64,
+            );
+
+            match self.font_caches.entry(FontKey { pattern }) {
+                hash_map::Entry::Occupied(entry) => {
                     fc::FcPatternDestroy(pattern);
-                    return None;
+                    Some(*entry.get())
                 }
-
-                Some(font)
-            })
+                hash_map::Entry::Vacant(entry) => {
+                    let font = xft::XftFontOpenPattern(display, pattern.cast());
+                    if font.is_null() {
+                        fc::FcPatternDestroy(pattern);
+                        return None;
+                    }
+                    entry.insert(font);
+                    Some(font)
+                }
+            }
+        }
     }
 }
 
+impl Drop for TextRenderer {
+    fn drop(&mut self) {
+        for (key, font) in self.font_caches.drain() {
+            unsafe {
+                xft::XftFontClose(self.display, font);
+                fc::FcPatternDestroy(key.pattern);
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct FontSet {
     pattern: *mut fc::FcPattern,
     fontset: *mut fc::FcFontSet,
@@ -196,6 +267,27 @@ impl Drop for FontSet {
     }
 }
 
+#[derive(Debug)]
+pub struct FontKey {
+    pattern: *mut fc::FcPattern,
+}
+
+impl PartialEq for FontKey {
+    fn eq(&self, other: &Self) -> bool {
+        unsafe { fc::FcPatternEqual(self.pattern, other.pattern) != 0 }
+    }
+}
+
+impl Eq for FontKey {}
+
+impl Hash for FontKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let hash = unsafe { fc::FcPatternHash(self.pattern) };
+        state.write_u32(hash);
+    }
+}
+
+#[derive(Debug)]
 pub struct Text<'a> {
     pub content: &'a str,
     pub color: &'a Color,
@@ -205,12 +297,14 @@ pub struct Text<'a> {
     pub vertical_align: VerticalAlign,
 }
 
+#[derive(Debug)]
 pub enum VerticalAlign {
     Top,
     Middle,
     Bottom,
 }
 
+#[derive(Debug)]
 pub enum HorizontalAlign {
     Left,
     Center,

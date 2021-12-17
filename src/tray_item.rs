@@ -115,7 +115,7 @@ impl TrayItem {
             context.text_renderer.render_single_line(
                 self.display,
                 draw,
-                Text {
+                &Text {
                     content: &self.icon_title,
                     color: foreground_color,
                     font_size: self.styles.font_size,

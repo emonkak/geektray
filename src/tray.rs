@@ -1,7 +1,6 @@
 use std::mem;
 use std::os::raw::*;
 use std::rc::Rc;
-use std::ptr;
 use x11::xlib;
 
 use app::{Atoms, RenderContext, Styles};
@@ -79,7 +78,7 @@ impl Tray {
             xlib::XSetWindowBackground(
                 self.display,
                 self.window,
-                self.styles.normal_background.pixel()
+                self.styles.normal_background.pixel(),
             );
             xlib::XClearWindow(self.display, self.window);
         }

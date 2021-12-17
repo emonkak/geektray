@@ -53,6 +53,7 @@ pub const FC_INDEX: &'static str = "index\0";
 pub const FC_SLANT: &'static str = "slant\0";
 pub const FC_WEIGHT: &'static str = "weight\0";
 pub const FC_WIDTH: &'static str = "width\0";
+pub const FC_PIXEL_SIZE: &'static str = "pixelsize\0";
 
 pub const FC_SLANT_ROMAN: c_int = 0;
 pub const FC_SLANT_ITALIC: c_int = 100;
@@ -70,6 +71,12 @@ pub const FC_WIDTH_ULTRAEXPANDED: c_int = 200;
 
 #[link(name = "fontconfig")]
 extern "C" {
+    // FcPattern
+    pub fn FcPatternCreate() -> *mut FcPattern;
+    pub fn FcPatternDuplicate(p: *mut FcPattern) -> *mut FcPattern;
+    pub fn FcPatternDestroy(p: *mut FcPattern);
+    pub fn FcPatternEqual(pa: *const FcPattern, pb: *const FcPattern) -> FcBool;
+    pub fn FcPatternHash(p: *const FcPattern) -> FcChar32;
     pub fn FcPatternAddDouble(p: *mut FcPattern, object: *const c_char, d: c_double) -> FcBool;
     pub fn FcPatternAddInteger(p: *mut FcPattern, object: *const c_char, i: c_int) -> FcBool;
     pub fn FcPatternAddString(
@@ -77,20 +84,17 @@ extern "C" {
         object: *const c_char,
         s: *const FcChar8,
     ) -> FcBool;
-    pub fn FcPatternCreate() -> *mut FcPattern;
-    pub fn FcPatternDestroy(p: *mut FcPattern);
-    pub fn FcPatternEqual(pa: *const FcPattern, pb: *const FcPattern) -> FcBool;
-    pub fn FcPatternGetCharSet(
-        p: *mut FcPattern,
-        object: *const c_char,
-        n: c_int,
-        c: *mut *mut FcCharSet,
-    ) -> FcResult;
     pub fn FcPatternGetInteger(
         p: *mut FcPattern,
         object: *const c_char,
         n: c_int,
         i: *mut c_int,
+    ) -> FcResult;
+    pub fn FcPatternGetDouble(
+        p: *mut FcPattern,
+        object: *const c_char,
+        n: c_int,
+        i: *mut c_double,
     ) -> FcResult;
     pub fn FcPatternGetString(
         p: *mut FcPattern,
@@ -98,15 +102,29 @@ extern "C" {
         n: c_int,
         s: *mut *mut FcChar8,
     ) -> FcResult;
-    pub fn FcPatternHash(p: *const FcPattern) -> FcChar32;
+    pub fn FcPatternGetCharSet(
+        p: *mut FcPattern,
+        object: *const c_char,
+        n: c_int,
+        c: *mut *mut FcCharSet,
+    ) -> FcResult;
+    pub fn FcPatternDel(p: *mut FcPattern, object: *const c_char);
+    pub fn FcDefaultSubstitute(pattern: *mut FcPattern);
 
+    // FcConfig
     pub fn FcConfigSubstitute(
         config: *mut FcConfig,
         p: *mut FcPattern,
         kind: FcMatchKind,
     ) -> FcBool;
-    pub fn FcDefaultSubstitute(pattern: *mut FcPattern);
+
+    // FcFontSet
     pub fn FcFontSetDestroy(s: *mut FcFontSet);
+    pub fn FcFontRenderPrepare(
+        config: *mut FcConfig,
+        pat: *mut FcPattern,
+        font: *mut FcPattern,
+    ) -> *mut FcPattern;
     pub fn FcFontSort(
         config: *mut FcConfig,
         p: *mut FcPattern,
@@ -115,16 +133,12 @@ extern "C" {
         result: *mut FcResult,
     ) -> *mut FcFontSet;
 
+    // FcCharSet
     pub fn FcCharSetDestroy(fcs: *mut FcCharSet);
+    pub fn FcCharSetUnion(a: *const FcCharSet, b: *const FcCharSet) -> *mut FcCharSet;
     pub fn FcCharSetHasChar(fcs: *const FcCharSet, ucs4: FcChar32) -> FcBool;
     pub fn FcCharSetNew() -> *mut FcCharSet;
-    pub fn FcCharSetUnion(a: *const FcCharSet, b: *const FcCharSet) -> *mut FcCharSet;
 
+    // FcWeight
     pub fn FcWeightFromOpenTypeDouble(ot_weight: c_double) -> c_double;
-
-    pub fn FcFontRenderPrepare(
-        config: *mut FcConfig,
-        pat: *mut FcPattern,
-        font: *mut FcPattern,
-    ) -> *mut FcPattern;
 }

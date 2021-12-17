@@ -1,6 +1,6 @@
+use nix;
 use nix::sys::signal;
 use nix::sys::signalfd;
-use nix;
 use std::env;
 use std::ffi::CString;
 use std::mem::ManuallyDrop;
@@ -30,7 +30,7 @@ pub struct App {
     atoms: Atoms,
     styles: Rc<Styles>,
     tray: ManuallyDrop<Tray>,
-    text_renderer: TextRenderer,
+    text_renderer: ManuallyDrop<TextRenderer>,
     previous_selection_owner: xlib::Window,
     old_error_handler:
         Option<unsafe extern "C" fn(*mut xlib::Display, *mut xlib::XErrorEvent) -> c_int>,
@@ -58,7 +58,7 @@ impl App {
             atoms,
             styles,
             tray: ManuallyDrop::new(tray),
-            text_renderer: TextRenderer::new(),
+            text_renderer: ManuallyDrop::new(TextRenderer::new(display)),
             previous_selection_owner,
             old_error_handler,
         })
@@ -179,7 +179,6 @@ impl App {
     }
 
     fn on_expose(&mut self, event: xlib::XExposeEvent) -> ControlFlow {
-        println!("expose: {:?}", event);
         if event.count == 0 {
             self.tray.render(&mut RenderContext {
                 text_renderer: &mut self.text_renderer,
@@ -218,7 +217,10 @@ impl Drop for App {
     fn drop(&mut self) {
         unsafe {
             ManuallyDrop::drop(&mut self.tray);
+            ManuallyDrop::drop(&mut self.text_renderer);
+
             release_tray_selection(self.display, self.previous_selection_owner);
+
             xlib::XSync(self.display, xlib::False);
             xlib::XCloseDisplay(self.display);
             xlib::XSetErrorHandler(self.old_error_handler);
