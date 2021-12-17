@@ -5,11 +5,13 @@ use std::rc::Rc;
 use x11::xft;
 use x11::xlib;
 
-use app::{RenderContext, Styles};
-use geometrics::{Point, Rectangle, Size};
-use text_renderer::{HorizontalAlign, Text, VerticalAlign};
-use utils;
+use crate::app::RenderContext;
+use crate::geometrics::{Point, Rectangle, Size};
+use crate::styles::Styles;
+use crate::text_renderer::{HorizontalAlign, Text, VerticalAlign};
+use crate::utils;
 
+#[derive(Debug)]
 pub struct TrayItem {
     display: *mut xlib::Display,
     embedder_window: xlib::Window,
@@ -19,6 +21,7 @@ pub struct TrayItem {
     position: Point,
     size: Size,
     is_embedded: bool,
+    is_hovered: bool,
     is_selected: bool,
 }
 
@@ -40,12 +43,12 @@ impl TrayItem {
             let embedder_window = xlib::XCreateWindow(
                 display,
                 tray_window,
-                0,
-                0,
-                1,
-                1,
-                0,
-                xlib::CopyFromParent,
+                0,                    // x
+                0,                    // y
+                1,                    // width
+                1,                    // height
+                0,                    // border_width
+                xlib::CopyFromParent, // depth
                 xlib::InputOutput as u32,
                 xlib::CopyFromParent as *mut xlib::Visual,
                 xlib::CWBackingStore | xlib::CWWinGravity,
@@ -69,12 +72,15 @@ impl TrayItem {
                 position: Point::default(),
                 size: Size::default(),
                 is_embedded: false,
+                is_hovered: false,
                 is_selected: false,
             }
         }
     }
 
     pub fn render(&self, context: &mut RenderContext) {
+        println!("TrayItem.render(): {:?}", self.is_selected);
+
         unsafe {
             let screen_number = xlib::XDefaultScreen(self.display);
             let visual = xlib::XDefaultVisual(self.display, screen_number);
@@ -96,6 +102,9 @@ impl TrayItem {
             if self.is_selected {
                 background_color = &self.styles.selected_background;
                 foreground_color = &self.styles.selected_foreground;
+            } else if self.is_hovered {
+                background_color = &self.styles.hover_background;
+                foreground_color = &self.styles.hover_foreground;
             } else {
                 background_color = &self.styles.normal_background;
                 foreground_color = &self.styles.normal_foreground;
@@ -137,8 +146,11 @@ impl TrayItem {
                 background_color.pixel(),
             );
 
-            xlib::XSetSubwindowMode(self.display, gc, xlib::IncludeInferiors);
             xlib::XClearWindow(self.display, self.embedder_window);
+
+            // Request redraw icon window
+            xlib::XClearArea(self.display, self.icon_window, 0, 0, 0, 0, 1);
+
             xlib::XCopyArea(
                 self.display,
                 pixmap,
@@ -154,14 +166,13 @@ impl TrayItem {
 
             xlib::XFreeGC(self.display, gc);
             xlib::XFreePixmap(self.display, pixmap);
-
             xft::XftDrawDestroy(draw);
         }
     }
 
-    pub fn layout(&mut self, position: Point) -> Size {
+    pub fn layout(&mut self, window_size: Size<u32>, position: Point) -> Size {
         let size = Size {
-            width: self.styles.window_width,
+            width: window_size.width as f32,
             height: self.styles.icon_size + self.styles.padding * 2.0,
         };
 
@@ -256,6 +267,10 @@ impl TrayItem {
 
     pub fn set_selected(&mut self, selected: bool) {
         self.is_selected = selected;
+    }
+
+    pub fn set_hovered(&mut self, hovered: bool) {
+        self.is_hovered = hovered;
     }
 
     pub fn embedder_window(&self) -> xlib::Window {

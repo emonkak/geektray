@@ -3,10 +3,12 @@ use std::os::raw::*;
 use std::rc::Rc;
 use x11::xlib;
 
-use app::{Atoms, RenderContext, Styles};
-use geometrics::{Point, Size};
-use tray_item::TrayItem;
+use crate::app::RenderContext;
+use crate::geometrics::{Point, Size};
+use crate::styles::Styles;
+use crate::tray_item::TrayItem;
 
+#[derive(Debug)]
 pub struct Tray {
     display: *mut xlib::Display,
     window: xlib::Window,
@@ -18,7 +20,7 @@ pub struct Tray {
 }
 
 impl Tray {
-    pub fn new(display: *mut xlib::Display, atoms: &Atoms, styles: Rc<Styles>) -> Tray {
+    pub fn new(display: *mut xlib::Display, styles: Rc<Styles>) -> Tray {
         unsafe {
             let screen = xlib::XDefaultScreenOfDisplay(display);
             let root = xlib::XRootWindowOfScreen(screen);
@@ -39,15 +41,6 @@ impl Tray {
                 xlib::CopyFromParent as *mut xlib::Visual,
                 0,
                 &mut attributes,
-            );
-
-            let mut protocol_atoms = [atoms.WM_DELETE_WINDOW, atoms.WM_TAKE_FOCUS, atoms.WM_PING];
-
-            xlib::XSetWMProtocols(
-                display,
-                window,
-                protocol_atoms.as_mut_ptr(),
-                protocol_atoms.len() as i32,
             );
 
             xlib::XSelectInput(
@@ -88,21 +81,21 @@ impl Tray {
         }
     }
 
-    pub fn layout(&mut self) -> Size {
+    pub fn layout(&mut self, window_size: Size<u32>) -> Size {
         let mut total_height = 0.0;
 
         {
             let mut child_position = Point::ZERO;
 
             for item in &mut self.items {
-                let child_size = item.layout(child_position);
+                let child_size = item.layout(window_size, child_position);
                 child_position.y += child_size.height;
                 total_height += child_size.height;
             }
         }
 
         let size = Size {
-            width: self.styles.window_width,
+            width: window_size.width as f32,
             height: total_height.max(self.styles.icon_size + self.styles.padding * 2.0),
         };
         let position = unsafe {

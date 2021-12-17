@@ -9,6 +9,7 @@ mod error_handler;
 mod event_loop;
 mod font;
 mod geometrics;
+mod styles;
 mod text_renderer;
 mod tray;
 mod tray_item;

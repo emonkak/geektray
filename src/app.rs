@@ -10,26 +10,28 @@ use std::rc::Rc;
 use x11::keysym;
 use x11::xlib;
 
-use color::Color;
-use config::Config;
-use error_handler;
-use event_loop::{run_event_loop, ControlFlow, Event};
-use font::FontDescriptor;
-use text_renderer::{FontSet, TextRenderer};
-use tray::Tray;
-use tray_item::TrayItem;
-use utils;
-use xembed::{XEmbedInfo, XEmbedMessage};
+use crate::config::Config;
+use crate::error_handler;
+use crate::event_loop::{run_event_loop, ControlFlow, Event};
+use crate::geometrics::Size;
+use crate::styles::Styles;
+use crate::text_renderer::TextRenderer;
+use crate::tray::Tray;
+use crate::tray_item::TrayItem;
+use crate::utils;
+use crate::xembed::{XEmbedInfo, XEmbedMessage};
 
 const SYSTEM_TRAY_REQUEST_DOCK: i64 = 0;
 const SYSTEM_TRAY_BEGIN_MESSAGE: i64 = 1;
 const SYSTEM_TRAY_CANCEL_MESSAGE: i64 = 2;
 
+#[derive(Debug)]
 pub struct App {
     display: *mut xlib::Display,
     atoms: Atoms,
     styles: Rc<Styles>,
     tray: ManuallyDrop<Tray>,
+    window_size: Size<u32>,
     text_renderer: ManuallyDrop<TextRenderer>,
     previous_selection_owner: xlib::Window,
     old_error_handler:
@@ -50,13 +52,17 @@ impl App {
 
         let atoms = Atoms::new(display);
         let styles = Rc::new(Styles::new(display, &config)?);
-        let tray = Tray::new(display, &atoms, styles.clone());
+        let tray = Tray::new(display, styles.clone());
         let previous_selection_owner = acquire_tray_selection(display, tray.window());
 
         Ok(App {
             display,
             atoms,
             styles,
+            window_size: Size {
+                width: config.window_width,
+                height: 0,
+            },
             tray: ManuallyDrop::new(tray),
             text_renderer: ManuallyDrop::new(TextRenderer::new(display)),
             previous_selection_owner,
@@ -72,7 +78,8 @@ impl App {
             signalfd::SignalFd::new(&mask)
         }?;
 
-        self.tray.layout();
+        self.request_layout();
+
         self.tray.show_window();
 
         run_event_loop(self.display, &mut signal_fd, move |event| match event {
@@ -87,6 +94,9 @@ impl App {
                 xlib::Expose => self.on_expose(xlib::XExposeEvent::from(event)),
                 xlib::PropertyNotify => self.on_property_notify(xlib::XPropertyEvent::from(event)),
                 xlib::ReparentNotify => self.on_reparent_notify(xlib::XReparentEvent::from(event)),
+                xlib::ConfigureNotify => {
+                    self.on_configure_notify(xlib::XConfigureEvent::from(event))
+                }
                 _ => ControlFlow::Continue,
             },
             Event::Signal(_) => ControlFlow::Break,
@@ -109,8 +119,14 @@ impl App {
             )
         };
         match keysym as c_uint {
-            keysym::XK_Down | keysym::XK_j => self.tray.select_next_icon(),
-            keysym::XK_Up | keysym::XK_k => self.tray.select_previous_icon(),
+            keysym::XK_Down | keysym::XK_j => {
+                self.tray.select_next_icon();
+                self.request_redraw();
+            }
+            keysym::XK_Up | keysym::XK_k => {
+                self.tray.select_previous_icon();
+                self.request_redraw();
+            }
             keysym::XK_Right | keysym::XK_l => self
                 .tray
                 .click_selected_icon(xlib::Button1, xlib::Button1Mask),
@@ -154,7 +170,7 @@ impl App {
                         embed_info.version,
                     );
                     self.tray.add_item(tray_item);
-                    self.tray.layout();
+                    self.request_layout();
                 }
             } else if opcode == SYSTEM_TRAY_BEGIN_MESSAGE {
                 // TODO:
@@ -174,15 +190,13 @@ impl App {
         if let Some(mut icon) = self.tray.remove_item(event.window) {
             icon.mark_as_destroyed();
         }
-        self.tray.layout();
+        self.request_layout();
         ControlFlow::Continue
     }
 
     fn on_expose(&mut self, event: xlib::XExposeEvent) -> ControlFlow {
         if event.count == 0 {
-            self.tray.render(&mut RenderContext {
-                text_renderer: &mut self.text_renderer,
-            });
+            self.request_redraw();
         }
         ControlFlow::Continue
     }
@@ -211,6 +225,30 @@ impl App {
         }
         ControlFlow::Continue
     }
+
+    fn on_configure_notify(&mut self, event: xlib::XConfigureEvent) -> ControlFlow {
+        if event.window == self.tray.window() {
+            let window_size = Size {
+                width: event.width as u32,
+                height: event.height as u32,
+            };
+            if self.window_size != window_size {
+                self.window_size = window_size;
+                self.request_layout();
+            }
+        }
+        ControlFlow::Continue
+    }
+
+    fn request_layout(&mut self) {
+        self.tray.layout(self.window_size);
+    }
+
+    fn request_redraw(&mut self) {
+        self.tray.render(&mut RenderContext {
+            text_renderer: &mut self.text_renderer,
+        });
+    }
 }
 
 impl Drop for App {
@@ -233,89 +271,33 @@ pub struct RenderContext<'a> {
 }
 
 #[allow(non_snake_case)]
-pub struct Atoms {
-    pub MANAGER: xlib::Atom,
+#[derive(Debug)]
+struct Atoms {
     pub NET_SYSTEM_TRAY_MESSAGE_DATA: xlib::Atom,
     pub NET_SYSTEM_TRAY_OPCODE: xlib::Atom,
     pub NET_WM_PID: xlib::Atom,
     pub WM_DELETE_WINDOW: xlib::Atom,
-    pub WM_PING: xlib::Atom,
     pub WM_PROTOCOLS: xlib::Atom,
-    pub WM_TAKE_FOCUS: xlib::Atom,
     pub XEMBED: xlib::Atom,
     pub XEMBED_INFO: xlib::Atom,
 }
 
 impl Atoms {
     fn new(display: *mut xlib::Display) -> Self {
-        Self {
-            MANAGER: utils::new_atom(display, "MANAGER\0"),
-            NET_SYSTEM_TRAY_MESSAGE_DATA: utils::new_atom(
-                display,
-                "_NET_SYSTEM_TRAY_MESSAGE_DATA\0",
-            ),
-            NET_SYSTEM_TRAY_OPCODE: utils::new_atom(display, "_NET_SYSTEM_TRAY_OPCODE\0"),
-            NET_WM_PID: utils::new_atom(display, "_NET_WM_PID\0"),
-            WM_DELETE_WINDOW: utils::new_atom(display, "WM_DELETE_WINDOW\0"),
-            WM_PING: utils::new_atom(display, "WM_PING\0"),
-            WM_PROTOCOLS: utils::new_atom(display, "WM_PROTOCOLS\0"),
-            WM_TAKE_FOCUS: utils::new_atom(display, "WM_TAKE_FOCUS\0"),
-            XEMBED: utils::new_atom(display, "_XEMBED\0"),
-            XEMBED_INFO: utils::new_atom(display, "_XEMBED_INFO\0"),
+        unsafe {
+            Self {
+                NET_SYSTEM_TRAY_MESSAGE_DATA: utils::new_atom(
+                    display,
+                    "_NET_SYSTEM_TRAY_MESSAGE_DATA\0",
+                ),
+                NET_SYSTEM_TRAY_OPCODE: utils::new_atom(display, "_NET_SYSTEM_TRAY_OPCODE\0"),
+                NET_WM_PID: utils::new_atom(display, "_NET_WM_PID\0"),
+                WM_DELETE_WINDOW: utils::new_atom(display, "WM_DELETE_WINDOW\0"),
+                WM_PROTOCOLS: utils::new_atom(display, "WM_PROTOCOLS\0"),
+                XEMBED: utils::new_atom(display, "_XEMBED\0"),
+                XEMBED_INFO: utils::new_atom(display, "_XEMBED_INFO\0"),
+            }
         }
-    }
-}
-
-pub struct Styles {
-    pub icon_size: f32,
-    pub window_width: f32,
-    pub padding: f32,
-    pub font_set: FontSet,
-    pub font_size: f32,
-    pub normal_background: Color,
-    pub normal_foreground: Color,
-    pub selected_background: Color,
-    pub selected_foreground: Color,
-}
-
-impl Styles {
-    fn new(display: *mut xlib::Display, config: &Config) -> Result<Self, String> {
-        Ok(Self {
-            icon_size: config.icon_size,
-            window_width: config.window_width,
-            padding: config.padding,
-            font_set: FontSet::new(FontDescriptor {
-                family: config.font_family.clone(),
-                style: config.font_style,
-                weight: config.font_weight,
-                stretch: config.font_stretch,
-            })
-            .ok_or(format!(
-                "Failed to initialize `font_set`: {:?}",
-                config.font_family
-            ))?,
-            font_size: config.font_size,
-            normal_background: Color::new(display, &config.normal_background).ok_or(format!(
-                "Failed to parse `normal_background`: {:?}",
-                config.normal_background
-            ))?,
-            normal_foreground: Color::new(display, &config.normal_foreground).ok_or(format!(
-                "Failed to parse `normal_foreground`: {:?}",
-                config.normal_foreground
-            ))?,
-            selected_background: Color::new(display, &config.selected_background).ok_or(
-                format!(
-                    "Failed to parse `selected_background`: {:?}",
-                    config.selected_background
-                ),
-            )?,
-            selected_foreground: Color::new(display, &config.selected_foreground).ok_or(
-                format!(
-                    "Failed to parse `selected_foreground`: {:?}",
-                    config.selected_foreground
-                ),
-            )?,
-        })
     }
 }
 
@@ -370,16 +352,18 @@ fn get_window_title(
 ) -> Option<String> {
     let mut name_ptr: *mut i8 = ptr::null_mut();
 
-    let result = unsafe { xlib::XFetchName(display, window, &mut name_ptr) };
-    if result == xlib::True && !name_ptr.is_null() && unsafe { *name_ptr } != 0 {
-        unsafe { CString::from_raw(name_ptr).into_string().ok() }
-    } else {
-        utils::get_window_property::<c_ulong, 1>(display, window, atoms.NET_WM_PID).and_then(
-            |prop| {
-                let pid = prop[0] as u32;
-                utils::get_process_name(pid as u32).ok()
-            },
-        )
+    unsafe {
+        let result = xlib::XFetchName(display, window, &mut name_ptr);
+        if result == xlib::True && !name_ptr.is_null() && *name_ptr != 0 {
+            CString::from_raw(name_ptr).into_string().ok()
+        } else {
+            utils::get_window_property::<c_ulong, 1>(display, window, atoms.NET_WM_PID).and_then(
+                |prop| {
+                    let pid = prop[0] as u32;
+                    utils::get_process_name(pid as u32).ok()
+                },
+            )
+        }
     }
 }
 
@@ -388,10 +372,14 @@ fn get_xembed_info(
     atoms: &Atoms,
     window: xlib::Window,
 ) -> Option<XEmbedInfo> {
-    utils::get_window_property::<_, 2>(display, window, atoms.XEMBED_INFO).map(|prop| XEmbedInfo {
-        version: (*prop)[0],
-        flags: (*prop)[1],
-    })
+    unsafe {
+        utils::get_window_property::<_, 2>(display, window, atoms.XEMBED_INFO).map(|prop| {
+            XEmbedInfo {
+                version: (*prop)[0],
+                flags: (*prop)[1],
+            }
+        })
+    }
 }
 
 fn send_embedded_notify(
@@ -408,9 +396,8 @@ fn send_embedded_notify(
     data.set_long(2, embedder_window as c_long);
     data.set_long(3, version as c_long);
 
-    utils::send_client_message(display, window, window, atoms.XEMBED, data);
-
     unsafe {
+        utils::send_client_message(display, window, window, atoms.XEMBED, data);
         xlib::XFlush(display);
     }
 }

@@ -10,15 +10,16 @@ use x11::xft;
 use x11::xlib;
 use x11::xrender;
 
-use color::Color;
-use font::{FontDescriptor, FontFamily, FontStretch, FontStyle};
-use fontconfig as fc;
-use geometrics::{Rectangle, Size};
+use crate::color::Color;
+use crate::font::{FontDescriptor, FontFamily, FontStretch, FontStyle};
+use crate::fontconfig as fc;
+use crate::geometrics::{Rectangle, Size};
 
 const SERIF_FAMILY: &'static str = "Serif\0";
 const SANS_SERIF_FAMILY: &'static str = "Sans\0";
 const MONOSPACE_FAMILY: &'static str = "Monospace\0";
 
+#[derive(Debug)]
 pub struct TextRenderer {
     display: *mut xlib::Display,
     font_caches: HashMap<FontKey, *mut xft::XftFont>,
@@ -42,7 +43,10 @@ impl TextRenderer {
         let origin_x = match text.horizontal_align {
             HorizontalAlign::Left => bounds.x,
             HorizontalAlign::Right => bounds.x + bounds.width,
-            HorizontalAlign::Center => (bounds.x + bounds.width / 2.0) - (self.measure_single_line(display, text).width / 2.0),
+            HorizontalAlign::Center => {
+                (bounds.x + bounds.width / 2.0)
+                    - (self.measure_single_line(display, text).width / 2.0)
+            }
         };
         let origin_y = match text.vertical_align {
             VerticalAlign::Top => bounds.y,
@@ -188,7 +192,7 @@ pub struct FontSet {
 impl FontSet {
     pub fn new(font_descriptor: FontDescriptor) -> Option<FontSet> {
         unsafe {
-            let pattern = create_pattern(&font_descriptor);
+            let pattern = prepare_pattern(&font_descriptor);
 
             fc::FcConfigSubstitute(ptr::null_mut(), pattern, fc::FcMatchKind::Pattern);
             fc::FcDefaultSubstitute(pattern);
@@ -369,7 +373,7 @@ impl<'a> Iterator for ChunkIter<'a> {
     }
 }
 
-unsafe fn create_pattern(descriptor: &FontDescriptor) -> *mut fc::FcPattern {
+unsafe fn prepare_pattern(descriptor: &FontDescriptor) -> *mut fc::FcPattern {
     let pattern = fc::FcPatternCreate();
 
     match &descriptor.family {

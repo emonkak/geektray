@@ -11,7 +11,7 @@ pub struct Color {
 }
 
 impl Color {
-    pub fn new(display: *mut xlib::Display, color_spec: &str) -> Option<Self> {
+    pub fn alloc(display: *mut xlib::Display, color_spec: &str) -> Option<Self> {
         let color_spec_cstr = CString::new(color_spec).ok()?;
         unsafe {
             let screen_number = xlib::XDefaultScreen(display);

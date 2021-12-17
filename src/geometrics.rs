@@ -1,15 +1,15 @@
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Rectangle {
-    pub x: f32,
-    pub y: f32,
-    pub width: f32,
-    pub height: f32,
+pub struct Rectangle<T = f32> {
+    pub x: T,
+    pub y: T,
+    pub width: T,
+    pub height: T,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Point {
-    pub x: f32,
-    pub y: f32,
+pub struct Point<T = f32> {
+    pub x: T,
+    pub y: T,
 }
 
 impl Point {
@@ -17,9 +17,9 @@ impl Point {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Size {
-    pub width: f32,
-    pub height: f32,
+pub struct Size<T = f32> {
+    pub width: T,
+    pub height: T,
 }
 
 impl Size {
