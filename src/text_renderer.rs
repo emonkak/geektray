@@ -13,7 +13,7 @@ use x11::xrender;
 use crate::color::Color;
 use crate::font::{FontDescriptor, FontFamily, FontStretch, FontStyle};
 use crate::fontconfig as fc;
-use crate::geometrics::{Rectangle, Size};
+use crate::geometrics::{Rect, Size};
 
 const SERIF_FAMILY: &'static str = "Serif\0";
 const SANS_SERIF_FAMILY: &'static str = "Sans\0";
@@ -21,14 +21,12 @@ const MONOSPACE_FAMILY: &'static str = "Monospace\0";
 
 #[derive(Debug)]
 pub struct TextRenderer {
-    display: *mut xlib::Display,
     font_caches: HashMap<FontKey, *mut xft::XftFont>,
 }
 
 impl TextRenderer {
-    pub fn new(display: *mut xlib::Display) -> Self {
+    pub fn new() -> Self {
         Self {
-            display,
             font_caches: HashMap::new(),
         }
     }
@@ -38,7 +36,7 @@ impl TextRenderer {
         display: *mut xlib::Display,
         draw: *mut xft::XftDraw,
         text: &Text,
-        bounds: Rectangle,
+        bounds: Rect,
     ) {
         let origin_x = match text.horizontal_align {
             HorizontalAlign::Left => bounds.x,
@@ -89,8 +87,8 @@ impl TextRenderer {
                     draw,
                     &mut text.color.as_xft_color(),
                     font,
-                    (origin_x + x_offset + extents.x as f32).round() as i32,
-                    (origin_y + y_adjustment + extents.height as f32).round() as i32,
+                    (origin_x + x_offset + extents.x as f32) as i32,
+                    (origin_y + y_adjustment + extents.height as f32) as i32,
                     chunk.text.as_ptr(),
                     chunk.text.len() as i32,
                 );
@@ -134,6 +132,15 @@ impl TextRenderer {
         measured_size
     }
 
+    pub fn clear_caches(&mut self, display: *mut xlib::Display) {
+        for (key, font) in self.font_caches.drain() {
+            unsafe {
+                xft::XftFontClose(display, font);
+                fc::FcPatternDestroy(key.pattern);
+            }
+        }
+    }
+
     fn open_font(
         &mut self,
         display: *mut xlib::Display,
@@ -165,17 +172,6 @@ impl TextRenderer {
                     entry.insert(font);
                     Some(font)
                 }
-            }
-        }
-    }
-}
-
-impl Drop for TextRenderer {
-    fn drop(&mut self) {
-        for (key, font) in self.font_caches.drain() {
-            unsafe {
-                xft::XftFontClose(self.display, font);
-                fc::FcPatternDestroy(key.pattern);
             }
         }
     }

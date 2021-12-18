@@ -49,7 +49,7 @@ where
     }
 
     let mut epoll_events = vec![epoll::EpollEvent::empty(); 2];
-    let mut event: xlib::XEvent = unsafe { mem::MaybeUninit::uninit().assume_init() };
+    let mut x11_event: xlib::XEvent = unsafe { mem::MaybeUninit::uninit().assume_init() };
 
     'outer: loop {
         let available_fds = epoll::epoll_wait(epoll_fd, &mut epoll_events, -1).unwrap_or(0);
@@ -59,10 +59,10 @@ where
                 let pending_events = unsafe { xlib::XPending(display) };
                 for _ in 0..pending_events {
                     unsafe {
-                        xlib::XNextEvent(display, &mut event);
+                        xlib::XNextEvent(display, &mut x11_event);
                     }
 
-                    if matches!(callback(Event::X11(event)), ControlFlow::Break) {
+                    if matches!(callback(Event::X11(x11_event)), ControlFlow::Break) {
                         break 'outer;
                     }
                 }

@@ -1,7 +1,7 @@
 use crate::font::{FontFamily, FontStretch, FontStyle, FontWeight};
 
 pub struct Config {
-    pub window_width: u32,
+    pub window_width: f32,
     pub icon_size: f32,
     pub padding: f32,
     pub font_size: f32,
@@ -26,7 +26,7 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            window_width: 480,
+            window_width: 480.0,
             icon_size: 24.0,
             padding: 8.0,
             font_size: 12.0,
