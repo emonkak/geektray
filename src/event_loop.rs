@@ -6,6 +6,7 @@ use std::os::unix::io::AsRawFd;
 use std::os::unix::io::RawFd;
 use x11::xlib;
 
+#[derive(Debug)]
 pub enum Event {
     X11(xlib::XEvent),
     Signal(signalfd::siginfo),

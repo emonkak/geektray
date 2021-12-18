@@ -1,8 +1,9 @@
-use nix;
 use nix::sys::signal;
 use nix::sys::signalfd;
+use nix;
 use std::env;
 use std::ffi::CString;
+use std::mem;
 use std::os::raw::*;
 use std::ptr;
 use std::rc::Rc;
@@ -13,7 +14,7 @@ use crate::atoms::Atoms;
 use crate::config::Config;
 use crate::error_handler;
 use crate::event_loop::{run_event_loop, ControlFlow, Event};
-use crate::geometrics::{Point, Size};
+use crate::geometrics::Size;
 use crate::styles::Styles;
 use crate::text_renderer::TextRenderer;
 use crate::tray::Tray;
@@ -32,8 +33,10 @@ pub struct App {
     atoms: Rc<Atoms>,
     styles: Rc<Styles>,
     tray: WidgetPod<Tray>,
+    window: xlib::Window,
     window_size: Size<u32>,
     text_renderer: TextRenderer,
+    previous_selection_owner: Option<xlib::Window>,
     old_error_handler:
         Option<unsafe extern "C" fn(*mut xlib::Display, *mut xlib::XErrorEvent) -> c_int>,
 }
@@ -58,14 +61,17 @@ impl App {
             width: config.window_width,
             height: 0.0,
         });
+        let window = unsafe { create_window(display, window_size) };
 
         Ok(Self {
             display,
             atoms,
             styles,
             tray,
+            window,
             window_size: window_size.snap(),
             text_renderer: TextRenderer::new(),
+            previous_selection_owner: None,
             old_error_handler,
         })
     }
@@ -78,26 +84,32 @@ impl App {
             signalfd::SignalFd::new(&mask)
         }?;
 
-        self.initialze_window();
+        unsafe {
+            self.previous_selection_owner = Some(acquire_tray_selection(self.display, self.window));
+            xlib::XMapWindow(self.display, self.window);
+            xlib::XFlush(self.display);
+        }
 
-        run_event_loop(self.display, &mut signal_fd, move |event| match event {
-            Event::X11(event) => match event.get_type() {
-                xlib::KeyRelease => self.on_key_release(xlib::XKeyEvent::from(event)),
-                xlib::ClientMessage => {
-                    self.on_client_message(xlib::XClientMessageEvent::from(event))
-                }
-                xlib::DestroyNotify => {
-                    self.on_destroy_notify(xlib::XDestroyWindowEvent::from(event))
-                }
-                xlib::Expose => self.on_expose(xlib::XExposeEvent::from(event)),
-                xlib::PropertyNotify => self.on_property_notify(xlib::XPropertyEvent::from(event)),
-                xlib::ReparentNotify => self.on_reparent_notify(xlib::XReparentEvent::from(event)),
-                xlib::ConfigureNotify => {
-                    self.on_configure_notify(xlib::XConfigureEvent::from(event))
-                }
-                _ => ControlFlow::Continue,
-            },
-            Event::Signal(_) => ControlFlow::Break,
+        run_event_loop(self.display, &mut signal_fd, move |event| {
+            match event {
+                Event::X11(event) => match event.get_type() {
+                    xlib::KeyRelease => self.on_key_release(xlib::XKeyEvent::from(event)),
+                    xlib::ClientMessage => {
+                        self.on_client_message(xlib::XClientMessageEvent::from(event))
+                    }
+                    xlib::DestroyNotify => {
+                        self.on_destroy_notify(xlib::XDestroyWindowEvent::from(event))
+                    }
+                    xlib::Expose => self.on_expose(xlib::XExposeEvent::from(event)),
+                    xlib::PropertyNotify => self.on_property_notify(xlib::XPropertyEvent::from(event)),
+                    xlib::ReparentNotify => self.on_reparent_notify(xlib::XReparentEvent::from(event)),
+                    xlib::ConfigureNotify => {
+                        self.on_configure_notify(xlib::XConfigureEvent::from(event))
+                    }
+                    _ => ControlFlow::Continue,
+                },
+                Event::Signal(_) => ControlFlow::Break,
+            }
         })?;
 
         Ok(())
@@ -176,19 +188,19 @@ impl App {
     }
 
     fn on_destroy_notify(&mut self, event: xlib::XDestroyWindowEvent) -> ControlFlow {
-        if self.tray.window() == Some(event.window) {
+        if self.window == event.window {
             return ControlFlow::Break;
         }
         if let Some(mut tray_item) = self.tray.widget.remove_item(event.window) {
             tray_item.widget.set_embedded(false);
-            tray_item.finalize(self.display);
+            tray_item.unmount(self.display, self.window);
             self.perform_layout();
         }
         ControlFlow::Continue
     }
 
     fn on_expose(&mut self, event: xlib::XExposeEvent) -> ControlFlow {
-        if event.count == 0 && self.tray.window() == Some(event.window) {
+        if event.count == 0 && self.window == event.window {
             self.perform_render();
         }
         ControlFlow::Continue
@@ -199,15 +211,11 @@ impl App {
             if let Some(tray_item) = self.tray.widget.find_item_mut(event.window) {
                 match get_xembed_info(self.display, &self.atoms, event.window) {
                     Some(embed_info) if embed_info.is_mapped() => {
-                        if let Some(window) = tray_item.window() {
-                            tray_item.widget.embed_icon(self.display, window);
-                        } else {
-                            tray_item.widget.request_embed_icon();
-                        }
+                        tray_item.widget.embed_icon(self.display, self.window, tray_item.bounds());
                     }
                     _ => {
                         if let Some(mut tray_item) = self.tray.widget.remove_item(event.window) {
-                            tray_item.finalize(self.display);
+                            tray_item.unmount(self.display, self.window);
                         }
                         self.perform_layout();
                     }
@@ -224,13 +232,13 @@ impl App {
 
     fn on_reparent_notify(&mut self, event: xlib::XReparentEvent) -> ControlFlow {
         if let Some(mut tray_item) = self.tray.widget.remove_item(event.window) {
-            tray_item.finalize(self.display);
+            tray_item.unmount(self.display, self.window);
         }
         ControlFlow::Continue
     }
 
     fn on_configure_notify(&mut self, event: xlib::XConfigureEvent) -> ControlFlow {
-        if self.tray.window() == Some(event.window) {
+        if self.window == event.window {
             let window_size = Size {
                 width: event.width as u32,
                 height: event.height as u32,
@@ -243,25 +251,14 @@ impl App {
         ControlFlow::Continue
     }
 
-    fn initialze_window(&mut self) {
-        let window_size = self.tray.layout(self.window_size.unsnap());
-
-        unsafe {
-            let screen_number = xlib::XDefaultScreen(self.display);
-            let display_width = xlib::XDisplayWidth(self.display, screen_number) as f32;
-            let display_height = xlib::XDisplayHeight(self.display, screen_number) as f32;
-
-            self.tray.reposition(Point {
-                x: display_width / 2.0 - window_size.width / 2.0,
-                y: display_height / 2.0 - window_size.height / 2.0,
-            });
-        }
-
-        self.perform_render();
-    }
-
     fn perform_layout(&mut self) {
-        self.tray.layout(self.window_size.unsnap());
+        let size = self.tray.layout(self.window_size.unsnap()).snap();
+
+        if self.window_size != size {
+            unsafe {
+                xlib::XResizeWindow(self.display, self.window, size.width, size.height);
+            }
+        }
     }
 
     fn perform_render(&mut self) {
@@ -269,9 +266,7 @@ impl App {
             text_renderer: &mut self.text_renderer,
         };
         unsafe {
-            let screen_number = xlib::XDefaultScreen(self.display);
-            let root = xlib::XRootWindow(self.display, screen_number);
-            self.tray.render(self.display, root, &mut context);
+            self.tray.render(self.display, self.window, &mut context);
             xlib::XFlush(self.display);
         }
     }
@@ -279,10 +274,17 @@ impl App {
 
 impl Drop for App {
     fn drop(&mut self) {
-        self.tray.finalize(self.display);
+        self.tray.unmount(self.display, self.window);
         self.text_renderer.clear_caches(self.display);
 
+        if let Some(previous_selection_owner) = self.previous_selection_owner.take() {
+            unsafe {
+                release_tray_selection(self.display, previous_selection_owner);
+            }
+        }
+
         unsafe {
+            xlib::XDestroyWindow(self.display, self.window);
             xlib::XSync(self.display, xlib::True);
             xlib::XCloseDisplay(self.display);
             xlib::XSetErrorHandler(self.old_error_handler);
@@ -329,4 +331,98 @@ fn get_xembed_info(
             }
         })
     }
+}
+
+unsafe fn create_window(
+    display: *mut xlib::Display,
+    window_size: Size,
+) -> xlib::Window {
+    let screen = xlib::XDefaultScreenOfDisplay(display);
+    let screen_number = xlib::XDefaultScreen(display);
+    let root = xlib::XRootWindowOfScreen(screen);
+
+    let display_width = xlib::XDisplayWidth(display, screen_number) as f32;
+    let display_height = xlib::XDisplayHeight(display, screen_number) as f32;
+
+    let x = (display_width / 2.0 - window_size.width / 2.0) as i32;
+    let y = (display_height / 2.0 - window_size.height / 2.0) as i32;
+
+    let mut attributes: xlib::XSetWindowAttributes =
+        mem::MaybeUninit::uninit().assume_init();
+    attributes.backing_store = xlib::WhenMapped;
+    attributes.bit_gravity = xlib::CenterGravity;
+
+    let window = xlib::XCreateWindow(
+        display,
+        root,
+        x,
+        y,
+        window_size.width as u32,
+        window_size.height as u32,
+        0,
+        xlib::CopyFromParent,
+        xlib::InputOutput as u32,
+        xlib::CopyFromParent as *mut xlib::Visual,
+        xlib::CWBackingStore | xlib::CWBitGravity,
+        &mut attributes,
+    );
+
+    xlib::XSelectInput(
+        display,
+        window,
+        xlib::KeyPressMask
+            | xlib::KeyReleaseMask
+            | xlib::StructureNotifyMask
+            | xlib::FocusChangeMask
+            | xlib::PropertyChangeMask
+            | xlib::ExposureMask,
+    );
+
+    window
+}
+
+unsafe fn acquire_tray_selection(
+    display: *mut xlib::Display,
+    window: xlib::Window,
+) -> xlib::Window {
+    let screen = xlib::XDefaultScreenOfDisplay(display);
+    let screen_number = xlib::XScreenNumberOfScreen(screen);
+    let root = xlib::XRootWindowOfScreen(screen);
+    let manager_atom = utils::new_atom(display, "MANAGER\0");
+    let net_system_tray_atom =
+        utils::new_atom(display, &format!("_NET_SYSTEM_TRAY_S{}\0", screen_number));
+
+    let previous_selection_owner = xlib::XGetSelectionOwner(display, net_system_tray_atom);
+    xlib::XSetSelectionOwner(
+        display,
+        net_system_tray_atom,
+        window,
+        xlib::CurrentTime,
+    );
+
+    let mut data = xlib::ClientMessageData::new();
+    data.set_long(0, xlib::CurrentTime as c_long);
+    data.set_long(1, net_system_tray_atom as c_long);
+    data.set_long(2, window as c_long);
+
+    utils::send_client_message(display, root, root, manager_atom, data);
+
+    previous_selection_owner
+}
+
+unsafe fn release_tray_selection(
+    display: *mut xlib::Display,
+    previous_selection_owner: xlib::Window,
+) {
+    let screen = xlib::XDefaultScreenOfDisplay(display);
+    let screen_number = xlib::XScreenNumberOfScreen(screen);
+    let net_system_tray_atom =
+        utils::new_atom(display, &format!("_NET_SYSTEM_TRAY_S{}\0", screen_number));
+
+    xlib::XSetSelectionOwner(
+        display,
+        net_system_tray_atom,
+        previous_selection_owner,
+        xlib::CurrentTime,
+    );
 }

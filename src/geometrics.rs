@@ -40,7 +40,7 @@ pub struct Size<T = f32> {
     pub height: T,
 }
 
-type PhysicalSize = Size<u32>;
+pub type PhysicalSize = Size<u32>;
 
 impl Size {
     pub const ZERO: Self = Self {

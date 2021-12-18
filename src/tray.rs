@@ -1,4 +1,3 @@
-use std::mem;
 use std::os::raw::*;
 use std::rc::Rc;
 use x11::xlib;
@@ -7,7 +6,6 @@ use crate::app::RenderContext;
 use crate::geometrics::{Point, Rect, Size};
 use crate::styles::Styles;
 use crate::tray_item::TrayItem;
-use crate::utils;
 use crate::widget::{Widget, WidgetPod};
 
 #[derive(Debug)]
@@ -15,7 +13,6 @@ pub struct Tray {
     styles: Rc<Styles>,
     selected_icon_index: Option<usize>,
     items: Vec<WidgetPod<TrayItem>>,
-    previous_selection_owner: Option<xlib::Window>,
 }
 
 impl Tray {
@@ -24,7 +21,6 @@ impl Tray {
             styles,
             items: Vec::new(),
             selected_icon_index: None,
-            previous_selection_owner: None,
         }
     }
 
@@ -115,6 +111,23 @@ impl Tray {
 }
 
 impl Widget for Tray {
+    fn mount(
+        &mut self,
+        display: *mut xlib::Display,
+        window: xlib::Window,
+        _bounds: Rect,
+    ) {
+        for item in &mut self.items {
+            item.mount(display, window);
+        }
+    }
+
+    fn unmount(&mut self, display: *mut xlib::Display, window: xlib::Window) {
+        for item in &mut self.items {
+            item.unmount(display, window);
+        }
+    }
+
     fn render(
         &mut self,
         display: *mut xlib::Display,
@@ -129,55 +142,8 @@ impl Widget for Tray {
             for item in &mut self.items {
                 item.render(display, window, context);
             }
-        }
-    }
 
-    fn realize(
-        &mut self,
-        display: *mut xlib::Display,
-        _parent_window: xlib::Window,
-        bounds: Rect,
-    ) -> xlib::Window {
-        unsafe {
-            let screen = xlib::XDefaultScreenOfDisplay(display);
-            let root = xlib::XRootWindowOfScreen(screen);
-
-            let mut attributes: xlib::XSetWindowAttributes =
-                mem::MaybeUninit::uninit().assume_init();
-
-            attributes.bit_gravity = xlib::CenterGravity;
-
-            let window = xlib::XCreateWindow(
-                display,
-                root,
-                bounds.x as i32,
-                bounds.y as i32,
-                bounds.width as u32,
-                bounds.height as u32,
-                0,
-                xlib::CopyFromParent,
-                xlib::InputOutput as u32,
-                xlib::CopyFromParent as *mut xlib::Visual,
-                xlib::CWBitGravity,
-                &mut attributes,
-            );
-
-            xlib::XSelectInput(
-                display,
-                window,
-                xlib::KeyPressMask
-                    | xlib::KeyReleaseMask
-                    | xlib::StructureNotifyMask
-                    | xlib::FocusChangeMask
-                    | xlib::PropertyChangeMask
-                    | xlib::ExposureMask,
-            );
-
-            xlib::XMapWindow(display, window);
-
-            self.previous_selection_owner = Some(acquire_tray_selection(display, window));
-
-            window
+            xlib::XFlush(display);
         }
     }
 
@@ -197,62 +163,4 @@ impl Widget for Tray {
             height: total_height.max(self.styles.item_height()),
         }
     }
-
-    fn finalize(&mut self, display: *mut xlib::Display, _window: xlib::Window) {
-        if let Some(previous_selection_owner) = self.previous_selection_owner.take() {
-            unsafe {
-                release_tray_selection(display, previous_selection_owner);
-            }
-        }
-
-        for item in &mut self.items {
-            item.finalize(display);
-        }
-    }
-}
-
-unsafe fn acquire_tray_selection(
-    display: *mut xlib::Display,
-    tray_window: xlib::Window,
-) -> xlib::Window {
-    let screen = xlib::XDefaultScreenOfDisplay(display);
-    let screen_number = xlib::XScreenNumberOfScreen(screen);
-    let root = xlib::XRootWindowOfScreen(screen);
-    let manager_atom = utils::new_atom(display, "MANAGER\0");
-    let net_system_tray_atom =
-        utils::new_atom(display, &format!("_NET_SYSTEM_TRAY_S{}\0", screen_number));
-
-    let previous_selection_owner = xlib::XGetSelectionOwner(display, net_system_tray_atom);
-    xlib::XSetSelectionOwner(
-        display,
-        net_system_tray_atom,
-        tray_window,
-        xlib::CurrentTime,
-    );
-
-    let mut data = xlib::ClientMessageData::new();
-    data.set_long(0, xlib::CurrentTime as c_long);
-    data.set_long(1, net_system_tray_atom as c_long);
-    data.set_long(2, tray_window as c_long);
-
-    utils::send_client_message(display, root, root, manager_atom, data);
-
-    previous_selection_owner
-}
-
-unsafe fn release_tray_selection(
-    display: *mut xlib::Display,
-    previous_selection_owner: xlib::Window,
-) {
-    let screen = xlib::XDefaultScreenOfDisplay(display);
-    let screen_number = xlib::XScreenNumberOfScreen(screen);
-    let net_system_tray_atom =
-        utils::new_atom(display, &format!("_NET_SYSTEM_TRAY_S{}\0", screen_number));
-
-    xlib::XSetSelectionOwner(
-        display,
-        net_system_tray_atom,
-        previous_selection_owner,
-        xlib::CurrentTime,
-    );
 }

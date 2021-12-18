@@ -66,6 +66,10 @@ impl Styles {
         })
     }
 
+    pub fn item_width(&self) -> f32 {
+        self.icon_size + self.padding * 2.0
+    }
+
     pub fn item_height(&self) -> f32 {
         self.icon_size + self.padding * 2.0
     }
