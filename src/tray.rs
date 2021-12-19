@@ -2,11 +2,10 @@ use std::os::raw::*;
 use std::rc::Rc;
 use x11::xlib;
 
-use crate::app::RenderContext;
 use crate::geometrics::{Point, Rect, Size};
 use crate::styles::Styles;
 use crate::tray_item::TrayItem;
-use crate::widget::{Widget, WidgetPod};
+use crate::widget::{RenderContext, Widget, WidgetPod};
 
 #[derive(Debug)]
 pub struct Tray {
@@ -22,6 +21,10 @@ impl Tray {
             items: Vec::new(),
             selected_icon_index: None,
         }
+    }
+
+    pub fn items(&self) -> &[WidgetPod<TrayItem>] {
+        &self.items
     }
 
     pub fn add_item(&mut self, tray_item: WidgetPod<TrayItem>) {
@@ -63,7 +66,7 @@ impl Tray {
     ) {
         if let Some(index) = self.selected_icon_index {
             let tray_item = &self.items[index].widget;
-            tray_item.emit_click(display, button, button_mask, 10, 10);
+            tray_item.emit_click(display, button, button_mask, 0, 0);
         }
     }
 
@@ -111,23 +114,6 @@ impl Tray {
 }
 
 impl Widget for Tray {
-    fn mount(
-        &mut self,
-        display: *mut xlib::Display,
-        window: xlib::Window,
-        _bounds: Rect,
-    ) {
-        for item in &mut self.items {
-            item.mount(display, window);
-        }
-    }
-
-    fn unmount(&mut self, display: *mut xlib::Display, window: xlib::Window) {
-        for item in &mut self.items {
-            item.unmount(display, window);
-        }
-    }
-
     fn render(
         &mut self,
         display: *mut xlib::Display,
@@ -142,8 +128,6 @@ impl Widget for Tray {
             for item in &mut self.items {
                 item.render(display, window, context);
             }
-
-            xlib::XFlush(display);
         }
     }
 

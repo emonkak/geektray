@@ -35,29 +35,29 @@ impl Styles {
                 "Failed to initialize `font_set`: {:?}",
                 config.font_family
             ))?,
-            normal_background: Color::alloc(display, &config.normal_background).ok_or(format!(
+            normal_background: Color::parse(display, &config.normal_background).ok_or(format!(
                 "Failed to parse `normal_background`: {:?}",
                 config.normal_background
             ))?,
-            normal_foreground: Color::alloc(display, &config.normal_foreground).ok_or(format!(
+            normal_foreground: Color::parse(display, &config.normal_foreground).ok_or(format!(
                 "Failed to parse `normal_foreground`: {:?}",
                 config.normal_foreground
             ))?,
-            hover_background: Color::alloc(display, &config.normal_background).ok_or(format!(
+            hover_background: Color::parse(display, &config.normal_background).ok_or(format!(
                 "Failed to parse `hover_background`: {:?}",
                 config.hover_background
             ))?,
-            hover_foreground: Color::alloc(display, &config.normal_foreground).ok_or(format!(
+            hover_foreground: Color::parse(display, &config.normal_foreground).ok_or(format!(
                 "Failed to parse `hover_foreground`: {:?}",
                 config.hover_foreground
             ))?,
-            selected_background: Color::alloc(display, &config.selected_background).ok_or(
+            selected_background: Color::parse(display, &config.selected_background).ok_or(
                 format!(
                     "Failed to parse `selected_background`: {:?}",
                     config.selected_background
                 ),
             )?,
-            selected_foreground: Color::alloc(display, &config.selected_foreground).ok_or(
+            selected_foreground: Color::parse(display, &config.selected_foreground).ok_or(
                 format!(
                     "Failed to parse `selected_foreground`: {:?}",
                     config.selected_foreground

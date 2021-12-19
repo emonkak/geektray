@@ -4,47 +4,36 @@ use std::rc::Rc;
 use x11::xft;
 use x11::xlib;
 
-use crate::app::RenderContext;
-use crate::atoms::Atoms;
 use crate::geometrics::{Rect, Size};
 use crate::styles::Styles;
 use crate::text_renderer::{HorizontalAlign, Text, VerticalAlign};
 use crate::utils;
-use crate::widget::Widget;
-use crate::xembed::XEmbedMessage;
+use crate::widget::{RenderContext, Widget};
 
 #[derive(Debug)]
 pub struct TrayItem {
     icon_window: xlib::Window,
     icon_title: String,
-    atoms: Rc<Atoms>,
     styles: Rc<Styles>,
-    xembed_version: u64,
-    will_embeding: bool,
     is_embedded: bool,
-    is_hovered: bool,
     is_selected: bool,
+    is_hovered: bool,
 }
 
 impl TrayItem {
     pub fn new(
         icon_window: xlib::Window,
         icon_title: String,
-        atoms: Rc<Atoms>,
+        is_embedded: bool,
         styles: Rc<Styles>,
-        xembed_version: u64,
-        will_embeding: bool,
     ) -> Self {
         Self {
             icon_window,
             icon_title,
-            atoms,
-            styles,
-            xembed_version,
-            will_embeding,
-            is_embedded: false,
+            is_embedded,
             is_hovered: false,
             is_selected: false,
+            styles,
         }
     }
 
@@ -52,14 +41,8 @@ impl TrayItem {
         self.icon_window
     }
 
-    pub fn embed_icon(&mut self, display: *mut xlib::Display, window: xlib::Window, bounds: Rect) {
-        unsafe {
-            xlib::XReparentWindow(display, self.icon_window, window, 0, 0);
-            xlib::XMapRaised(display, self.icon_window);
-        }
-
-        self.will_embeding = false;
-        self.is_embedded = true;
+    pub fn is_embedded(&self) -> bool {
+        self.is_embedded
     }
 
     pub fn change_icon_title(&mut self, icon_title: String) {
@@ -114,60 +97,16 @@ impl TrayItem {
         true
     }
 
-    pub fn set_selected(&mut self, selected: bool) {
-        self.is_selected = selected;
+    pub fn set_embedded(&mut self, value: bool) {
+        self.is_embedded = value;
     }
 
-    pub fn set_embedded(&mut self, embedded: bool) {
-        self.is_embedded = embedded;
-    }
-
-    fn unembed_icon(&mut self, display: *mut xlib::Display) {
-        unsafe {
-            let screen = xlib::XDefaultScreenOfDisplay(display);
-            let root = xlib::XRootWindowOfScreen(screen);
-
-            xlib::XSelectInput(display, self.icon_window, xlib::NoEventMask);
-            xlib::XReparentWindow(display, self.icon_window, root, 0, 0);
-            xlib::XUnmapWindow(display, self.icon_window);
-            xlib::XMapRaised(display, self.icon_window);
-        }
-
-        self.is_embedded = false;
+    pub fn set_selected(&mut self, value: bool) {
+        self.is_selected = value;
     }
 }
 
 impl Widget for TrayItem {
-    fn mount(
-        &mut self,
-        display: *mut xlib::Display,
-        window: xlib::Window,
-        bounds: Rect,
-    ) {
-        unsafe {
-            send_embedded_notify(
-                display,
-                &self.atoms,
-                self.icon_window,
-                xlib::CurrentTime,
-                window,
-                self.xembed_version,
-            );
-
-            xlib::XSelectInput(display, self.icon_window, xlib::PropertyChangeMask);
-
-            if self.will_embeding {
-                self.embed_icon(display, window, bounds);
-            }
-        }
-    }
-
-    fn unmount(&mut self, display: *mut xlib::Display, _window: xlib::Window) {
-        if self.is_embedded {
-            self.unembed_icon(display);
-        }
-    }
-
     fn render(
         &mut self,
         display: *mut xlib::Display,
@@ -251,18 +190,19 @@ impl Widget for TrayItem {
             xlib::XFreePixmap(display, pixmap);
             xft::XftDrawDestroy(draw);
 
-            // Request redraw icon window
-            xlib::XSetWindowBackground(display, self.icon_window, background_color.pixel());
-            xlib::XClearArea(display, self.icon_window, 0, 0, 0, 0, xlib::True);
-
-            xlib::XMoveResizeWindow(
-                display,
-                self.icon_window,
-                (bounds.x + self.styles.padding) as _,
-                (bounds.y + self.styles.padding) as _,
-                self.styles.icon_size as _,
-                self.styles.icon_size as _,
-            );
+            if self.is_embedded {
+                xlib::XSetWindowBackground(display, self.icon_window, background_color.pixel());
+                xlib::XMoveResizeWindow(
+                    display,
+                    self.icon_window,
+                    (bounds.x + self.styles.padding) as _,
+                    (bounds.y + self.styles.padding) as _,
+                    self.styles.icon_size as _,
+                    self.styles.icon_size as _,
+                );
+                xlib::XMapRaised(display, self.icon_window);
+                xlib::XClearArea(display, self.icon_window, 0, 0, 0, 0, xlib::True);
+            }
         }
     }
 
@@ -272,22 +212,4 @@ impl Widget for TrayItem {
             height: self.styles.item_height(),
         }
     }
-}
-
-unsafe fn send_embedded_notify(
-    display: *mut xlib::Display,
-    atoms: &Atoms,
-    window: xlib::Window,
-    timestamp: xlib::Time,
-    embedder_window: xlib::Window,
-    version: u64,
-) {
-    let mut data = xlib::ClientMessageData::new();
-    data.set_long(0, timestamp as c_long);
-    data.set_long(1, XEmbedMessage::EmbeddedNotify as c_long);
-    data.set_long(2, embedder_window as c_long);
-    data.set_long(3, version as c_long);
-
-    utils::send_client_message(display, window, window, atoms.XEMBED, data);
-    xlib::XFlush(display);
 }

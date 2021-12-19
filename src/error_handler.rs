@@ -16,7 +16,7 @@ pub extern "C" fn handle(display: *mut xlib::Display, error: *mut xlib::XErrorEv
 }
 
 fn x11_get_error_message(display: *mut xlib::Display, error_code: i32) -> String {
-    let mut message = [0 as u8; 255];
+    let mut message = [0 as u8; 256];
 
     unsafe {
         xlib::XGetErrorText(
@@ -31,7 +31,7 @@ fn x11_get_error_message(display: *mut xlib::Display, error_code: i32) -> String
 }
 
 fn x11_get_request_description(display: *mut xlib::Display, request_code: i32) -> String {
-    let mut message = [0 as u8; 255];
+    let mut message = [0 as u8; 256];
     let request_type = format!("{}\0", request_code.to_string());
 
     unsafe {

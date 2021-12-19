@@ -11,7 +11,7 @@ pub struct Color {
 }
 
 impl Color {
-    pub fn alloc(display: *mut xlib::Display, color_spec: &str) -> Option<Self> {
+    pub fn parse(display: *mut xlib::Display, color_spec: &str) -> Option<Self> {
         let color_spec_cstr = CString::new(color_spec).ok()?;
         unsafe {
             let screen_number = xlib::XDefaultScreen(display);
@@ -34,10 +34,6 @@ impl Color {
 
     pub fn pixel(&self) -> c_ulong {
         self.color.pixel
-    }
-
-    pub fn as_xcolor(&self) -> xlib::XColor {
-        self.color
     }
 
     pub fn as_xft_color(&self) -> xft::XftColor {

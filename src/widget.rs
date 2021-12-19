@@ -1,18 +1,9 @@
 use x11::xlib;
 
-use crate::app::RenderContext;
 use crate::geometrics::{Point, Rect, Size};
+use crate::text_renderer::TextRenderer;
 
 pub trait Widget {
-    fn mount(
-        &mut self,
-        display: *mut xlib::Display,
-        window: xlib::Window,
-        bounds: Rect,
-    );
-
-    fn unmount(&mut self, _display: *mut xlib::Display, _window: xlib::Window) {}
-
     fn render(
         &mut self,
         display: *mut xlib::Display,
@@ -27,10 +18,7 @@ pub trait Widget {
 #[derive(Debug)]
 pub struct WidgetPod<Widget> {
     pub widget: Widget,
-    bounds: Rect,
-    mounted: bool,
-    position_changed: bool,
-    size_changed: bool,
+    pub bounds: Rect,
 }
 
 impl<Widget: self::Widget> WidgetPod<Widget> {
@@ -38,22 +26,7 @@ impl<Widget: self::Widget> WidgetPod<Widget> {
         Self {
             widget,
             bounds: Rect::default(),
-            mounted: false,
-            position_changed: false,
-            size_changed: false,
         }
-    }
-
-    pub fn bounds(&self) -> Rect {
-        self.bounds
-    }
-
-    pub fn mount(&mut self, display: *mut xlib::Display, window: xlib::Window) {
-        self.widget.mount(display, window, self.bounds);
-    }
-
-    pub fn unmount(&mut self, display: *mut xlib::Display, window: xlib::Window) {
-        self.widget.unmount(display, window);
     }
 
     pub fn render(
@@ -62,11 +35,6 @@ impl<Widget: self::Widget> WidgetPod<Widget> {
         window: xlib::Window,
         context: &mut RenderContext,
     ) {
-        if !self.mounted {
-            self.widget.mount(display, window, self.bounds);
-            self.mounted = true;
-        }
-
         self.widget.render(display, window, self.bounds, context);
     }
 
@@ -76,7 +44,6 @@ impl<Widget: self::Widget> WidgetPod<Widget> {
         if self.bounds.width != size.width || self.bounds.height != size.height {
             self.bounds.width = size.width;
             self.bounds.height = size.height;
-            self.size_changed = true;
         }
 
         size
@@ -86,7 +53,10 @@ impl<Widget: self::Widget> WidgetPod<Widget> {
         if self.bounds.x != position.x || self.bounds.y != position.y {
             self.bounds.x = position.x;
             self.bounds.y = position.y;
-            self.position_changed = true;
         }
     }
+}
+
+pub struct RenderContext<'a> {
+    pub text_renderer: &'a mut TextRenderer,
 }
