@@ -1,12 +1,14 @@
 use std::os::raw::*;
 use x11::xlib;
 
+use log;
+
 pub extern "C" fn handle(display: *mut xlib::Display, error: *mut xlib::XErrorEvent) -> c_int {
     unsafe {
         let error_message = x11_get_error_message(display, (*error).error_code as i32);
         let request_message = x11_get_request_description(display, (*error).request_code as i32);
-        println!(
-            "XError: {} (request: {}, resource: {})",
+        log::warn!(
+            "X11 Error: {} (request: {}, resource: {})",
             error_message,
             request_message,
             (*error).resourceid

@@ -11,8 +11,6 @@ pub struct Config {
     pub font_stretch: FontStretch,
     pub normal_background: String,
     pub normal_foreground: String,
-    pub hover_background: String,
-    pub hover_foreground: String,
     pub selected_background: String,
     pub selected_foreground: String,
 }
@@ -36,8 +34,6 @@ impl Default for Config {
             font_stretch: FontStretch::Normal,
             normal_background: "#21272b".to_owned(),
             normal_foreground: "#e8eaeb".to_owned(),
-            hover_background: "#363f45".to_owned(),
-            hover_foreground: "#e8eaeb".to_owned(),
             selected_background: "#1c95e6".to_owned(),
             selected_foreground: "#e8eaeb".to_owned(),
         }

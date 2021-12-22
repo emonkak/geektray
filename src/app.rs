@@ -13,14 +13,14 @@ use x11::xlib;
 use crate::atoms::Atoms;
 use crate::config::Config;
 use crate::error_handler;
-use crate::event_loop::{run_event_loop, ControlFlow, Event};
-use crate::geometrics::Size;
+use crate::event_loop::{run_event_loop, ControlFlow, Event, X11Event};
+use crate::geometrics::{PhysicalPoint, PhysicalSize, Size};
 use crate::styles::Styles;
 use crate::text_renderer::TextRenderer;
 use crate::tray::Tray;
 use crate::tray_item::TrayItem;
 use crate::utils;
-use crate::widget::{RenderContext, WidgetPod};
+use crate::widget::{Command, RenderContext, WidgetPod};
 use crate::xembed::{XEmbedInfo, XEmbedMessage};
 
 const SYSTEM_TRAY_REQUEST_DOCK: i64 = 0;
@@ -34,7 +34,8 @@ pub struct App {
     styles: Rc<Styles>,
     tray: WidgetPod<Tray>,
     window: xlib::Window,
-    window_size: Size<u32>,
+    window_position: PhysicalPoint,
+    window_size: PhysicalSize,
     text_renderer: TextRenderer,
     previous_selection_owner: Option<xlib::Window>,
     old_error_handler:
@@ -61,7 +62,18 @@ impl App {
             width: config.window_width,
             height: 0.0,
         });
-        let window = unsafe { create_window(display, window_size) };
+        let window_position = unsafe {
+            let screen_number = xlib::XDefaultScreen(display);
+            let display_width = xlib::XDisplayWidth(display, screen_number) as f32;
+            let display_height = xlib::XDisplayHeight(display, screen_number) as f32;
+            PhysicalPoint {
+                x: (display_width / 2.0 - window_size.width / 2.0) as i32,
+                y: (display_height / 2.0 - window_size.height / 2.0) as i32,
+            }
+        };
+        let window_size = window_size.snap();
+
+        let window = unsafe { create_window(display, window_position, window_size) };
 
         Ok(Self {
             display,
@@ -69,7 +81,8 @@ impl App {
             styles,
             tray,
             window,
-            window_size: window_size.snap(),
+            window_position,
+            window_size,
             text_renderer: TextRenderer::new(),
             previous_selection_owner: None,
             old_error_handler,
@@ -91,26 +104,108 @@ impl App {
         }
 
         run_event_loop(self.display, &mut signal_fd, move |event| match event {
-            Event::X11(event) => match event.get_type() {
-                xlib::KeyRelease => self.on_key_release(xlib::XKeyEvent::from(event)),
-                xlib::ClientMessage => {
-                    self.on_client_message(xlib::XClientMessageEvent::from(event))
+            Event::X11Event(event) => {
+                let control_flow = match event {
+                    X11Event::ClientMessage(event) => self.on_client_message(event),
+                    X11Event::ConfigureNotify(event) => self.on_configure_notify(event),
+                    X11Event::DestroyNotify(event) => self.on_destroy_notify(event),
+                    X11Event::Expose(event) => self.on_expose(event),
+                    X11Event::KeyRelease(event) => self.on_key_release(event),
+                    X11Event::PropertyNotify(event) => self.on_property_notify(event),
+                    X11Event::ReparentNotify(event) => self.on_reparent_notify(event),
+                    _ => ControlFlow::Continue,
+                };
+                if event.window() == self.window {
+                    let command = self.tray.on_event(self.display, self.window, &event);
+                    self.handle_command(command);
                 }
-                xlib::DestroyNotify => {
-                    self.on_destroy_notify(xlib::XDestroyWindowEvent::from(event))
-                }
-                xlib::Expose => self.on_expose(xlib::XExposeEvent::from(event)),
-                xlib::PropertyNotify => self.on_property_notify(xlib::XPropertyEvent::from(event)),
-                xlib::ReparentNotify => self.on_reparent_notify(xlib::XReparentEvent::from(event)),
-                xlib::ConfigureNotify => {
-                    self.on_configure_notify(xlib::XConfigureEvent::from(event))
-                }
-                _ => ControlFlow::Continue,
-            },
+                control_flow
+            }
             Event::Signal(_) => ControlFlow::Break,
         })?;
 
         Ok(())
+    }
+
+    fn on_client_message(&mut self, event: xlib::XClientMessageEvent) -> ControlFlow {
+        if event.message_type == self.atoms.WM_PROTOCOLS && event.format == 32 {
+            let protocol = event.data.get_long(0) as xlib::Atom;
+            if protocol == self.atoms.WM_DELETE_WINDOW {
+                return ControlFlow::Break;
+            }
+        } else if event.message_type == self.atoms.NET_SYSTEM_TRAY_OPCODE {
+            let opcode = event.data.get_long(1);
+            if opcode == SYSTEM_TRAY_REQUEST_DOCK {
+                let icon_window = event.data.get_long(2) as xlib::Window;
+                if let Some(xembed_info) =
+                    unsafe { get_xembed_info(self.display, icon_window, &self.atoms) }
+                {
+                    let icon_title = unsafe {
+                        get_window_title(self.display, icon_window, &self.atoms).unwrap_or_default()
+                    };
+                    let tray_item = WidgetPod::new(TrayItem::new(
+                        icon_window,
+                        icon_title,
+                        xembed_info.is_mapped(),
+                        self.styles.clone(),
+                    ));
+                    self.tray.widget.add_tray_item(tray_item);
+                    unsafe {
+                        request_embedding(
+                            self.display,
+                            icon_window,
+                            self.window,
+                            &xembed_info,
+                            &self.atoms,
+                        );
+                        xlib::XFlush(self.display);
+                    }
+                    self.recaclulate_layout();
+                }
+            } else if opcode == SYSTEM_TRAY_BEGIN_MESSAGE {
+                // TODO:
+            } else if opcode == SYSTEM_TRAY_CANCEL_MESSAGE {
+                // TODO:
+            }
+        } else if event.message_type == self.atoms.NET_SYSTEM_TRAY_MESSAGE_DATA {
+            // TODO:
+        }
+        ControlFlow::Continue
+    }
+
+    fn on_configure_notify(&mut self, event: xlib::XConfigureEvent) -> ControlFlow {
+        if self.window == event.window {
+            self.window_position = PhysicalPoint {
+                x: event.x as i32,
+                y: event.y as i32,
+            };
+            let window_size = PhysicalSize {
+                width: event.width as u32,
+                height: event.height as u32,
+            };
+            if self.window_size != window_size {
+                self.window_size = window_size;
+                self.recaclulate_layout();
+            }
+        }
+        ControlFlow::Continue
+    }
+
+    fn on_destroy_notify(&mut self, event: xlib::XDestroyWindowEvent) -> ControlFlow {
+        if self.window == event.window {
+            return ControlFlow::Break;
+        }
+        if let Some(_) = self.tray.widget.remove_tray_item(event.window) {
+            self.recaclulate_layout();
+        }
+        ControlFlow::Continue
+    }
+
+    fn on_expose(&mut self, event: xlib::XExposeEvent) -> ControlFlow {
+        if self.window == event.window && event.count == 0 {
+            self.redraw();
+        }
+        ControlFlow::Continue
     }
 
     fn on_key_release(&mut self, event: xlib::XKeyEvent) -> ControlFlow {
@@ -129,11 +224,11 @@ impl App {
         match keysym as c_uint {
             keysym::XK_Down | keysym::XK_j => {
                 self.tray.widget.select_next();
-                self.redraw();
+                self.request_redraw();
             }
             keysym::XK_Up | keysym::XK_k => {
                 self.tray.widget.select_previous();
-                self.redraw();
+                self.request_redraw();
             }
             keysym::XK_Right | keysym::XK_l => {
                 self.tray
@@ -150,82 +245,21 @@ impl App {
         ControlFlow::Continue
     }
 
-    fn on_client_message(&mut self, event: xlib::XClientMessageEvent) -> ControlFlow {
-        if event.message_type == self.atoms.WM_PROTOCOLS && event.format == 32 {
-            let protocol = event.data.get_long(0) as xlib::Atom;
-            if protocol == self.atoms.WM_DELETE_WINDOW {
-                return ControlFlow::Break;
-            }
-        } else if event.message_type == self.atoms.NET_SYSTEM_TRAY_OPCODE {
-            let opcode = event.data.get_long(1);
-            if opcode == SYSTEM_TRAY_REQUEST_DOCK {
-                let icon_window = event.data.get_long(2) as xlib::Window;
-                if let Some(embed_info) =
-                    unsafe { get_xembed_info(self.display, icon_window, &self.atoms) }
-                {
-                    let icon_title = unsafe {
-                        get_window_title(self.display, icon_window, &self.atoms).unwrap_or_default()
-                    };
-                    let tray_item = WidgetPod::new(TrayItem::new(
-                        icon_window,
-                        icon_title,
-                        embed_info.is_mapped(),
-                        self.styles.clone(),
-                    ));
-                    self.tray.widget.add_item(tray_item);
-                    unsafe {
-                        request_embedding(
-                            self.display,
-                            icon_window,
-                            self.window,
-                            &embed_info,
-                            &self.atoms,
-                        );
-                    }
-                    self.recaclulate_layout();
-                }
-            } else if opcode == SYSTEM_TRAY_BEGIN_MESSAGE {
-                // TODO:
-            } else if opcode == SYSTEM_TRAY_CANCEL_MESSAGE {
-                // TODO:
-            }
-        } else if event.message_type == self.atoms.NET_SYSTEM_TRAY_MESSAGE_DATA {
-            // TODO:
-        }
-        ControlFlow::Continue
-    }
-
-    fn on_destroy_notify(&mut self, event: xlib::XDestroyWindowEvent) -> ControlFlow {
-        if self.window == event.window {
-            return ControlFlow::Break;
-        }
-        if let Some(_) = self.tray.widget.remove_item(event.window) {
-            self.recaclulate_layout();
-        }
-        ControlFlow::Continue
-    }
-
-    fn on_expose(&mut self, event: xlib::XExposeEvent) -> ControlFlow {
-        if event.count == 0 && self.window == event.window {
-            self.redraw();
-        }
-        ControlFlow::Continue
-    }
-
     fn on_property_notify(&mut self, event: xlib::XPropertyEvent) -> ControlFlow {
         if event.atom == self.atoms.XEMBED_INFO {
-            match unsafe { get_xembed_info(self.display, event.window, &self.atoms) } {
-                Some(embed_info) if embed_info.is_mapped() => {
-                    if let Some(tray_item) = self.tray.widget.find_item_mut(event.window) {
+            let xembed_info = unsafe { get_xembed_info(self.display, event.window, &self.atoms) };
+            match xembed_info {
+                Some(xembed_info) if xembed_info.is_mapped() => {
+                    if let Some(tray_item) = self.tray.widget.find_tray_item_mut(event.window) {
                         tray_item.widget.set_embedded(true);
                         unsafe {
                             begin_embedding(self.display, event.window, self.window);
                         }
-                        self.redraw();
+                        self.request_redraw();
                     }
                 }
                 _ => {
-                    if let Some(tray_item) = self.tray.widget.remove_item(event.window) {
+                    if let Some(tray_item) = self.tray.widget.remove_tray_item(event.window) {
                         if tray_item.widget.is_embedded() {
                             unsafe {
                                 release_embedding(self.display, event.window);
@@ -236,7 +270,7 @@ impl App {
                 }
             }
         } else if event.atom == self.atoms.NET_WM_NAME {
-            if let Some(tray_item) = self.tray.widget.find_item_mut(event.window) {
+            if let Some(tray_item) = self.tray.widget.find_tray_item_mut(event.window) {
                 let icon_title = unsafe {
                     get_window_title(self.display, event.window, &self.atoms).unwrap_or_default()
                 };
@@ -248,23 +282,16 @@ impl App {
 
     fn on_reparent_notify(&mut self, event: xlib::XReparentEvent) -> ControlFlow {
         if event.parent != self.window {
-            self.tray.widget.remove_item(event.window);
+            self.tray.widget.remove_tray_item(event.window);
         }
         ControlFlow::Continue
     }
 
-    fn on_configure_notify(&mut self, event: xlib::XConfigureEvent) -> ControlFlow {
-        if self.window == event.window {
-            let window_size = Size {
-                width: event.width as u32,
-                height: event.height as u32,
-            };
-            if self.window_size != window_size {
-                self.window_size = window_size;
-                self.recaclulate_layout();
-            }
+    fn request_redraw(&mut self) {
+        unsafe {
+            xlib::XClearArea(self.display, self.window, 0, 0, 0, 0, xlib::True);
+            xlib::XFlush(self.display);
         }
-        ControlFlow::Continue
     }
 
     fn recaclulate_layout(&mut self) {
@@ -272,7 +299,16 @@ impl App {
 
         unsafe {
             if self.window_size != size {
-                xlib::XResizeWindow(self.display, self.window, size.width, size.height);
+                let mut size_hints = mem::MaybeUninit::<xlib::XSizeHints>::zeroed().assume_init();
+                size_hints.flags = xlib::PMinSize | xlib::PMaxSize;
+                size_hints.min_height = size.height as c_int;
+                size_hints.max_height = size.height as c_int;
+                xlib::XSetWMSizeHints(self.display, self.window, &mut size_hints, xlib::XA_WM_NORMAL_HINTS);
+
+                let x = self.window_position.x;
+                let y = self.window_position.y - (((size.height as i32 - self.window_size.height as i32) / 2) as i32);
+
+                xlib::XMoveResizeWindow(self.display, self.window, x, y, size.width, size.height);
             } else {
                 // Request redraw
                 xlib::XClearArea(self.display, self.window, 0, 0, 0, 0, xlib::True);
@@ -289,11 +325,19 @@ impl App {
             xlib::XFlush(self.display);
         }
     }
+
+    fn handle_command(&mut self, command: Command) {
+        match command {
+            Command::None => {}
+            Command::RequestLayout => self.recaclulate_layout(),
+            Command::RequestRedraw => self.request_redraw(),
+        }
+    }
 }
 
 impl Drop for App {
     fn drop(&mut self) {
-        for tray_item in self.tray.widget.items() {
+        for tray_item in self.tray.widget.tray_items() {
             if tray_item.widget.is_embedded() {
                 unsafe {
                     release_embedding(self.display, tray_item.widget.icon_window());
@@ -318,16 +362,9 @@ impl Drop for App {
     }
 }
 
-unsafe fn create_window(display: *mut xlib::Display, window_size: Size) -> xlib::Window {
+unsafe fn create_window(display: *mut xlib::Display, position: PhysicalPoint, size: PhysicalSize) -> xlib::Window {
     let screen = xlib::XDefaultScreenOfDisplay(display);
-    let screen_number = xlib::XDefaultScreen(display);
     let root = xlib::XRootWindowOfScreen(screen);
-
-    let display_width = xlib::XDisplayWidth(display, screen_number) as f32;
-    let display_height = xlib::XDisplayHeight(display, screen_number) as f32;
-
-    let x = (display_width / 2.0 - window_size.width / 2.0) as i32;
-    let y = (display_height / 2.0 - window_size.height / 2.0) as i32;
 
     let mut attributes: xlib::XSetWindowAttributes = mem::MaybeUninit::uninit().assume_init();
     attributes.backing_store = xlib::WhenMapped;
@@ -336,10 +373,10 @@ unsafe fn create_window(display: *mut xlib::Display, window_size: Size) -> xlib:
     let window = xlib::XCreateWindow(
         display,
         root,
-        x,
-        y,
-        window_size.width as u32,
-        window_size.height as u32,
+        position.x as i32,
+        position.y as i32,
+        size.width,
+        size.height,
         0,
         xlib::CopyFromParent,
         xlib::InputOutput as u32,
@@ -352,11 +389,15 @@ unsafe fn create_window(display: *mut xlib::Display, window_size: Size) -> xlib:
         display,
         window,
         xlib::KeyPressMask
-            | xlib::KeyReleaseMask
-            | xlib::StructureNotifyMask
+            | xlib::ButtonPressMask
+            | xlib::ButtonReleaseMask
+            | xlib::EnterWindowMask
+            | xlib::ExposureMask
             | xlib::FocusChangeMask
+            | xlib::LeaveWindowMask
+            | xlib::KeyReleaseMask
             | xlib::PropertyChangeMask
-            | xlib::ExposureMask,
+            | xlib::StructureNotifyMask,
     );
 
     window
@@ -407,7 +448,7 @@ unsafe fn request_embedding(
     display: *mut xlib::Display,
     icon_window: xlib::Window,
     embedder_window: xlib::Window,
-    embed_info: &XEmbedInfo,
+    xembed_info: &XEmbedInfo,
     atoms: &Atoms,
 ) {
     send_embedded_notify(
@@ -415,10 +456,10 @@ unsafe fn request_embedding(
         atoms,
         icon_window,
         embedder_window,
-        embed_info.version,
+        xembed_info.version,
     );
 
-    if embed_info.is_mapped() {
+    if xembed_info.is_mapped() {
         xlib::XSelectInput(
             display,
             icon_window,

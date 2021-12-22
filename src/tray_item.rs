@@ -4,20 +4,21 @@ use std::rc::Rc;
 use x11::xft;
 use x11::xlib;
 
-use crate::geometrics::{Rect, Size};
+use crate::event_loop::X11Event;
+use crate::geometrics::{PhysicalPoint, Rect, Size};
 use crate::styles::Styles;
 use crate::text_renderer::{HorizontalAlign, Text, VerticalAlign};
 use crate::utils;
-use crate::widget::{RenderContext, Widget};
+use crate::widget::{Command, RenderContext, Widget};
 
 #[derive(Debug)]
 pub struct TrayItem {
     icon_window: xlib::Window,
     icon_title: String,
-    styles: Rc<Styles>,
     is_embedded: bool,
     is_selected: bool,
-    is_hovered: bool,
+    is_pressed: bool,
+    styles: Rc<Styles>,
 }
 
 impl TrayItem {
@@ -31,8 +32,8 @@ impl TrayItem {
             icon_window,
             icon_title,
             is_embedded,
-            is_hovered: false,
             is_selected: false,
+            is_pressed: false,
             styles,
         }
     }
@@ -54,47 +55,45 @@ impl TrayItem {
         display: *mut xlib::Display,
         button: c_uint,
         button_mask: c_uint,
-        x: c_int,
-        y: c_int,
-    ) -> bool {
+    ) {
+        let center = (self.styles.icon_size / 2.0) as i32;
+
         unsafe {
             let screen = xlib::XDefaultScreenOfDisplay(display);
             let root = xlib::XRootWindowOfScreen(screen);
-            let (original_x, original_y) = utils::get_pointer_position(display, root);
+            let (cursor_x, cursor_y) = utils::get_pointer_position(display, root);
 
-            xlib::XWarpPointer(display, 0, self.icon_window, 0, 0, 0, 0, x, y);
+            xlib::XWarpPointer(display, 0, self.icon_window, 0, 0, 0, 0, center, center);
 
-            let result = utils::emit_button_event(
+            let result = utils::send_button_event(
                 display,
                 self.icon_window,
                 xlib::ButtonPress,
                 button,
                 button_mask,
-                x,
-                y,
+                center,
+                center,
             );
             if !result {
-                return false;
+                return;
             }
 
-            let result = utils::emit_button_event(
+            let result = utils::send_button_event(
                 display,
                 self.icon_window,
                 xlib::ButtonRelease,
                 button,
                 button_mask,
-                x,
-                y,
+                center,
+                center,
             );
             if !result {
-                return false;
+                return;
             }
 
-            xlib::XWarpPointer(display, 0, root, 0, 0, 0, 0, original_x, original_y);
+            xlib::XWarpPointer(display, 0, root, 0, 0, 0, 0, cursor_x, cursor_y);
             xlib::XFlush(display);
         }
-
-        true
     }
 
     pub fn set_embedded(&mut self, value: bool) {
@@ -135,14 +134,12 @@ impl Widget for TrayItem {
             if self.is_selected {
                 background_color = &self.styles.selected_background;
                 foreground_color = &self.styles.selected_foreground;
-            } else if self.is_hovered {
-                background_color = &self.styles.hover_background;
-                foreground_color = &self.styles.hover_foreground;
             } else {
                 background_color = &self.styles.normal_background;
                 foreground_color = &self.styles.normal_foreground;
             }
 
+            xlib::XSetSubwindowMode(display, gc, xlib::IncludeInferiors);
             xlib::XSetForeground(display, gc, background_color.pixel());
             xlib::XFillRectangle(
                 display,
@@ -166,9 +163,9 @@ impl Widget for TrayItem {
                     vertical_align: VerticalAlign::Middle,
                 },
                 Rect {
-                    x: self.styles.item_width(),
+                    x: self.styles.icon_size + self.styles.padding * 2.0,
                     y: 0.0,
-                    width: bounds.width - self.styles.item_height(),
+                    width: bounds.width - (self.styles.icon_size + self.styles.padding * 2.0),
                     height: bounds.height,
                 },
             );
@@ -192,6 +189,9 @@ impl Widget for TrayItem {
 
             if self.is_embedded {
                 xlib::XSetWindowBackground(display, self.icon_window, background_color.pixel());
+
+                xlib::XClearArea(display, self.icon_window, 0, 0, 0, 0, xlib::True);
+                xlib::XMapRaised(display, self.icon_window);
                 xlib::XMoveResizeWindow(
                     display,
                     self.icon_window,
@@ -200,8 +200,6 @@ impl Widget for TrayItem {
                     self.styles.icon_size as _,
                     self.styles.icon_size as _,
                 );
-                xlib::XMapRaised(display, self.icon_window);
-                xlib::XClearArea(display, self.icon_window, 0, 0, 0, 0, xlib::True);
             }
         }
     }
@@ -211,5 +209,47 @@ impl Widget for TrayItem {
             width: container_size.width as f32,
             height: self.styles.item_height(),
         }
+    }
+
+    fn on_event(
+        &mut self,
+        display: *mut xlib::Display,
+        _window: xlib::Window,
+        event: &X11Event,
+        bounds: Rect,
+    ) -> Command {
+        match event {
+            X11Event::ButtonPress(event) => {
+                let pointer_position = PhysicalPoint {
+                    x: event.x as _,
+                    y: event.y as _,
+                };
+                if bounds.snap().contains(pointer_position) {
+                    self.is_pressed = true;
+                }
+            }
+            X11Event::ButtonRelease(event) => {
+                let pointer_position = PhysicalPoint {
+                    x: event.x as _,
+                    y: event.y as _,
+                };
+                if self.is_pressed {
+                    self.is_pressed = false;
+                    if bounds.snap().contains(pointer_position) {
+                        self.emit_click(
+                            display,
+                            event.button,
+                            event.state,
+                        );
+                    }
+                }
+            }
+            X11Event::LeaveNotify(_) => {
+                self.is_pressed = false;
+            }
+            _ => {}
+        }
+
+        Command::None
     }
 }

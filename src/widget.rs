@@ -1,5 +1,6 @@
 use x11::xlib;
 
+use crate::event_loop::X11Event;
 use crate::geometrics::{Point, Rect, Size};
 use crate::text_renderer::TextRenderer;
 
@@ -13,6 +14,16 @@ pub trait Widget {
     );
 
     fn layout(&mut self, container_size: Size) -> Size;
+
+    fn on_event(
+        &mut self,
+        _display: *mut xlib::Display,
+        _window: xlib::Window,
+        _event: &X11Event,
+        _bounds: Rect,
+    ) -> Command {
+        Command::None
+    }
 }
 
 #[derive(Debug)]
@@ -55,8 +66,36 @@ impl<Widget: self::Widget> WidgetPod<Widget> {
             self.bounds.y = position.y;
         }
     }
+
+    pub fn on_event(
+        &mut self,
+        display: *mut xlib::Display,
+        window: xlib::Window,
+        event: &X11Event,
+    ) -> Command {
+        self.widget.on_event(display, window, event, self.bounds)
+    }
 }
 
+#[repr(usize)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+pub enum Command {
+    None,
+    RequestRedraw,
+    RequestLayout,
+}
+
+impl Command {
+    pub fn compose(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::None, x) | (x, Self::None) => x,
+            (Self::RequestRedraw, _) | (_, Self::RequestRedraw) => Self::RequestRedraw,
+            (Self::RequestLayout, _) => Self::RequestLayout,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct RenderContext<'a> {
     pub text_renderer: &'a mut TextRenderer,
 }

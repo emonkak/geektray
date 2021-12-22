@@ -47,6 +47,46 @@ pub unsafe fn send_client_message(
 }
 
 #[inline]
+pub unsafe fn send_button_event(
+    display: *mut xlib::Display,
+    window: xlib::Window,
+    event_type: c_int,
+    button: c_uint,
+    button_mask: c_uint,
+    x: c_int,
+    y: c_int,
+) -> bool {
+    let screen = xlib::XDefaultScreen(display);
+    let root = xlib::XRootWindow(display, screen);
+
+    let mut event = xlib::XEvent::from(xlib::XButtonEvent {
+        type_: event_type,
+        serial: 0,
+        send_event: xlib::True,
+        display,
+        window,
+        root,
+        subwindow: 0,
+        time: xlib::CurrentTime,
+        x,
+        y,
+        x_root: 0,
+        y_root: 0,
+        state: button_mask,
+        button,
+        same_screen: xlib::True,
+    });
+
+    xlib::XSendEvent(
+        display,
+        xlib::PointerWindow as xlib::Window,
+        xlib::True,
+        xlib::NoEventMask,
+        &mut event,
+    ) == xlib::True
+}
+
+#[inline]
 pub unsafe fn get_window_property<T: Sized, const N: usize>(
     display: *mut xlib::Display,
     window: xlib::Window,
@@ -126,44 +166,4 @@ pub unsafe fn get_pointer_position(
     );
 
     (x, y)
-}
-
-#[inline]
-pub unsafe fn emit_button_event(
-    display: *mut xlib::Display,
-    window: xlib::Window,
-    event_type: c_int,
-    button: c_uint,
-    button_mask: c_uint,
-    x: c_int,
-    y: c_int,
-) -> bool {
-    let screen = xlib::XDefaultScreen(display);
-    let root = xlib::XRootWindow(display, screen);
-
-    let mut event = xlib::XEvent::from(xlib::XButtonEvent {
-        type_: event_type,
-        serial: 0,
-        send_event: xlib::True,
-        display,
-        window,
-        root,
-        subwindow: 0,
-        time: xlib::CurrentTime,
-        x,
-        y,
-        x_root: 0,
-        y_root: 0,
-        state: button_mask,
-        button,
-        same_screen: xlib::True,
-    });
-
-    xlib::XSendEvent(
-        display,
-        xlib::PointerWindow as xlib::Window,
-        xlib::True,
-        xlib::NoEventMask,
-        &mut event,
-    ) == xlib::True
 }

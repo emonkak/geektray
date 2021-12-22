@@ -13,8 +13,6 @@ pub struct Styles {
     pub font_set: FontSet,
     pub normal_background: Color,
     pub normal_foreground: Color,
-    pub hover_background: Color,
-    pub hover_foreground: Color,
     pub selected_background: Color,
     pub selected_foreground: Color,
 }
@@ -43,14 +41,6 @@ impl Styles {
                 "Failed to parse `normal_foreground`: {:?}",
                 config.normal_foreground
             ))?,
-            hover_background: Color::parse(display, &config.normal_background).ok_or(format!(
-                "Failed to parse `hover_background`: {:?}",
-                config.hover_background
-            ))?,
-            hover_foreground: Color::parse(display, &config.normal_foreground).ok_or(format!(
-                "Failed to parse `hover_foreground`: {:?}",
-                config.hover_foreground
-            ))?,
             selected_background: Color::parse(display, &config.selected_background).ok_or(
                 format!(
                     "Failed to parse `selected_background`: {:?}",
@@ -64,10 +54,6 @@ impl Styles {
                 ),
             )?,
         })
-    }
-
-    pub fn item_width(&self) -> f32 {
-        self.icon_size + self.padding * 2.0
     }
 
     pub fn item_height(&self) -> f32 {
