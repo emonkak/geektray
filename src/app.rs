@@ -451,11 +451,12 @@ unsafe fn request_embedding(
     xembed_info: &XEmbedInfo,
     atoms: &Atoms,
 ) {
-    send_embedded_notify(
+    send_xembed_message(
         display,
         atoms,
         icon_window,
         embedder_window,
+        XEmbedMessage::EmbeddedNotify,
         xembed_info.version,
     );
 
@@ -493,19 +494,20 @@ unsafe fn release_embedding(display: *mut xlib::Display, icon_window: xlib::Wind
     xlib::XUnmapWindow(display, icon_window);
 }
 
-unsafe fn send_embedded_notify(
+unsafe fn send_xembed_message(
     display: *mut xlib::Display,
     atoms: &Atoms,
-    icon_window: xlib::Window,
+    window: xlib::Window,
     embedder_window: xlib::Window,
+    xembed_message: XEmbedMessage,
     xembed_version: u64,
 ) {
     let mut data = xlib::ClientMessageData::new();
     data.set_long(0, xlib::CurrentTime as c_long);
-    data.set_long(1, XEmbedMessage::EmbeddedNotify as c_long);
+    data.set_long(1, xembed_message as c_long);
     data.set_long(2, embedder_window as c_long);
     data.set_long(3, xembed_version as c_long);
-    utils::send_client_message(display, icon_window, icon_window, atoms.XEMBED, data);
+    utils::send_client_message(display, window, window, atoms.XEMBED, data);
 }
 
 unsafe fn get_window_title(

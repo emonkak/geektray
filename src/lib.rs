@@ -14,6 +14,8 @@ mod tray;
 mod tray_item;
 mod utils;
 mod widget;
+
+#[allow(dead_code)]
 mod xembed;
 
 #[allow(dead_code)]

@@ -65,14 +65,31 @@ impl TrayItem {
 
             xlib::XWarpPointer(display, 0, self.icon_window, 0, 0, 0, 0, center, center);
 
+            let mut x_root = 0;
+            let mut y_root = 0;
+            let mut _subwindow = 0;
+
+            xlib::XTranslateCoordinates(
+                display,
+                self.icon_window,
+                root,
+                center,
+                center,
+                &mut x_root,
+                &mut y_root,
+                &mut _subwindow
+            );
+
             let result = utils::send_button_event(
                 display,
                 self.icon_window,
-                xlib::ButtonPress,
+                true,
                 button,
                 button_mask,
                 center,
                 center,
+                x_root,
+                y_root,
             );
             if !result {
                 return;
@@ -81,11 +98,13 @@ impl TrayItem {
             let result = utils::send_button_event(
                 display,
                 self.icon_window,
-                xlib::ButtonRelease,
+                false,
                 button,
                 button_mask,
                 center,
                 center,
+                x_root,
+                y_root,
             );
             if !result {
                 return;

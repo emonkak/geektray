@@ -26,7 +26,7 @@ pub unsafe fn send_client_message(
     message_type: xlib::Atom,
     data: xlib::ClientMessageData,
 ) -> bool {
-    let mut client_message_event = xlib::XEvent::from(xlib::XClientMessageEvent {
+    let client_message_event = xlib::XClientMessageEvent {
         type_: xlib::ClientMessage,
         serial: 0,
         send_event: xlib::True,
@@ -35,14 +35,14 @@ pub unsafe fn send_client_message(
         message_type,
         format: 32,
         data,
-    });
+    };
 
     xlib::XSendEvent(
         display,
         destination,
         xlib::False,
         0xffffff,
-        &mut client_message_event,
+        &mut client_message_event.into(),
     ) == xlib::True
 }
 
@@ -50,16 +50,19 @@ pub unsafe fn send_client_message(
 pub unsafe fn send_button_event(
     display: *mut xlib::Display,
     window: xlib::Window,
-    event_type: c_int,
+    is_pressed: bool,
     button: c_uint,
     button_mask: c_uint,
     x: c_int,
     y: c_int,
+    x_root: c_int,
+    y_root: c_int,
 ) -> bool {
     let screen = xlib::XDefaultScreen(display);
     let root = xlib::XRootWindow(display, screen);
 
-    let mut event = xlib::XEvent::from(xlib::XButtonEvent {
+    let event_type = if is_pressed { xlib::ButtonPress } else { xlib::ButtonRelease };
+    let event = xlib::XButtonEvent {
         type_: event_type,
         serial: 0,
         send_event: xlib::True,
@@ -70,19 +73,19 @@ pub unsafe fn send_button_event(
         time: xlib::CurrentTime,
         x,
         y,
-        x_root: 0,
-        y_root: 0,
+        x_root,
+        y_root,
         state: button_mask,
         button,
         same_screen: xlib::True,
-    });
+    };
 
     xlib::XSendEvent(
         display,
-        xlib::PointerWindow as xlib::Window,
+        window,
         xlib::True,
         xlib::NoEventMask,
-        &mut event,
+        &mut event.into(),
     ) == xlib::True
 }
 
