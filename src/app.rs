@@ -369,8 +369,18 @@ unsafe fn create_window(display: *mut xlib::Display, position: PhysicalPoint, si
     let mut attributes: xlib::XSetWindowAttributes = mem::MaybeUninit::uninit().assume_init();
     attributes.backing_store = xlib::WhenMapped;
     attributes.bit_gravity = xlib::CenterGravity;
+    attributes.event_mask = xlib::KeyPressMask
+        | xlib::ButtonPressMask
+        | xlib::ButtonReleaseMask
+        | xlib::EnterWindowMask
+        | xlib::ExposureMask
+        | xlib::FocusChangeMask
+        | xlib::LeaveWindowMask
+        | xlib::KeyReleaseMask
+        | xlib::PropertyChangeMask
+        | xlib::StructureNotifyMask;
 
-    let window = xlib::XCreateWindow(
+    xlib::XCreateWindow(
         display,
         root,
         position.x as i32,
@@ -381,26 +391,9 @@ unsafe fn create_window(display: *mut xlib::Display, position: PhysicalPoint, si
         xlib::CopyFromParent,
         xlib::InputOutput as u32,
         xlib::CopyFromParent as *mut xlib::Visual,
-        xlib::CWBackingStore | xlib::CWBitGravity,
+        xlib::CWBackingStore | xlib::CWBitGravity | xlib::CWEventMask,
         &mut attributes,
-    );
-
-    xlib::XSelectInput(
-        display,
-        window,
-        xlib::KeyPressMask
-            | xlib::ButtonPressMask
-            | xlib::ButtonReleaseMask
-            | xlib::EnterWindowMask
-            | xlib::ExposureMask
-            | xlib::FocusChangeMask
-            | xlib::LeaveWindowMask
-            | xlib::KeyReleaseMask
-            | xlib::PropertyChangeMask
-            | xlib::StructureNotifyMask,
-    );
-
-    window
+    )
 }
 
 unsafe fn acquire_tray_selection(
