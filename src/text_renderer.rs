@@ -54,9 +54,9 @@ impl TextRenderer {
 
         let mut x_offset = 0.0;
 
-        for chunk in ChunkIter::new(text.content, &text.font_set) {
+        for text_chunk in TextChunkIter::new(text.content, &text.font_set) {
             let font = if let Some(font) =
-                self.open_font(display, chunk.font, text.font_size, text.font_set.pattern)
+                self.open_font(display, text_chunk.font, text.font_size, text.font_set.pattern)
             {
                 font
             } else {
@@ -68,8 +68,8 @@ impl TextRenderer {
                 xft::XftTextExtentsUtf8(
                     display,
                     font,
-                    chunk.text.as_ptr(),
-                    chunk.text.len() as i32,
+                    text_chunk.content.as_ptr(),
+                    text_chunk.content.len() as i32,
                     extents.as_mut_ptr(),
                 );
                 extents.assume_init()
@@ -89,8 +89,8 @@ impl TextRenderer {
                     font,
                     (origin_x + x_offset + extents.x as f32) as i32,
                     (origin_y + y_adjustment + extents.height as f32) as i32,
-                    chunk.text.as_ptr(),
-                    chunk.text.len() as i32,
+                    text_chunk.content.as_ptr(),
+                    text_chunk.content.len() as i32,
                 );
             }
 
@@ -104,9 +104,9 @@ impl TextRenderer {
             height: 0.0,
         };
 
-        for chunk in ChunkIter::new(text.content, &text.font_set) {
+        for text_chunk in TextChunkIter::new(text.content, &text.font_set) {
             let font = if let Some(font) =
-                self.open_font(display, chunk.font, text.font_size, text.font_set.pattern)
+                self.open_font(display, text_chunk.font, text.font_size, text.font_set.pattern)
             {
                 font
             } else {
@@ -118,8 +118,8 @@ impl TextRenderer {
                 xft::XftTextExtentsUtf8(
                     display,
                     font,
-                    chunk.text.as_ptr(),
-                    chunk.text.len() as i32,
+                    text_chunk.content.as_ptr(),
+                    text_chunk.content.len() as i32,
                     extents.as_mut_ptr(),
                 );
                 extents.assume_init()
@@ -311,42 +311,42 @@ pub enum HorizontalAlign {
     Right,
 }
 
-struct Chunk<'a> {
-    text: &'a str,
+struct TextChunk<'a> {
+    content: &'a str,
     font: *mut fc::FcPattern,
 }
 
-struct ChunkIter<'a> {
+struct TextChunkIter<'a> {
     fontset: &'a FontSet,
     current_font: Option<*mut fc::FcPattern>,
     current_index: usize,
-    inner_iter: CharIndices<'a>,
+    char_indices: CharIndices<'a>,
     source: &'a str,
 }
 
-impl<'a> ChunkIter<'a> {
+impl<'a> TextChunkIter<'a> {
     fn new(source: &'a str, fontset: &'a FontSet) -> Self {
         Self {
             fontset,
             current_font: None,
             current_index: 0,
-            inner_iter: source.char_indices(),
+            char_indices: source.char_indices(),
             source,
         }
     }
 }
 
-impl<'a> Iterator for ChunkIter<'a> {
-    type Item = Chunk<'a>;
+impl<'a> Iterator for TextChunkIter<'a> {
+    type Item = TextChunk<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some((i, c)) = self.inner_iter.next() {
+        while let Some((i, c)) = self.char_indices.next() {
             let matched_font = self.fontset.match_font(c);
             if i == 0 {
                 self.current_font = matched_font;
             } else if self.current_font != matched_font {
-                let result = Some(Chunk {
-                    text: &self.source[self.current_index..i],
+                let result = Some(TextChunk {
+                    content: &self.source[self.current_index..i],
                     font: self.current_font.unwrap_or(self.fontset.default_font()),
                 });
                 self.current_font = matched_font;
@@ -356,8 +356,8 @@ impl<'a> Iterator for ChunkIter<'a> {
         }
 
         if self.current_index < self.source.len() {
-            let result = Some(Chunk {
-                text: &self.source[self.current_index..],
+            let result = Some(TextChunk {
+                content: &self.source[self.current_index..],
                 font: self.current_font.unwrap_or(self.fontset.default_font()),
             });
             self.current_font = None;
