@@ -4,9 +4,10 @@ use x11::xlib;
 
 use crate::event_loop::X11Event;
 use crate::geometrics::{Point, Rect, Size};
+use crate::render_context::RenderContext;
 use crate::styles::Styles;
 use crate::tray_item::TrayItem;
-use crate::widget::{Command, RenderContext, Widget, WidgetPod};
+use crate::widget::{Command, Widget, WidgetPod};
 
 #[derive(Debug)]
 pub struct Tray {
@@ -53,7 +54,10 @@ impl Tray {
         }
     }
 
-    pub fn find_tray_item_mut(&mut self, icon_window: xlib::Window) -> Option<&mut WidgetPod<TrayItem>> {
+    pub fn find_tray_item_mut(
+        &mut self,
+        icon_window: xlib::Window,
+    ) -> Option<&mut WidgetPod<TrayItem>> {
         self.tray_items
             .iter_mut()
             .find(|widget_pod| widget_pod.widget.icon_window() == icon_window)
@@ -115,19 +119,25 @@ impl Tray {
 }
 
 impl Widget for Tray {
-    fn render(
-        &mut self,
-        display: *mut xlib::Display,
-        window: xlib::Window,
-        _bounds: Rect,
-        context: &mut RenderContext,
-    ) {
+    fn render(&mut self, _bounds: Rect, context: &mut RenderContext) {
         unsafe {
-            xlib::XSetWindowBackground(display, window, self.styles.normal_background.pixel());
-            xlib::XClearWindow(display, window);
+            xlib::XSetForeground(
+                context.display,
+                context.gc,
+                self.styles.normal_background.pixel(),
+            );
+            xlib::XFillRectangle(
+                context.display,
+                context.pixmap,
+                context.gc,
+                0,
+                0,
+                context.viewport.width,
+                context.viewport.height,
+            );
 
             for tray_item in &mut self.tray_items {
-                tray_item.render(display, window, context);
+                tray_item.render(context);
             }
         }
     }

@@ -1,5 +1,5 @@
-extern crate keytray;
 extern crate env_logger;
+extern crate keytray;
 
 use std::env;
 

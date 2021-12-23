@@ -15,12 +15,13 @@ use crate::config::Config;
 use crate::error_handler;
 use crate::event_loop::{run_event_loop, ControlFlow, Event, X11Event};
 use crate::geometrics::{PhysicalPoint, PhysicalSize, Size};
+use crate::render_context::RenderContext;
 use crate::styles::Styles;
 use crate::text_renderer::TextRenderer;
 use crate::tray::Tray;
 use crate::tray_item::TrayItem;
 use crate::utils;
-use crate::widget::{Command, RenderContext, WidgetPod};
+use crate::widget::{Command, WidgetPod};
 use crate::xembed::{XEmbedInfo, XEmbedMessage};
 
 const SYSTEM_TRAY_REQUEST_DOCK: i64 = 0;
@@ -302,10 +303,16 @@ impl App {
                 size_hints.flags = xlib::PMinSize | xlib::PMaxSize;
                 size_hints.min_height = size.height as c_int;
                 size_hints.max_height = size.height as c_int;
-                xlib::XSetWMSizeHints(self.display, self.window, &mut size_hints, xlib::XA_WM_NORMAL_HINTS);
+                xlib::XSetWMSizeHints(
+                    self.display,
+                    self.window,
+                    &mut size_hints,
+                    xlib::XA_WM_NORMAL_HINTS,
+                );
 
                 let x = self.window_position.x;
-                let y = self.window_position.y - (((size.height as i32 - self.window_size.height as i32) / 2) as i32);
+                let y = self.window_position.y
+                    - (((size.height as i32 - self.window_size.height as i32) / 2) as i32);
 
                 xlib::XMoveResizeWindow(self.display, self.window, x, y, size.width, size.height);
             } else {
@@ -316,13 +323,16 @@ impl App {
     }
 
     fn redraw(&mut self) {
-        let mut context = RenderContext {
-            text_renderer: &mut self.text_renderer,
-        };
-        self.tray.render(self.display, self.window, &mut context);
-        unsafe {
-            xlib::XFlush(self.display);
-        }
+        let mut context = RenderContext::new(
+            self.display,
+            self.window,
+            self.window_size,
+            &mut self.text_renderer,
+        );
+
+        self.tray.render(&mut context);
+
+        context.commit();
     }
 
     fn handle_command(&mut self, command: Command) {
@@ -361,7 +371,11 @@ impl Drop for App {
     }
 }
 
-unsafe fn create_window(display: *mut xlib::Display, position: PhysicalPoint, size: PhysicalSize) -> xlib::Window {
+unsafe fn create_window(
+    display: *mut xlib::Display,
+    position: PhysicalPoint,
+    size: PhysicalSize,
+) -> xlib::Window {
     let screen = xlib::XDefaultScreenOfDisplay(display);
     let root = xlib::XRootWindowOfScreen(screen);
 

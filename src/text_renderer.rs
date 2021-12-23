@@ -55,9 +55,12 @@ impl TextRenderer {
         let mut x_offset = 0.0;
 
         for text_chunk in TextChunkIter::new(text.content, &text.font_set) {
-            let font = if let Some(font) =
-                self.open_font(display, text_chunk.font, text.font_size, text.font_set.pattern)
-            {
+            let font = if let Some(font) = self.open_font(
+                display,
+                text_chunk.font,
+                text.font_size,
+                text.font_set.pattern,
+            ) {
                 font
             } else {
                 continue;
@@ -105,9 +108,12 @@ impl TextRenderer {
         };
 
         for text_chunk in TextChunkIter::new(text.content, &text.font_set) {
-            let font = if let Some(font) =
-                self.open_font(display, text_chunk.font, text.font_size, text.font_set.pattern)
-            {
+            let font = if let Some(font) = self.open_font(
+                display,
+                text_chunk.font,
+                text.font_size,
+                text.font_set.pattern,
+            ) {
                 font
             } else {
                 continue;

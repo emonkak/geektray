@@ -113,7 +113,7 @@ pub unsafe fn emit_click_event(
         y,
         &mut x_root,
         &mut y_root,
-        &mut _subwindow
+        &mut _subwindow,
     );
 
     xlib::XWarpPointer(display, 0, root, 0, 0, 0, 0, x_root, y_root);

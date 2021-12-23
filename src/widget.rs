@@ -2,16 +2,10 @@ use x11::xlib;
 
 use crate::event_loop::X11Event;
 use crate::geometrics::{Point, Rect, Size};
-use crate::text_renderer::TextRenderer;
+use crate::render_context::RenderContext;
 
 pub trait Widget {
-    fn render(
-        &mut self,
-        display: *mut xlib::Display,
-        window: xlib::Window,
-        bounds: Rect,
-        context: &mut RenderContext,
-    );
+    fn render(&mut self, bounds: Rect, context: &mut RenderContext);
 
     fn layout(&mut self, container_size: Size) -> Size;
 
@@ -40,13 +34,8 @@ impl<Widget: self::Widget> WidgetPod<Widget> {
         }
     }
 
-    pub fn render(
-        &mut self,
-        display: *mut xlib::Display,
-        window: xlib::Window,
-        context: &mut RenderContext,
-    ) {
-        self.widget.render(display, window, self.bounds, context);
+    pub fn render(&mut self, context: &mut RenderContext) {
+        self.widget.render(self.bounds, context);
     }
 
     pub fn layout(&mut self, container_size: Size) -> Size {
@@ -93,9 +82,4 @@ impl Command {
             (Self::RequestLayout, _) => Self::RequestLayout,
         }
     }
-}
-
-#[derive(Debug)]
-pub struct RenderContext<'a> {
-    pub text_renderer: &'a mut TextRenderer,
 }

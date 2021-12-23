@@ -1,16 +1,15 @@
 use std::mem;
 use std::os::raw::*;
-use std::ptr;
 use std::rc::Rc;
-use x11::xft;
 use x11::xlib;
 
 use crate::event_loop::X11Event;
 use crate::geometrics::{PhysicalPoint, Rect, Size};
+use crate::render_context::RenderContext;
 use crate::styles::Styles;
 use crate::text_renderer::{HorizontalAlign, Text, VerticalAlign};
 use crate::utils;
-use crate::widget::{Command, RenderContext, Widget};
+use crate::widget::{Command, Widget};
 
 #[derive(Debug)]
 pub struct TrayItem {
@@ -51,16 +50,18 @@ impl TrayItem {
         self.icon_title = icon_title;
     }
 
-    pub fn emit_click(
-        &self,
-        display: *mut xlib::Display,
-        button: c_uint,
-        button_mask: c_uint,
-    ) {
+    pub fn emit_click(&self, display: *mut xlib::Display, button: c_uint, button_mask: c_uint) {
         let center = (self.styles.icon_size / 2.0) as i32;
 
         unsafe {
-            utils::emit_click_event(display, self.icon_window, button, button_mask, center, center);
+            utils::emit_click_event(
+                display,
+                self.icon_window,
+                button,
+                button_mask,
+                center,
+                center,
+            );
         }
     }
 
@@ -74,102 +75,67 @@ impl TrayItem {
 }
 
 impl Widget for TrayItem {
-    fn render(
-        &mut self,
-        display: *mut xlib::Display,
-        window: xlib::Window,
-        bounds: Rect,
-        context: &mut RenderContext,
-    ) {
+    fn render(&mut self, bounds: Rect, context: &mut RenderContext) {
+        let (bg_color, fg_color) = if self.is_selected {
+            (
+                &self.styles.selected_background,
+                &self.styles.selected_foreground,
+            )
+        } else {
+            (
+                &self.styles.normal_background,
+                &self.styles.normal_foreground,
+            )
+        };
+
         unsafe {
-            let screen_number = xlib::XDefaultScreen(display);
-            let visual = xlib::XDefaultVisual(display, screen_number);
-            let colormap = xlib::XDefaultColormap(display, screen_number);
-            let depth = xlib::XDefaultDepth(display, screen_number);
-            let pixmap = xlib::XCreatePixmap(
-                display,
-                window,
-                bounds.width as _,
-                bounds.height as _,
-                depth as _,
-            );
-            let gc = xlib::XCreateGC(display, pixmap, 0, ptr::null_mut());
-            let draw = xft::XftDrawCreate(display, pixmap, visual, colormap);
-
-            let background_color;
-            let foreground_color;
-
-            if self.is_selected {
-                background_color = &self.styles.selected_background;
-                foreground_color = &self.styles.selected_foreground;
-            } else {
-                background_color = &self.styles.normal_background;
-                foreground_color = &self.styles.normal_foreground;
-            }
-
-            xlib::XSetSubwindowMode(display, gc, xlib::IncludeInferiors);
-            xlib::XSetForeground(display, gc, background_color.pixel());
+            xlib::XSetSubwindowMode(context.display, context.gc, xlib::IncludeInferiors);
+            xlib::XSetForeground(context.display, context.gc, bg_color.pixel());
             xlib::XFillRectangle(
-                display,
-                pixmap,
-                gc,
-                0,
-                0,
+                context.display,
+                context.pixmap,
+                context.gc,
+                bounds.x as _,
+                bounds.y as _,
                 bounds.width as _,
                 bounds.height as _,
             );
 
             context.text_renderer.render_single_line(
-                display,
-                draw,
+                context.display,
+                context.xft_draw,
                 &Text {
                     content: &self.icon_title,
-                    color: foreground_color,
+                    color: fg_color,
                     font_size: self.styles.font_size,
                     font_set: &self.styles.font_set,
                     horizontal_align: HorizontalAlign::Left,
                     vertical_align: VerticalAlign::Middle,
                 },
                 Rect {
-                    x: self.styles.icon_size + self.styles.padding * 2.0,
-                    y: 0.0,
+                    x: bounds.x + (self.styles.icon_size + self.styles.padding * 2.0),
+                    y: bounds.y,
                     width: bounds.width - (self.styles.icon_size + self.styles.padding * 2.0),
                     height: bounds.height,
                 },
             );
 
-            xlib::XCopyArea(
-                display,
-                pixmap,
-                window,
-                gc,
-                0,
-                0,
-                bounds.width as _,
-                bounds.height as _,
-                bounds.x as _,
-                bounds.y as _,
-            );
-
-            xlib::XFreeGC(display, gc);
-            xlib::XFreePixmap(display, pixmap);
-            xft::XftDrawDestroy(draw);
-
             if self.is_embedded {
-                let mut attributes: xlib::XSetWindowAttributes = mem::MaybeUninit::uninit().assume_init();
+                let mut attributes: xlib::XSetWindowAttributes =
+                    mem::MaybeUninit::uninit().assume_init();
                 attributes.background_pixmap = xlib::CopyFromParent as _;
 
                 xlib::XChangeWindowAttributes(
-                    display,
+                    context.display,
                     self.icon_window,
                     xlib::CWBackPixmap,
                     &mut attributes,
                 );
-                xlib::XClearArea(display, self.icon_window, 0, 0, 0, 0, xlib::True);
+                xlib::XClearArea(context.display, self.icon_window, 0, 0, 0, 0, xlib::True);
 
-                xlib::XMapRaised(display, self.icon_window);
+                xlib::XMapRaised(context.display, self.icon_window);
                 xlib::XMoveResizeWindow(
-                    display,
+                    context.display,
                     self.icon_window,
                     (bounds.x + self.styles.padding) as _,
                     (bounds.y + self.styles.padding) as _,
@@ -212,11 +178,7 @@ impl Widget for TrayItem {
                 if self.is_pressed {
                     self.is_pressed = false;
                     if bounds.snap().contains(pointer_position) {
-                        self.emit_click(
-                            display,
-                            event.button,
-                            event.state,
-                        );
+                        self.emit_click(display, event.button, event.state);
                     }
                 }
             }

@@ -95,7 +95,7 @@ impl X11Event {
             DestroyNotify(event) => event.window,
             GravityNotify(event) => event.window,
             MapNotify(event) => event.window,
-            MappingNotify(event) => event.event,  // BUGS: missing property name
+            MappingNotify(event) => event.event, // BUGS: missing property name
             ReparentNotify(event) => event.window,
             UnmapNotify(event) => event.window,
             VisibilityNotify(event) => event.window,
