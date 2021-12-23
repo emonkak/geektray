@@ -7,7 +7,7 @@ use crate::geometrics::{Point, Rect, Size};
 use crate::render_context::RenderContext;
 use crate::styles::Styles;
 use crate::tray_item::TrayItem;
-use crate::widget::{Command, Widget, WidgetPod};
+use crate::widget::{SideEffect, Widget, WidgetPod};
 
 #[derive(Debug)]
 pub struct Tray {
@@ -165,13 +165,13 @@ impl Widget for Tray {
         window: xlib::Window,
         event: &X11Event,
         _bounds: Rect,
-    ) -> Command {
-        let mut status = Command::None;
+    ) -> SideEffect {
+        let mut side_effect = SideEffect::None;
 
         for tray_item in &mut self.tray_items {
-            status = status.compose(tray_item.on_event(display, window, event));
+            side_effect = side_effect.compose(tray_item.on_event(display, window, event));
         }
 
-        status
+        side_effect
     }
 }

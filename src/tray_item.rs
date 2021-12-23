@@ -9,7 +9,7 @@ use crate::render_context::RenderContext;
 use crate::styles::Styles;
 use crate::text_renderer::{HorizontalAlign, Text, VerticalAlign};
 use crate::utils;
-use crate::widget::{Command, Widget};
+use crate::widget::{SideEffect, Widget};
 
 #[derive(Debug)]
 pub struct TrayItem {
@@ -159,7 +159,7 @@ impl Widget for TrayItem {
         _window: xlib::Window,
         event: &X11Event,
         bounds: Rect,
-    ) -> Command {
+    ) -> SideEffect {
         match event {
             X11Event::ButtonPress(event) => {
                 let pointer_position = PhysicalPoint {
@@ -188,6 +188,6 @@ impl Widget for TrayItem {
             _ => {}
         }
 
-        Command::None
+        SideEffect::None
     }
 }

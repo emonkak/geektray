@@ -1,6 +1,4 @@
-use nix;
-use nix::sys::signal;
-use nix::sys::signalfd;
+use libdbus_sys as dbus;
 use std::env;
 use std::ffi::CString;
 use std::mem;
@@ -13,7 +11,7 @@ use x11::xlib;
 use crate::atoms::Atoms;
 use crate::config::Config;
 use crate::error_handler;
-use crate::event_loop::{run_event_loop, ControlFlow, Event, X11Event};
+use crate::event_loop::{self, ControlFlow, Event, EventLoop, X11Event};
 use crate::geometrics::{PhysicalPoint, PhysicalSize, Size};
 use crate::render_context::RenderContext;
 use crate::styles::Styles;
@@ -21,7 +19,7 @@ use crate::text_renderer::TextRenderer;
 use crate::tray::Tray;
 use crate::tray_item::TrayItem;
 use crate::utils;
-use crate::widget::{Command, WidgetPod};
+use crate::widget::{SideEffect, WidgetPod};
 use crate::xembed::{XEmbedInfo, XEmbedMessage};
 
 const SYSTEM_TRAY_REQUEST_DOCK: i64 = 0;
@@ -90,21 +88,16 @@ impl App {
         })
     }
 
-    pub fn run(&mut self) -> nix::Result<()> {
-        let mut signal_fd = {
-            let mut mask = signalfd::SigSet::empty();
-            mask.add(signal::Signal::SIGINT);
-            mask.thread_block().unwrap();
-            signalfd::SignalFd::new(&mask)
-        }?;
-
+    pub fn run(&mut self) -> Result<(), event_loop::Error> {
         unsafe {
             self.previous_selection_owner = Some(acquire_tray_selection(self.display, self.window));
             xlib::XMapWindow(self.display, self.window);
             xlib::XFlush(self.display);
         }
 
-        run_event_loop(self.display, &mut signal_fd, move |event| match event {
+        let mut event_loop = EventLoop::new(self.display)?;
+
+        event_loop.run(move |event, context| match event {
             Event::X11Event(event) => {
                 let control_flow = match event {
                     X11Event::ClientMessage(event) => self.on_client_message(event),
@@ -117,13 +110,29 @@ impl App {
                     _ => ControlFlow::Continue,
                 };
                 if event.window() == self.window {
-                    let command = self.tray.on_event(self.display, self.window, &event);
-                    self.handle_command(command);
+                    let side_effect = self.tray.on_event(self.display, self.window, &event);
+                    self.handle_side_effect(side_effect);
                 }
                 control_flow
             }
+            Event::DBusMessage(message) => {
+                use dbus::DBusMessageType::*;
+
+                match (message.message_type(), message.member()) {
+                    (MethodCall, Some("ShowWindow")) => {
+                        context.send_dbus_message(&message.new_method_return());
+                    }
+                    (MethodCall, Some("HideWindow")) => {
+                        context.send_dbus_message(&message.new_method_return());
+                    }
+                    _ => {
+                    }
+                }
+
+                ControlFlow::Continue
+            }
             Event::Signal(_) => ControlFlow::Break,
-        })?;
+        });
 
         Ok(())
     }
@@ -335,11 +344,11 @@ impl App {
         context.commit();
     }
 
-    fn handle_command(&mut self, command: Command) {
-        match command {
-            Command::None => {}
-            Command::RequestLayout => self.recaclulate_layout(),
-            Command::RequestRedraw => self.request_redraw(),
+    fn handle_side_effect(&mut self, side_effect: SideEffect) {
+        match side_effect {
+            SideEffect::None => {}
+            SideEffect::RequestLayout => self.recaclulate_layout(),
+            SideEffect::RequestRedraw => self.request_redraw(),
         }
     }
 }

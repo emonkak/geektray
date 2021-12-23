@@ -15,8 +15,8 @@ pub trait Widget {
         _window: xlib::Window,
         _event: &X11Event,
         _bounds: Rect,
-    ) -> Command {
-        Command::None
+    ) -> SideEffect {
+        SideEffect::None
     }
 }
 
@@ -61,20 +61,20 @@ impl<Widget: self::Widget> WidgetPod<Widget> {
         display: *mut xlib::Display,
         window: xlib::Window,
         event: &X11Event,
-    ) -> Command {
+    ) -> SideEffect {
         self.widget.on_event(display, window, event, self.bounds)
     }
 }
 
 #[repr(usize)]
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
-pub enum Command {
+pub enum SideEffect {
     None,
     RequestRedraw,
     RequestLayout,
 }
 
-impl Command {
+impl SideEffect {
     pub fn compose(self, other: Self) -> Self {
         match (self, other) {
             (Self::None, x) | (x, Self::None) => x,

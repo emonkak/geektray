@@ -1,3 +1,4 @@
+extern crate libdbus_sys;
 extern crate nix;
 extern crate x11;
 
