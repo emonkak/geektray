@@ -158,7 +158,6 @@ impl App {
                             &xembed_info,
                             &self.atoms,
                         );
-                        xlib::XFlush(self.display);
                     }
                     self.recaclulate_layout();
                 }
@@ -463,6 +462,8 @@ unsafe fn request_embedding(
     } else {
         xlib::XSelectInput(display, icon_window, xlib::PropertyChangeMask);
     }
+
+    xlib::XFlush(display);
 }
 
 unsafe fn begin_embedding(

@@ -60,59 +60,7 @@ impl TrayItem {
         let center = (self.styles.icon_size / 2.0) as i32;
 
         unsafe {
-            let screen = xlib::XDefaultScreenOfDisplay(display);
-            let root = xlib::XRootWindowOfScreen(screen);
-            let (cursor_x, cursor_y) = utils::get_pointer_position(display, root);
-
-            xlib::XWarpPointer(display, 0, self.icon_window, 0, 0, 0, 0, center, center);
-
-            let mut x_root = 0;
-            let mut y_root = 0;
-            let mut _subwindow = 0;
-
-            xlib::XTranslateCoordinates(
-                display,
-                self.icon_window,
-                root,
-                center,
-                center,
-                &mut x_root,
-                &mut y_root,
-                &mut _subwindow
-            );
-
-            let result = utils::send_button_event(
-                display,
-                self.icon_window,
-                true,
-                button,
-                button_mask,
-                center,
-                center,
-                x_root,
-                y_root,
-            );
-            if !result {
-                return;
-            }
-
-            let result = utils::send_button_event(
-                display,
-                self.icon_window,
-                false,
-                button,
-                button_mask,
-                center,
-                center,
-                x_root,
-                y_root,
-            );
-            if !result {
-                return;
-            }
-
-            xlib::XWarpPointer(display, 0, root, 0, 0, 0, 0, cursor_x, cursor_y);
-            xlib::XFlush(display);
+            utils::emit_click_event(display, self.icon_window, button, button_mask, center, center);
         }
     }
 

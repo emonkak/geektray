@@ -50,7 +50,7 @@ pub unsafe fn send_client_message(
 pub unsafe fn send_button_event(
     display: *mut xlib::Display,
     window: xlib::Window,
-    is_pressed: bool,
+    event_type: c_int,
     button: c_uint,
     button_mask: c_uint,
     x: c_int,
@@ -61,7 +61,6 @@ pub unsafe fn send_button_event(
     let screen = xlib::XDefaultScreen(display);
     let root = xlib::XRootWindow(display, screen);
 
-    let event_type = if is_pressed { xlib::ButtonPress } else { xlib::ButtonRelease };
     let event = xlib::XButtonEvent {
         type_: event_type,
         serial: 0,
@@ -87,6 +86,72 @@ pub unsafe fn send_button_event(
         xlib::NoEventMask,
         &mut event.into(),
     ) == xlib::True
+}
+
+#[inline]
+pub unsafe fn emit_click_event(
+    display: *mut xlib::Display,
+    window: xlib::Window,
+    button: c_uint,
+    button_mask: c_uint,
+    x: c_int,
+    y: c_int,
+) -> bool {
+    let screen = xlib::XDefaultScreenOfDisplay(display);
+    let root = xlib::XRootWindowOfScreen(screen);
+    let (cursor_x, cursor_y) = get_pointer_position(display, root);
+
+    let mut x_root = 0;
+    let mut y_root = 0;
+    let mut _subwindow = 0;
+
+    xlib::XTranslateCoordinates(
+        display,
+        window,
+        root,
+        x,
+        y,
+        &mut x_root,
+        &mut y_root,
+        &mut _subwindow
+    );
+
+    xlib::XWarpPointer(display, 0, root, 0, 0, 0, 0, x_root, y_root);
+
+    let result = send_button_event(
+        display,
+        window,
+        xlib::ButtonPress,
+        button,
+        button_mask,
+        x,
+        y,
+        x_root,
+        y_root,
+    );
+    if !result {
+        return false;
+    }
+
+    let result = send_button_event(
+        display,
+        window,
+        xlib::ButtonRelease,
+        button,
+        button_mask,
+        x,
+        y,
+        x_root,
+        y_root,
+    );
+    if !result {
+        return false;
+    }
+
+    xlib::XWarpPointer(display, 0, root, 0, 0, 0, 0, cursor_x, cursor_y);
+    xlib::XFlush(display);
+
+    true
 }
 
 #[inline]
