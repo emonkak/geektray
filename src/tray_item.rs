@@ -7,7 +7,7 @@ use crate::event_loop::X11Event;
 use crate::geometrics::{PhysicalPoint, Rect, Size};
 use crate::render_context::RenderContext;
 use crate::styles::Styles;
-use crate::text_renderer::{HorizontalAlign, Text, VerticalAlign};
+use crate::text::{HorizontalAlign, Text, VerticalAlign};
 use crate::utils;
 use crate::widget::{SideEffect, Widget};
 
@@ -78,64 +78,51 @@ impl Widget for TrayItem {
     fn render(&mut self, bounds: Rect, context: &mut RenderContext) {
         let (bg_color, fg_color) = if self.is_selected {
             (
-                &self.styles.selected_background,
-                &self.styles.selected_foreground,
+                self.styles.selected_background,
+                self.styles.selected_foreground,
             )
         } else {
-            (
-                &self.styles.normal_background,
-                &self.styles.normal_foreground,
-            )
+            (self.styles.normal_background, self.styles.normal_foreground)
         };
 
-        unsafe {
-            xlib::XSetSubwindowMode(context.display, context.gc, xlib::IncludeInferiors);
-            xlib::XSetForeground(context.display, context.gc, bg_color.pixel());
-            xlib::XFillRectangle(
-                context.display,
-                context.pixmap,
-                context.gc,
-                bounds.x as _,
-                bounds.y as _,
-                bounds.width as _,
-                bounds.height as _,
-            );
+        context.fill_rectange(bg_color, bounds);
 
-            context.text_renderer.render_single_line(
-                context.display,
-                context.xft_draw,
-                &Text {
-                    content: &self.icon_title,
-                    color: fg_color,
-                    font_size: self.styles.font_size,
-                    font_set: &self.styles.font_set,
-                    horizontal_align: HorizontalAlign::Left,
-                    vertical_align: VerticalAlign::Middle,
-                },
-                Rect {
-                    x: bounds.x + (self.styles.icon_size + self.styles.padding * 2.0),
-                    y: bounds.y,
-                    width: bounds.width - (self.styles.icon_size + self.styles.padding * 2.0),
-                    height: bounds.height,
-                },
-            );
+        context.render_single_line_text(
+            fg_color,
+            Text {
+                content: &self.icon_title,
+                font_size: self.styles.font_size,
+                font_set: &self.styles.font_set,
+                horizontal_align: HorizontalAlign::Left,
+                vertical_align: VerticalAlign::Middle,
+            },
+            Rect {
+                x: bounds.x + (self.styles.icon_size + self.styles.padding * 2.0),
+                y: bounds.y,
+                width: bounds.width - (self.styles.icon_size + self.styles.padding * 2.0),
+                height: bounds.height,
+            },
+        );
 
-            if self.is_embedded {
+        if self.is_embedded {
+            unsafe {
                 let mut attributes: xlib::XSetWindowAttributes =
                     mem::MaybeUninit::uninit().assume_init();
                 attributes.background_pixmap = xlib::CopyFromParent as _;
 
                 xlib::XChangeWindowAttributes(
-                    context.display,
+                    context.display(),
                     self.icon_window,
                     xlib::CWBackPixmap,
                     &mut attributes,
                 );
-                xlib::XClearArea(context.display, self.icon_window, 0, 0, 0, 0, xlib::True);
 
-                xlib::XMapRaised(context.display, self.icon_window);
+                xlib::XClearArea(context.display(), self.icon_window, 0, 0, 0, 0, xlib::True);
+
+                xlib::XMapRaised(context.display(), self.icon_window);
+
                 xlib::XMoveResizeWindow(
-                    context.display,
+                    context.display(),
                     self.icon_window,
                     (bounds.x + self.styles.padding) as _,
                     (bounds.y + self.styles.padding) as _,

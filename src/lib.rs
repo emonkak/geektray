@@ -21,7 +21,7 @@ mod widget;
 mod xembed;
 
 #[allow(dead_code)]
-mod text_renderer;
+mod text;
 
 #[allow(dead_code)]
 mod font;

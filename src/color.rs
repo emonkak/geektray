@@ -5,7 +5,7 @@ use x11::xft;
 use x11::xlib;
 use x11::xrender;
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Color {
     color: xlib::XColor,
 }

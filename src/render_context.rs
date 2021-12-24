@@ -2,18 +2,19 @@ use std::ptr;
 use x11::xft;
 use x11::xlib;
 
-use crate::geometrics::PhysicalSize;
-use crate::text_renderer::TextRenderer;
+use crate::color::Color;
+use crate::geometrics::{PhysicalSize, Rect};
+use crate::text::{Text, TextRenderer};
 
 #[derive(Debug)]
 pub struct RenderContext<'a> {
-    pub display: *mut xlib::Display,
-    pub window: xlib::Window,
-    pub viewport: PhysicalSize,
-    pub pixmap: xlib::Pixmap,
-    pub gc: xlib::GC,
-    pub xft_draw: *mut xft::XftDraw,
-    pub text_renderer: &'a mut TextRenderer,
+    display: *mut xlib::Display,
+    window: xlib::Window,
+    viewport: PhysicalSize,
+    pixmap: xlib::Pixmap,
+    gc: xlib::GC,
+    xft_draw: *mut xft::XftDraw,
+    text_renderer: &'a mut TextRenderer,
 }
 
 impl<'a> RenderContext<'a> {
@@ -47,7 +48,11 @@ impl<'a> RenderContext<'a> {
         }
     }
 
-    pub fn commit(&self) {
+    pub fn display(&self) -> *mut xlib::Display {
+        self.display
+    }
+
+    pub fn commit(&mut self) {
         unsafe {
             xlib::XCopyArea(
                 self.display,
@@ -63,6 +68,42 @@ impl<'a> RenderContext<'a> {
             );
             xlib::XFlush(self.display);
         }
+    }
+
+    pub fn clear_viewport(&mut self, color: Color) {
+        unsafe {
+            xlib::XSetForeground(self.display, self.gc, color.pixel());
+            xlib::XFillRectangle(
+                self.display,
+                self.pixmap,
+                self.gc,
+                0,
+                0,
+                self.viewport.width,
+                self.viewport.height,
+            );
+        }
+    }
+
+    pub fn fill_rectange(&mut self, color: Color, bounds: Rect) {
+        unsafe {
+            xlib::XSetSubwindowMode(self.display, self.gc, xlib::IncludeInferiors);
+            xlib::XSetForeground(self.display, self.gc, color.pixel());
+            xlib::XFillRectangle(
+                self.display,
+                self.pixmap,
+                self.gc,
+                bounds.x as _,
+                bounds.y as _,
+                bounds.width as _,
+                bounds.height as _,
+            );
+        }
+    }
+
+    pub fn render_single_line_text(&mut self, color: Color, text: Text, bounds: Rect) {
+        self.text_renderer
+            .render_single_line(self.display, self.xft_draw, color, text, bounds);
     }
 }
 

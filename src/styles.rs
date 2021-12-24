@@ -3,7 +3,7 @@ use x11::xlib;
 use crate::color::Color;
 use crate::config::Config;
 use crate::font::FontDescriptor;
-use crate::text_renderer::FontSet;
+use crate::text::FontSet;
 
 #[derive(Debug)]
 pub struct Styles {

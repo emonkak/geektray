@@ -1,14 +1,14 @@
 use libdbus_sys as dbus;
+use nix;
 use nix::errno;
 use nix::sys::epoll;
 use nix::sys::signal;
 use nix::sys::signalfd;
 use nix::unistd;
-use nix;
 use std::ffi::CStr;
 use std::fmt;
-use std::mem::ManuallyDrop;
 use std::mem;
+use std::mem::ManuallyDrop;
 use std::os::raw::*;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::io::RawFd;
@@ -101,14 +101,19 @@ impl EventLoop {
                     }
                 } else if epoll_event.data() == EVNET_SIGNAL {
                     if let Ok(Some(signal)) = self.signal_fd.read_signal() {
-                        if matches!(callback(Event::Signal(signal), &mut context), ControlFlow::Break) {
+                        if matches!(
+                            callback(Event::Signal(signal), &mut context),
+                            ControlFlow::Break
+                        ) {
                             break 'outer;
                         }
                     }
                 } else if epoll_event.data() == EVENT_DBUS {
                     unsafe {
                         if dbus::dbus_connection_read_write(self.dbus_connection, 0) != 0 {
-                            while let Some(message) = DBusMessage::from_connection(self.dbus_connection) {
+                            while let Some(message) =
+                                DBusMessage::from_connection(self.dbus_connection)
+                            {
                                 if matches!(
                                     callback(Event::DBusMessage(message), &mut context),
                                     ControlFlow::Break
@@ -143,7 +148,8 @@ pub struct EventLoopContext {
 impl EventLoopContext {
     pub fn send_dbus_message(&self, message: &DBusMessage) -> bool {
         unsafe {
-            let result = dbus::dbus_connection_send(self.dbus_connection, message.message, ptr::null_mut());
+            let result =
+                dbus::dbus_connection_send(self.dbus_connection, message.message, ptr::null_mut());
             dbus::dbus_connection_flush(self.dbus_connection);
             result != 0
         }
@@ -502,7 +508,7 @@ extern "C" fn handle_dbus_add_watch(watch: *mut dbus::DBusWatch, user_data: *mut
     match result {
         Ok(()) => 1,
         Err(errno::Errno::EEXIST) => 1,
-        _ => 0
+        _ => 0,
     }
 }
 

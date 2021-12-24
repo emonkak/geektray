@@ -35,7 +35,8 @@ impl TextRenderer {
         &mut self,
         display: *mut xlib::Display,
         draw: *mut xft::XftDraw,
-        text: &Text,
+        color: Color,
+        text: Text,
         bounds: Rect,
     ) {
         let origin_x = match text.horizontal_align {
@@ -88,7 +89,7 @@ impl TextRenderer {
             unsafe {
                 xft::XftDrawStringUtf8(
                     draw,
-                    &mut text.color.as_xft_color(),
+                    &mut color.as_xft_color(),
                     font,
                     (origin_x + x_offset + extents.x as f32) as i32,
                     (origin_y + y_adjustment + extents.height as f32) as i32,
@@ -101,7 +102,7 @@ impl TextRenderer {
         }
     }
 
-    pub fn measure_single_line(&mut self, display: *mut xlib::Display, text: &Text) -> Size {
+    pub fn measure_single_line(&mut self, display: *mut xlib::Display, text: Text) -> Size {
         let mut measured_size = Size {
             width: 0.0,
             height: 0.0,
@@ -293,24 +294,23 @@ impl Hash for FontKey {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Text<'a> {
     pub content: &'a str,
-    pub color: &'a Color,
     pub font_size: f32,
     pub font_set: &'a FontSet,
     pub horizontal_align: HorizontalAlign,
     pub vertical_align: VerticalAlign,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum VerticalAlign {
     Top,
     Middle,
     Bottom,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub enum HorizontalAlign {
     Left,
     Center,

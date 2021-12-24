@@ -120,25 +120,10 @@ impl Tray {
 
 impl Widget for Tray {
     fn render(&mut self, _bounds: Rect, context: &mut RenderContext) {
-        unsafe {
-            xlib::XSetForeground(
-                context.display,
-                context.gc,
-                self.styles.normal_background.pixel(),
-            );
-            xlib::XFillRectangle(
-                context.display,
-                context.pixmap,
-                context.gc,
-                0,
-                0,
-                context.viewport.width,
-                context.viewport.height,
-            );
+        context.clear_viewport(self.styles.normal_background);
 
-            for tray_item in &mut self.tray_items {
-                tray_item.render(context);
-            }
+        for tray_item in &mut self.tray_items {
+            tray_item.render(context);
         }
     }
 
