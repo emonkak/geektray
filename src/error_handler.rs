@@ -1,13 +1,18 @@
 use std::os::raw::*;
 use x11::xlib;
 
-use log;
+pub extern "C" fn ignore_error(
+    _display: *mut xlib::Display,
+    _error: *mut xlib::XErrorEvent,
+) -> c_int {
+    0
+}
 
-pub extern "C" fn handle(display: *mut xlib::Display, error: *mut xlib::XErrorEvent) -> c_int {
+pub extern "C" fn print_error(display: *mut xlib::Display, error: *mut xlib::XErrorEvent) -> c_int {
     unsafe {
         let error_message = x11_get_error_message(display, (*error).error_code as i32);
         let request_message = x11_get_request_description(display, (*error).request_code as i32);
-        log::warn!(
+        println!(
             "X11 Error: {} (request: {}, resource: {})",
             error_message,
             request_message,
@@ -18,7 +23,7 @@ pub extern "C" fn handle(display: *mut xlib::Display, error: *mut xlib::XErrorEv
 }
 
 fn x11_get_error_message(display: *mut xlib::Display, error_code: i32) -> String {
-    let mut message = [0 as u8; 256];
+    let mut message = vec![0 as u8; 256];
 
     unsafe {
         xlib::XGetErrorText(
@@ -29,11 +34,15 @@ fn x11_get_error_message(display: *mut xlib::Display, error_code: i32) -> String
         );
     }
 
-    null_terminated_bytes_to_string(&message)
+    if let Some(null_position) = message.iter().position(|c| *c == 0) {
+        message.resize(null_position as usize, 0);
+    }
+
+    String::from_utf8(message).ok().unwrap_or_default()
 }
 
 fn x11_get_request_description(display: *mut xlib::Display, request_code: i32) -> String {
-    let mut message = [0 as u8; 256];
+    let mut message = vec![0 as u8; 256];
     let request_type = format!("{}\0", request_code.to_string());
 
     unsafe {
@@ -47,13 +56,9 @@ fn x11_get_request_description(display: *mut xlib::Display, request_code: i32) -
         );
     }
 
-    null_terminated_bytes_to_string(&message)
-}
+    if let Some(null_position) = message.iter().position(|c| *c == 0) {
+        message.resize(null_position as usize, 0);
+    }
 
-fn null_terminated_bytes_to_string(cs: &[u8]) -> String {
-    let cs = match cs.iter().position(|&c| c == b'\0') {
-        Some(null_pos) => &cs[..null_pos],
-        _ => cs,
-    };
-    String::from_utf8_lossy(&cs).into_owned()
+    String::from_utf8(message).ok().unwrap_or_default()
 }

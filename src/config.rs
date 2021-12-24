@@ -13,6 +13,7 @@ pub struct Config {
     pub normal_foreground: String,
     pub selected_background: String,
     pub selected_foreground: String,
+    pub is_debugging: bool,
 }
 
 impl Config {
@@ -36,6 +37,7 @@ impl Default for Config {
             normal_foreground: "#e8eaeb".to_owned(),
             selected_background: "#1c95e6".to_owned(),
             selected_foreground: "#e8eaeb".to_owned(),
+            is_debugging: true,
         }
     }
 }

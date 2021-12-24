@@ -44,7 +44,13 @@ pub struct App {
 
 impl App {
     pub fn new(config: Config) -> Result<Self, String> {
-        let old_error_handler = unsafe { xlib::XSetErrorHandler(Some(error_handler::handle)) };
+        let old_error_handler = unsafe {
+            xlib::XSetErrorHandler(if config.is_debugging {
+                Some(error_handler::print_error)
+            } else {
+                Some(error_handler::ignore_error)
+            })
+        };
 
         let display = unsafe { xlib::XOpenDisplay(ptr::null()) };
         if display.is_null() {
