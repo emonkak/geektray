@@ -31,6 +31,7 @@ impl<'a> RenderContext<'a> {
                 xlib::XCreatePixmap(display, window, viewport.width, viewport.height, depth as _);
 
             let gc = xlib::XCreateGC(display, pixmap, 0, ptr::null_mut());
+            xlib::XSetSubwindowMode(display, gc, xlib::IncludeInferiors);
 
             let visual = xlib::XDefaultVisual(display, screen_number);
             let colormap = xlib::XDefaultColormap(display, screen_number);
@@ -87,7 +88,6 @@ impl<'a> RenderContext<'a> {
 
     pub fn fill_rectange(&mut self, color: Color, bounds: Rect) {
         unsafe {
-            xlib::XSetSubwindowMode(self.display, self.gc, xlib::IncludeInferiors);
             xlib::XSetForeground(self.display, self.gc, color.pixel());
             xlib::XFillRectangle(
                 self.display,
