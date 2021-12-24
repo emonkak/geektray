@@ -16,9 +16,9 @@ use std::ptr;
 use std::str;
 use x11::xlib;
 
-const EVENT_X11: u64 = 1;
-const EVNET_SIGNAL: u64 = 2;
-const EVENT_DBUS: u64 = 3;
+const EVENT_KIND_X11: u64 = 1;
+const EVENT_KIND_SIGNAL: u64 = 2;
+const EVENT_KIND_DBUS: u64 = 3;
 
 const DBUS_NAME: &'static str = "io.github.emonkak.keytray\0";
 
@@ -39,7 +39,7 @@ impl EventLoop {
 
         {
             let raw_fd = unsafe { xlib::XConnectionNumber(display) as RawFd };
-            let mut event = epoll::EpollEvent::new(epoll::EpollFlags::EPOLLIN, EVENT_X11);
+            let mut event = epoll::EpollEvent::new(epoll::EpollFlags::EPOLLIN, EVENT_KIND_X11);
             epoll::epoll_ctl(
                 epoll_fd,
                 epoll::EpollOp::EpollCtlAdd,
@@ -51,7 +51,7 @@ impl EventLoop {
 
         {
             let raw_fd = signal_fd.as_raw_fd();
-            let mut event = epoll::EpollEvent::new(epoll::EpollFlags::EPOLLIN, EVNET_SIGNAL);
+            let mut event = epoll::EpollEvent::new(epoll::EpollFlags::EPOLLIN, EVENT_KIND_SIGNAL);
             epoll::epoll_ctl(
                 epoll_fd,
                 epoll::EpollOp::EpollCtlAdd,
@@ -85,7 +85,7 @@ impl EventLoop {
                 epoll::epoll_wait(self.epoll_fd, &mut epoll_events, -1).unwrap_or(0);
 
             for epoll_event in &epoll_events[0..available_fds] {
-                if epoll_event.data() == EVENT_X11 {
+                if epoll_event.data() == EVENT_KIND_X11 {
                     let pending_events = unsafe { xlib::XPending(self.display) };
                     for _ in 0..pending_events {
                         unsafe {
@@ -99,7 +99,7 @@ impl EventLoop {
                             break 'outer;
                         }
                     }
-                } else if epoll_event.data() == EVNET_SIGNAL {
+                } else if epoll_event.data() == EVENT_KIND_SIGNAL {
                     if let Ok(Some(signal)) = self.signal_fd.read_signal() {
                         if matches!(
                             callback(Event::Signal(signal), &mut context),
@@ -108,7 +108,7 @@ impl EventLoop {
                             break 'outer;
                         }
                     }
-                } else if epoll_event.data() == EVENT_DBUS {
+                } else if epoll_event.data() == EVENT_KIND_DBUS {
                     unsafe {
                         if dbus::dbus_connection_read_write(self.dbus_connection, 0) != 0 {
                             while let Some(message) =
@@ -497,7 +497,7 @@ extern "C" fn handle_dbus_add_watch(watch: *mut dbus::DBusWatch, user_data: *mut
     let epoll_fd = user_data as RawFd;
     let raw_fd = unsafe { dbus::dbus_watch_get_unix_fd(watch) as RawFd };
 
-    let mut event = epoll::EpollEvent::new(epoll::EpollFlags::EPOLLIN, EVENT_DBUS);
+    let mut event = epoll::EpollEvent::new(epoll::EpollFlags::EPOLLIN, EVENT_KIND_DBUS);
     let result = epoll::epoll_ctl(
         epoll_fd,
         epoll::EpollOp::EpollCtlAdd,

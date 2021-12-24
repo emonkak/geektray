@@ -1,10 +1,14 @@
 use libdbus_sys as dbus;
+use std::collections::hash_map;
+use std::collections::HashMap;
 use std::env;
 use std::ffi::CString;
 use std::mem;
 use std::os::raw::*;
 use std::ptr;
 use std::rc::Rc;
+use std::str;
+use std::time::Duration;
 use x11::keysym;
 use x11::xlib;
 
@@ -40,6 +44,7 @@ pub struct App {
     previous_selection_owner: Option<xlib::Window>,
     old_error_handler:
         Option<unsafe extern "C" fn(*mut xlib::Display, *mut xlib::XErrorEvent) -> c_int>,
+    pending_tray_messages: HashMap<xlib::Window, TrayMessage>,
 }
 
 impl App {
@@ -85,6 +90,7 @@ impl App {
             text_renderer: TextRenderer::new(),
             previous_selection_owner: None,
             old_error_handler,
+            pending_tray_messages: HashMap::new(),
         })
     }
 
@@ -137,16 +143,20 @@ impl App {
             Event::DBusMessage(message) => {
                 use dbus::DBusMessageType::*;
 
-                match (message.message_type(), message.path(), message.member()) {
-                    (MethodCall, Some("/"), Some("ShowWindow")) => {
+                match (
+                    message.message_type(),
+                    message.path().unwrap_or_default(),
+                    message.member().unwrap_or_default(),
+                ) {
+                    (MethodCall, "/", "ShowWindow") => {
                         self.show_window();
                         context.send_dbus_message(&message.new_method_return());
                     }
-                    (MethodCall, Some("/"), Some("HideWindow")) => {
+                    (MethodCall, "/", "HideWindow") => {
                         self.hide_window();
                         context.send_dbus_message(&message.new_method_return());
                     }
-                    (MethodCall, Some("/"), Some("ToggleWindow")) => {
+                    (MethodCall, "/", "ToggleWindow") => {
                         self.toggle_window();
                         context.send_dbus_message(&message.new_method_return());
                     }
@@ -230,7 +240,7 @@ impl App {
         if self.window == event.window {
             return ControlFlow::Break;
         }
-        if let Some(_) = self.tray.widget.remove_tray_item(event.window) {
+        if let Some(_) = self.unregister_tray_item(event.window) {
             self.recaclulate_layout();
         }
         ControlFlow::Continue
@@ -252,7 +262,7 @@ impl App {
 
     fn on_reparent_notify(&mut self, event: xlib::XReparentEvent) -> ControlFlow {
         if event.parent != self.window {
-            self.tray.widget.remove_tray_item(event.window);
+            self.unregister_tray_item(event.window);
         }
         ControlFlow::Continue
     }
@@ -278,7 +288,7 @@ impl App {
                     }
                 }
                 _ => {
-                    if let Some(tray_item) = self.tray.widget.remove_tray_item(event.window) {
+                    if let Some(tray_item) = self.unregister_tray_item(event.window) {
                         if tray_item.widget.is_embedded() {
                             unsafe {
                                 release_embedding(self.display, event.window);
@@ -320,34 +330,38 @@ impl App {
                 if let Some(xembed_info) =
                     unsafe { get_xembed_info(self.display, icon_window, &self.atoms) }
                 {
-                    let icon_title = unsafe {
-                        get_window_title(self.display, icon_window, &self.atoms).unwrap_or_default()
-                    };
-                    let tray_item = WidgetPod::new(TrayItem::new(
-                        icon_window,
-                        icon_title,
-                        xembed_info.is_mapped(),
-                        self.styles.clone(),
-                    ));
-                    self.tray.widget.add_tray_item(tray_item);
-                    unsafe {
-                        request_embedding(
-                            self.display,
-                            icon_window,
-                            self.window,
-                            &xembed_info,
-                            &self.atoms,
-                        );
-                    }
+                    self.register_tray_item(icon_window, &xembed_info);
                     self.recaclulate_layout();
                 }
             } else if opcode == SYSTEM_TRAY_BEGIN_MESSAGE {
-                // TODO:
+                let tray_message = TrayMessage::new(&event.data);
+                self.pending_tray_messages
+                    .insert(event.window, tray_message);
             } else if opcode == SYSTEM_TRAY_CANCEL_MESSAGE {
-                // TODO:
+                if let hash_map::Entry::Occupied(entry) =
+                    self.pending_tray_messages.entry(event.window)
+                {
+                    let id = event.data.get_long(2);
+                    if entry.get().id == id {
+                        entry.remove();
+                    }
+                }
             }
         } else if event.message_type == self.atoms.NET_SYSTEM_TRAY_MESSAGE_DATA {
-            // TODO:
+            if let hash_map::Entry::Occupied(mut entry) =
+                self.pending_tray_messages.entry(event.window)
+            {
+                let remaining_len = entry.get_mut().receive_message(event.data.as_ref());
+                if remaining_len == 0 {
+                    let tray_message = entry.remove();
+                    println!(
+                        "Message: {} (Timeout: {:?}, Window: {})",
+                        tray_message.as_string(),
+                        tray_message.timeout,
+                        event.window
+                    );
+                }
+            }
         }
         ControlFlow::Continue
     }
@@ -379,6 +393,32 @@ impl App {
         } else {
             self.show_window();
         }
+    }
+
+    fn register_tray_item(&mut self, icon_window: xlib::Window, xembed_info: &XEmbedInfo) {
+        let icon_title =
+            unsafe { get_window_title(self.display, icon_window, &self.atoms).unwrap_or_default() };
+        let tray_item = WidgetPod::new(TrayItem::new(
+            icon_window,
+            icon_title,
+            xembed_info.is_mapped(),
+            self.styles.clone(),
+        ));
+        self.tray.widget.add_tray_item(tray_item);
+        unsafe {
+            request_embedding(
+                self.display,
+                icon_window,
+                self.window,
+                xembed_info,
+                &self.atoms,
+            );
+        }
+    }
+
+    fn unregister_tray_item(&mut self, icon_window: xlib::Window) -> Option<WidgetPod<TrayItem>> {
+        self.pending_tray_messages.remove(&icon_window);
+        self.tray.widget.remove_tray_item(icon_window)
     }
 
     fn recaclulate_layout(&mut self) {
@@ -454,6 +494,36 @@ impl Drop for App {
             xlib::XCloseDisplay(self.display);
             xlib::XSetErrorHandler(self.old_error_handler);
         }
+    }
+}
+
+#[derive(Debug)]
+struct TrayMessage {
+    buffer: Vec<u8>,
+    timeout: Duration,
+    id: i64,
+}
+
+impl TrayMessage {
+    fn new(data: &xlib::ClientMessageData) -> Self {
+        Self {
+            buffer: Vec::with_capacity(data.get_long(3) as usize),
+            timeout: Duration::from_millis(data.get_long(2) as u64),
+            id: data.get_long(4),
+        }
+    }
+
+    fn receive_message(&mut self, bytes: &[u8]) -> usize {
+        let remaining_len = self.buffer.capacity() - self.buffer.len();
+        let receiving_len = remaining_len.max(20);
+        self.buffer.extend_from_slice(&bytes[..receiving_len]);
+        self.buffer.capacity() - self.buffer.len()
+    }
+
+    fn as_string(&self) -> &str {
+        str::from_utf8(self.buffer.as_slice())
+            .ok()
+            .unwrap_or_default()
     }
 }
 
