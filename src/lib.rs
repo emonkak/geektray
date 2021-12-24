@@ -18,6 +18,9 @@ mod utils;
 mod widget;
 
 #[allow(dead_code)]
+mod dbus;
+
+#[allow(dead_code)]
 mod xembed;
 
 #[allow(dead_code)]

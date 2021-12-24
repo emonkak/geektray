@@ -15,7 +15,7 @@ use x11::xlib;
 use crate::atoms::Atoms;
 use crate::config::Config;
 use crate::error_handler;
-use crate::event_loop::{self, ControlFlow, Event, EventLoop, X11Event};
+use crate::event_loop::{self, ControlFlow, Event, EventLoop, EventLoopContext, X11Event};
 use crate::geometrics::{PhysicalPoint, PhysicalSize, Size};
 use crate::render_context::RenderContext;
 use crate::styles::Styles;
@@ -127,7 +127,7 @@ impl App {
                     X11Event::MapNotify(event) => self.on_map_notify(event),
                     X11Event::UnmapNotify(event) => self.on_unmap_notify(event),
                     X11Event::ReparentNotify(event) => self.on_reparent_notify(event),
-                    X11Event::ClientMessage(event) => self.on_client_message(event),
+                    X11Event::ClientMessage(event) => self.on_client_message(event, context),
                     X11Event::PropertyNotify(event) => self.on_property_notify(event),
                     _ => ControlFlow::Continue,
                 };
@@ -302,7 +302,11 @@ impl App {
         ControlFlow::Continue
     }
 
-    fn on_client_message(&mut self, event: xlib::XClientMessageEvent) -> ControlFlow {
+    fn on_client_message(
+        &mut self,
+        event: xlib::XClientMessageEvent,
+        context: &mut EventLoopContext,
+    ) -> ControlFlow {
         if event.message_type == self.atoms.WM_PROTOCOLS && event.format == 32 {
             let protocol = event.data.get_long(0) as xlib::Atom;
             if protocol == self.atoms.NET_WM_PING {
@@ -354,11 +358,15 @@ impl App {
                 let remaining_len = entry.get_mut().receive_message(event.data.as_ref());
                 if remaining_len == 0 {
                     let tray_message = entry.remove();
-                    println!(
-                        "Message: {} (Timeout: {:?}, Window: {})",
+                    let summary = unsafe {
+                        get_window_title(self.display, event.window, &self.atoms)
+                            .unwrap_or_default()
+                    };
+                    context.send_notification(
+                        &summary,
                         tray_message.as_string(),
+                        tray_message.id as u32,
                         tray_message.timeout,
-                        event.window
                     );
                 }
             }
