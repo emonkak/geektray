@@ -1,6 +1,5 @@
-use std::fs;
-use std::io;
 use std::mem;
+use std::ops::{Add, Div, Rem};
 use std::os::raw::*;
 use std::ptr;
 use x11::xlib;
@@ -155,7 +154,41 @@ pub unsafe fn emit_click_event(
 }
 
 #[inline]
-pub unsafe fn get_window_property<T: Sized, const N: usize>(
+pub unsafe fn get_window_title(
+    display: *mut xlib::Display,
+    window: xlib::Window,
+) -> Option<String> {
+    if let Some(mut prop) = get_window_variable_property::<u8>(
+        display,
+        window,
+        xlib::XA_WM_NAME,
+        xlib::XA_STRING,
+        256,
+    ) {
+        if let Some(null_position) = prop.iter().position(|c| *c == 0) {
+            prop.resize(null_position, 0);
+        }
+        return String::from_utf8(prop).ok();
+    }
+
+    if let Some(mut prop) = get_window_variable_property::<u8>(
+        display,
+        window,
+        xlib::XA_WM_CLASS,
+        xlib::XA_STRING,
+        256,
+    ) {
+        if let Some(null_position) = prop.iter().position(|c| *c == 0) {
+            prop.resize(null_position, 0);
+        }
+        return String::from_utf8(prop).ok();
+    }
+
+    None
+}
+
+#[inline]
+pub unsafe fn get_window_fixed_property<T: Sized, const N: usize>(
     display: *mut xlib::Display,
     window: xlib::Window,
     property_atom: xlib::Atom,
@@ -171,7 +204,7 @@ pub unsafe fn get_window_property<T: Sized, const N: usize>(
         window,
         property_atom,
         0,
-        N as c_long,
+        ceiling_div(mem::size_of::<T>() * N, 4) as i64,
         xlib::False,
         xlib::AnyPropertyType as u64,
         &mut actual_type,
@@ -191,6 +224,7 @@ pub unsafe fn get_window_property<T: Sized, const N: usize>(
     if result != xlib::Success.into()
         || actual_format != expected_format
         || nitems != N as c_ulong
+        || bytes_after != 0
         || prop.is_null()
     {
         return None;
@@ -200,12 +234,88 @@ pub unsafe fn get_window_property<T: Sized, const N: usize>(
 }
 
 #[inline]
-pub fn get_process_name(pid: u32) -> io::Result<String> {
-    let path = format!("/proc/{}/cmdline", pid);
-    let bytes = fs::read(path)?;
-    let null_position = bytes.iter().position(|byte| *byte == 0);
-    let name = String::from_utf8_lossy(&bytes[0..null_position.unwrap_or(0)]).into_owned();
-    Ok(name)
+pub unsafe fn get_window_variable_property<T: Sized>(
+    display: *mut xlib::Display,
+    window: xlib::Window,
+    property_atom: xlib::Atom,
+    property_type: xlib::Atom,
+    property_capacity: u64,
+) -> Option<Vec<T>> {
+    let mut actual_type: xlib::Atom = 0;
+    let mut actual_format: i32 = 0;
+    let mut nitems: u64 = 0;
+    let mut bytes_after: u64 = 0;
+    let mut prop: *mut u8 = ptr::null_mut();
+
+    let expected_format = match mem::size_of::<T>() {
+        8 | 4 => 32,
+        2 => 16,
+        1 => 8,
+        _ => 0,
+    };
+
+    let result = xlib::XGetWindowProperty(
+        display,
+        window,
+        property_atom,
+        0,
+        ceiling_div(property_capacity, 4) as c_long,
+        xlib::False,
+        property_type,
+        &mut actual_type,
+        &mut actual_format,
+        &mut nitems,
+        &mut bytes_after,
+        &mut prop,
+    );
+
+    if result != xlib::Success.into()
+        || actual_type != property_type
+        || actual_format != expected_format
+        || nitems == 0
+        || prop.is_null()
+    {
+        return None;
+    }
+
+    let mut data = Vec::from_raw_parts(
+        prop.cast(),
+        nitems as usize,
+        (nitems + bytes_after) as usize,
+    );
+    let mut offset = nitems;
+
+    while bytes_after > 0 {
+        let result = xlib::XGetWindowProperty(
+            display,
+            window,
+            property_atom,
+            ceiling_div(offset, 4) as i64,
+            ceiling_div(bytes_after, 4) as i64,
+            xlib::False,
+            property_type,
+            &mut actual_type,
+            &mut actual_format,
+            &mut nitems,
+            &mut bytes_after,
+            &mut prop,
+        );
+
+        if result != xlib::Success.into()
+            || actual_type != property_type
+            || actual_format != expected_format
+            || prop.is_null()
+        {
+            return None;
+        }
+
+        let additional_data = Vec::from_raw_parts(prop.cast(), nitems as usize, nitems as usize);
+        data.extend(additional_data);
+
+        offset += nitems;
+    }
+
+    Some(data)
 }
 
 #[inline]
@@ -234,4 +344,12 @@ pub unsafe fn get_pointer_position(
     );
 
     (x, y)
+}
+
+#[inline]
+fn ceiling_div<T>(n: T, divisor: T) -> T
+where
+    T: Copy + Add<Output = T> + Div<Output = T> + Rem<Output = T>
+{
+    (n + n % divisor) / divisor
 }

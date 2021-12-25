@@ -2,7 +2,6 @@ use libdbus_sys as dbus;
 use std::collections::hash_map;
 use std::collections::HashMap;
 use std::env;
-use std::ffi::CString;
 use std::mem;
 use std::os::raw::*;
 use std::ptr;
@@ -271,7 +270,7 @@ impl App {
         if event.atom == self.atoms.NET_WM_NAME {
             if let Some(tray_item) = self.tray.widget.find_tray_item_mut(event.window) {
                 let icon_title = unsafe {
-                    get_window_title(self.display, event.window, &self.atoms).unwrap_or_default()
+                    utils::get_window_title(self.display, event.window).unwrap_or_default()
                 };
                 tray_item.widget.change_icon_title(icon_title);
             }
@@ -359,8 +358,7 @@ impl App {
                 if remaining_len == 0 {
                     let tray_message = entry.remove();
                     let summary = unsafe {
-                        get_window_title(self.display, event.window, &self.atoms)
-                            .unwrap_or_default()
+                        utils::get_window_title(self.display, event.window).unwrap_or_default()
                     };
                     context.send_notification(
                         &summary,
@@ -405,7 +403,7 @@ impl App {
 
     fn register_tray_item(&mut self, icon_window: xlib::Window, xembed_info: &XEmbedInfo) {
         let icon_title =
-            unsafe { get_window_title(self.display, icon_window, &self.atoms).unwrap_or_default() };
+            unsafe { utils::get_window_title(self.display, icon_window).unwrap_or_default() };
         let tray_item = WidgetPod::new(TrayItem::new(
             icon_window,
             icon_title,
@@ -682,34 +680,16 @@ unsafe fn send_xembed_message(
     utils::send_client_message(display, window, window, atoms.XEMBED, data);
 }
 
-unsafe fn get_window_title(
-    display: *mut xlib::Display,
-    window: xlib::Window,
-    atoms: &Atoms,
-) -> Option<String> {
-    let mut name_ptr: *mut i8 = ptr::null_mut();
-
-    let result = xlib::XFetchName(display, window, &mut name_ptr);
-    if result == xlib::True && !name_ptr.is_null() && *name_ptr != 0 {
-        CString::from_raw(name_ptr).into_string().ok()
-    } else {
-        utils::get_window_property::<c_ulong, 1>(display, window, atoms.NET_WM_PID).and_then(
-            |prop| {
-                let pid = prop[0] as u32;
-                utils::get_process_name(pid as u32).ok()
-            },
-        )
-    }
-}
-
 unsafe fn get_xembed_info(
     display: *mut xlib::Display,
     window: xlib::Window,
     atoms: &Atoms,
 ) -> Option<XEmbedInfo> {
-    utils::get_window_property::<_, 2>(display, window, atoms.XEMBED_INFO).map(|prop| XEmbedInfo {
-        version: (*prop)[0],
-        flags: (*prop)[1],
+    utils::get_window_fixed_property::<c_ulong, 2>(display, window, atoms.XEMBED_INFO).map(|prop| {
+        XEmbedInfo {
+            version: (*prop)[0],
+            flags: (*prop)[1],
+        }
     })
 }
 
