@@ -1,4 +1,3 @@
-use std::mem;
 use std::os::raw::*;
 use std::rc::Rc;
 use x11::xlib;
@@ -106,21 +105,8 @@ impl Widget for TrayItem {
 
         if self.is_embedded {
             unsafe {
-                let mut attributes: xlib::XSetWindowAttributes =
-                    mem::MaybeUninit::uninit().assume_init();
-                attributes.background_pixmap = xlib::CopyFromParent as _;
-
-                xlib::XChangeWindowAttributes(
-                    context.display(),
-                    self.icon_window,
-                    xlib::CWBackPixmap,
-                    &mut attributes,
-                );
-
                 xlib::XClearArea(context.display(), self.icon_window, 0, 0, 0, 0, xlib::True);
-
                 xlib::XMapRaised(context.display(), self.icon_window);
-
                 xlib::XMoveResizeWindow(
                     context.display(),
                     self.icon_window,

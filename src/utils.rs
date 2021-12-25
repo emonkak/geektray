@@ -40,7 +40,7 @@ pub unsafe fn send_client_message(
         display,
         destination,
         xlib::False,
-        0xffffff,
+        xlib::StructureNotifyMask,
         &mut client_message_event.into(),
     ) == xlib::True
 }
@@ -159,7 +159,15 @@ pub unsafe fn get_window_title(
     window: xlib::Window,
 ) -> Option<String> {
     get_window_variable_property::<u8>(display, window, xlib::XA_WM_NAME, xlib::XA_STRING, 256)
-        .or_else(|| get_window_variable_property::<u8>(display, window, xlib::XA_WM_CLASS, xlib::XA_STRING, 256))
+        .or_else(|| {
+            get_window_variable_property::<u8>(
+                display,
+                window,
+                xlib::XA_WM_CLASS,
+                xlib::XA_STRING,
+                256,
+            )
+        })
         .and_then(|mut bytes| {
             if let Some(null_position) = bytes.iter().position(|c| *c == 0) {
                 bytes.resize(null_position, 0);

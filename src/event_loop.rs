@@ -165,7 +165,7 @@ impl<'a> EventLoopContext<'a> {
         summary: &CStr,
         body: &CStr,
         id: u32,
-        timeout: Duration,
+        timeout: Option<Duration>,
     ) -> bool {
         let message = DBusMessage::new_method_call(
             "org.freedesktop.Notifications\0",
@@ -182,7 +182,7 @@ impl<'a> EventLoopContext<'a> {
         args.add_argument(body); // STRING body
         args.add_argument(vec![] as Vec<&str>); // as actions
         args.add_argument(vec![] as Vec<(&str, DBusVariant)>); // a{sv} hints
-        args.add_argument(timeout.as_millis() as i32); // INT32 expire_timeout
+        args.add_argument(timeout.map_or(-1, |duration| duration.as_millis() as i32)); // INT32 expire_timeout
 
         message.add_arguments(args);
 

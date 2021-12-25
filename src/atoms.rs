@@ -5,6 +5,7 @@ use crate::utils;
 #[allow(non_snake_case)]
 #[derive(Debug)]
 pub struct Atoms {
+    pub MANAGER: xlib::Atom,
     pub NET_SYSTEM_TRAY_MESSAGE_DATA: xlib::Atom,
     pub NET_SYSTEM_TRAY_OPCODE: xlib::Atom,
     pub NET_WM_NAME: xlib::Atom,
@@ -21,6 +22,7 @@ impl Atoms {
     pub fn new(display: *mut xlib::Display) -> Self {
         unsafe {
             Self {
+                MANAGER: utils::new_atom(display, "MANAGER\0"),
                 NET_SYSTEM_TRAY_MESSAGE_DATA: utils::new_atom(
                     display,
                     "_NET_SYSTEM_TRAY_MESSAGE_DATA\0",

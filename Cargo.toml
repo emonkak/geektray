@@ -12,3 +12,6 @@ xlib = []
 libdbus-sys = "0.2.2"
 nix = "0.23.1"
 x11 = { version = "2.18.2", features = ["xft", "xinerama", "xlib"] }
+
+[[example]]
+name = "tray_icon_test"

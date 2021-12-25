@@ -40,8 +40,9 @@ pub struct App {
     window_position: PhysicalPoint,
     window_size: PhysicalSize,
     window_mapped: bool,
+    tray_status: TrayStatus,
+    system_tray_atom: xlib::Atom,
     text_renderer: TextRenderer,
-    previous_selection_owner: Option<xlib::Window>,
     old_error_handler:
         Option<unsafe extern "C" fn(*mut xlib::Display, *mut xlib::XErrorEvent) -> c_int>,
     pending_tray_messages: HashMap<xlib::Window, TrayMessage>,
@@ -76,7 +77,12 @@ impl App {
             })
             .snap();
         let window_position = unsafe { get_centered_position_on_display(display, window_size) };
-        let window = unsafe { create_window(display, window_position, window_size) };
+        let window = unsafe { create_window(display, window_position, window_size, &atoms) };
+
+        let system_tray_atom = unsafe {
+            let screen_number = xlib::XDefaultScreen(display);
+            utils::new_atom(display, &format!("_NET_SYSTEM_TRAY_S{}\0", screen_number))
+        };
 
         Ok(Self {
             display,
@@ -87,8 +93,9 @@ impl App {
             window_position,
             window_size,
             window_mapped: false,
+            tray_status: TrayStatus::Waiting,
+            system_tray_atom,
             text_renderer: TextRenderer::new(),
-            previous_selection_owner: None,
             old_error_handler,
             pending_tray_messages: HashMap::new(),
         })
@@ -96,21 +103,23 @@ impl App {
 
     pub fn run(&mut self) -> Result<(), event_loop::Error> {
         unsafe {
-            self.previous_selection_owner = Some(acquire_tray_selection(self.display, self.window));
-
-            let mut protocol_atoms = [
-                self.atoms.NET_WM_PING,
-                self.atoms.NET_WM_SYNC_REQUEST,
-                self.atoms.WM_DELETE_WINDOW,
-            ];
-
-            xlib::XSetWMProtocols(
+            let previous_selection_owner = acquire_tray_selection(
                 self.display,
                 self.window,
-                protocol_atoms.as_mut_ptr(),
-                protocol_atoms.len() as i32,
+                self.system_tray_atom,
             );
-
+            if previous_selection_owner == 0 {
+                broadcast_manager_message(
+                    self.display,
+                    self.window,
+                    self.system_tray_atom,
+                    &self.atoms,
+                );
+                self.tray_status = TrayStatus::Managed;
+            } else {
+                xlib::XSelectInput(self.display, previous_selection_owner, xlib::StructureNotifyMask);
+                self.tray_status = TrayStatus::Pending(previous_selection_owner);
+            }
             xlib::XMapWindow(self.display, self.window);
             xlib::XFlush(self.display);
         }
@@ -129,6 +138,7 @@ impl App {
                     X11Event::ReparentNotify(event) => self.on_reparent_notify(event),
                     X11Event::ClientMessage(event) => self.on_client_message(event, context),
                     X11Event::PropertyNotify(event) => self.on_property_notify(event),
+                    X11Event::SelectionClear(event) => self.on_selection_clear(event),
                     _ => ControlFlow::Continue,
                 };
                 if event.window() == self.window {
@@ -237,11 +247,25 @@ impl App {
     }
 
     fn on_destroy_notify(&mut self, event: xlib::XDestroyWindowEvent) -> ControlFlow {
-        if self.window == event.window {
+        if event.window == self.window {
             return ControlFlow::Break;
         }
-        if let Some(_) = self.unregister_tray_item(event.window) {
-            self.recaclulate_layout();
+        match self.tray_status {
+            TrayStatus::Pending(previous_selection_owner) if event.window == previous_selection_owner => {
+                unsafe {
+                    broadcast_manager_message(
+                        self.display,
+                        self.window,
+                        self.system_tray_atom,
+                        &self.atoms,
+                    );
+                }
+            }
+            _ => {
+                if let Some(_) = self.unregister_tray_item(event.window) {
+                    self.recaclulate_layout();
+                }
+            }
         }
         ControlFlow::Continue
     }
@@ -268,12 +292,13 @@ impl App {
     }
 
     fn on_property_notify(&mut self, event: xlib::XPropertyEvent) -> ControlFlow {
-        if event.atom == self.atoms.NET_WM_NAME {
+        if event.atom == xlib::XA_WM_NAME || event.atom == self.atoms.NET_WM_NAME {
             if let Some(tray_item) = self.tray.widget.find_tray_item_mut(event.window) {
                 let icon_title = unsafe {
                     utils::get_window_title(self.display, event.window).unwrap_or_default()
                 };
                 tray_item.widget.change_icon_title(icon_title);
+                self.request_redraw();
             }
         } else if event.atom == self.atoms.XEMBED_INFO {
             let xembed_info = unsafe { get_xembed_info(self.display, event.window, &self.atoms) };
@@ -297,6 +322,16 @@ impl App {
                         self.recaclulate_layout();
                     }
                 }
+            }
+        }
+        ControlFlow::Continue
+    }
+
+    fn on_selection_clear(&mut self, event: xlib::XSelectionClearEvent) -> ControlFlow {
+        if event.selection == self.system_tray_atom {
+            if event.window == self.window {
+                self.tray_status = TrayStatus::Waiting;
+                return ControlFlow::Break;
             }
         }
         ControlFlow::Continue
@@ -365,7 +400,7 @@ impl App {
                         summary.as_c_str(),
                         tray_message.as_c_str(),
                         tray_message.id as u32,
-                        tray_message.timeout,
+                        Some(tray_message.timeout),
                     );
                 }
             }
@@ -403,9 +438,8 @@ impl App {
     }
 
     fn register_tray_item(&mut self, icon_window: xlib::Window, xembed_info: &XEmbedInfo) {
-        let icon_title = unsafe {
-            utils::get_window_title(self.display, icon_window).unwrap_or_default()
-        };
+        let icon_title =
+            unsafe { utils::get_window_title(self.display, icon_window).unwrap_or_default() };
         let tray_item = WidgetPod::new(TrayItem::new(
             icon_window,
             icon_title,
@@ -490,9 +524,12 @@ impl Drop for App {
 
         self.text_renderer.clear_caches(self.display);
 
-        if let Some(previous_selection_owner) = self.previous_selection_owner.take() {
+        if matches!(self.tray_status, TrayStatus::Managed) {
             unsafe {
-                release_tray_selection(self.display, previous_selection_owner);
+                release_tray_selection(
+                    self.display,
+                    self.system_tray_atom,
+                );
             }
         }
 
@@ -503,6 +540,13 @@ impl Drop for App {
             xlib::XSetErrorHandler(self.old_error_handler);
         }
     }
+}
+
+#[derive(Debug)]
+enum TrayStatus {
+    Waiting,
+    Pending(xlib::Window),
+    Managed,
 }
 
 #[derive(Debug)]
@@ -536,13 +580,15 @@ impl TrayMessage {
             self.buffer.extend_from_slice(&bytes[..incoming_len]);
             if self.remaining_len() == 0 {
                 assert_eq!(self.buffer.capacity().saturating_sub(self.buffer.len()), 1);
-                self.buffer.push(0);
+                self.buffer.push(0); // Add NULL to last
             }
         }
     }
 
     fn as_c_str(&self) -> &CStr {
-        CStr::from_bytes_with_nul(self.buffer.as_slice()).ok().unwrap_or_default()
+        CStr::from_bytes_with_nul(self.buffer.as_slice())
+            .ok()
+            .unwrap_or_default()
     }
 }
 
@@ -550,6 +596,7 @@ unsafe fn create_window(
     display: *mut xlib::Display,
     position: PhysicalPoint,
     size: PhysicalSize,
+    atoms: &Atoms,
 ) -> xlib::Window {
     let screen = xlib::XDefaultScreenOfDisplay(display);
     let root = xlib::XRootWindowOfScreen(screen);
@@ -568,7 +615,7 @@ unsafe fn create_window(
         | xlib::PropertyChangeMask
         | xlib::StructureNotifyMask;
 
-    xlib::XCreateWindow(
+    let window = xlib::XCreateWindow(
         display,
         root,
         position.x as i32,
@@ -581,46 +628,58 @@ unsafe fn create_window(
         xlib::CopyFromParent as *mut xlib::Visual,
         xlib::CWBackingStore | xlib::CWBitGravity | xlib::CWEventMask,
         &mut attributes,
-    )
+    );
+
+    let mut protocol_atoms = [
+        atoms.NET_WM_PING,
+        atoms.NET_WM_SYNC_REQUEST,
+        atoms.WM_DELETE_WINDOW,
+    ];
+
+    xlib::XSetWMProtocols(
+        display,
+        window,
+        protocol_atoms.as_mut_ptr(),
+        protocol_atoms.len() as i32,
+    );
+
+    window
 }
 
 unsafe fn acquire_tray_selection(
     display: *mut xlib::Display,
     window: xlib::Window,
+    system_tray_atom: xlib::Atom,
 ) -> xlib::Window {
-    let screen = xlib::XDefaultScreenOfDisplay(display);
-    let screen_number = xlib::XScreenNumberOfScreen(screen);
-    let root = xlib::XRootWindowOfScreen(screen);
-    let manager_atom = utils::new_atom(display, "MANAGER\0");
-    let net_system_tray_atom =
-        utils::new_atom(display, &format!("_NET_SYSTEM_TRAY_S{}\0", screen_number));
+    let previous_selection_owner = xlib::XGetSelectionOwner(display, system_tray_atom);
+    xlib::XSetSelectionOwner(display, system_tray_atom, window, xlib::CurrentTime);
+    previous_selection_owner
+}
 
-    let previous_selection_owner = xlib::XGetSelectionOwner(display, net_system_tray_atom);
-    xlib::XSetSelectionOwner(display, net_system_tray_atom, window, xlib::CurrentTime);
+unsafe fn broadcast_manager_message(
+    display: *mut xlib::Display,
+    window: xlib::Window,
+    system_tray_atom: xlib::Atom,
+    atoms: &Atoms,
+) {
+    let root = xlib::XDefaultRootWindow(display);
 
     let mut data = xlib::ClientMessageData::new();
     data.set_long(0, xlib::CurrentTime as c_long);
-    data.set_long(1, net_system_tray_atom as c_long);
+    data.set_long(1, system_tray_atom as c_long);
     data.set_long(2, window as c_long);
 
-    utils::send_client_message(display, root, root, manager_atom, data);
-
-    previous_selection_owner
+    utils::send_client_message(display, root, root, atoms.MANAGER, data);
 }
 
 unsafe fn release_tray_selection(
     display: *mut xlib::Display,
-    previous_selection_owner: xlib::Window,
+    system_tray_atom: xlib::Atom,
 ) {
-    let screen = xlib::XDefaultScreenOfDisplay(display);
-    let screen_number = xlib::XScreenNumberOfScreen(screen);
-    let net_system_tray_atom =
-        utils::new_atom(display, &format!("_NET_SYSTEM_TRAY_S{}\0", screen_number));
-
     xlib::XSetSelectionOwner(
         display,
-        net_system_tray_atom,
-        previous_selection_owner,
+        system_tray_atom,
+        0,
         xlib::CurrentTime,
     );
 }
@@ -690,6 +749,7 @@ unsafe fn send_xembed_message(
     data.set_long(1, xembed_message as c_long);
     data.set_long(2, embedder_window as c_long);
     data.set_long(3, xembed_version as c_long);
+
     utils::send_client_message(display, window, window, atoms.XEMBED, data);
 }
 
