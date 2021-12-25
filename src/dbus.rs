@@ -331,6 +331,22 @@ impl<'a> DBusValue for &'a str {
     }
 }
 
+impl<'a> DBusType for &'a CStr {
+    const TYPE: c_int = dbus::DBUS_TYPE_STRING;
+}
+
+impl<'a> DBusValue for &'a CStr {
+    fn append_to(&self, message_iter: *mut dbus::DBusMessageIter) {
+        unsafe {
+            dbus::dbus_message_iter_append_basic(
+                message_iter,
+                dbus::DBUS_TYPE_STRING,
+                &self.as_ptr() as *const _ as *const c_void,
+            );
+        }
+    }
+}
+
 impl<T: DBusType> DBusType for Vec<T> {
     const TYPE: c_int = dbus::DBUS_TYPE_ARRAY;
 

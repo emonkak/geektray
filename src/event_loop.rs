@@ -5,6 +5,7 @@ use nix::sys::epoll;
 use nix::sys::signal;
 use nix::sys::signalfd;
 use nix::unistd;
+use std::ffi::CStr;
 use std::mem;
 use std::os::raw::*;
 use std::os::unix::io::AsRawFd;
@@ -159,7 +160,13 @@ impl<'a> EventLoopContext<'a> {
         result
     }
 
-    pub fn send_notification(&self, summary: &str, body: &str, id: u32, timeout: Duration) -> bool {
+    pub fn send_notification(
+        &self,
+        summary: &CStr,
+        body: &CStr,
+        id: u32,
+        timeout: Duration,
+    ) -> bool {
         let message = DBusMessage::new_method_call(
             "org.freedesktop.Notifications\0",
             "/org/freedesktop/Notifications\0",

@@ -2,11 +2,12 @@ use libdbus_sys as dbus;
 use std::collections::hash_map;
 use std::collections::HashMap;
 use std::env;
+use std::ffi::CStr;
+use std::ffi::CString;
 use std::mem;
 use std::os::raw::*;
 use std::ptr;
 use std::rc::Rc;
-use std::str;
 use std::time::Duration;
 use x11::keysym;
 use x11::xlib;
@@ -328,8 +329,8 @@ impl App {
             }
         } else if event.message_type == self.atoms.NET_SYSTEM_TRAY_OPCODE {
             let opcode = event.data.get_long(1);
-            let icon_window = event.data.get_long(2) as xlib::Window;
             if opcode == SYSTEM_TRAY_REQUEST_DOCK {
+                let icon_window = event.data.get_long(2) as xlib::Window;
                 if let Some(xembed_info) =
                     unsafe { get_xembed_info(self.display, icon_window, &self.atoms) }
                 {
@@ -354,15 +355,15 @@ impl App {
             if let hash_map::Entry::Occupied(mut entry) =
                 self.pending_tray_messages.entry(event.window)
             {
-                let remaining_len = entry.get_mut().receive_message(event.data.as_ref());
-                if remaining_len == 0 {
+                entry.get_mut().receive_message(event.data.as_ref());
+                if entry.get().remaining_len() == 0 {
                     let tray_message = entry.remove();
-                    let summary = unsafe {
-                        utils::get_window_title(self.display, event.window).unwrap_or_default()
-                    };
+                    let summary = unsafe { utils::get_window_title(self.display, event.window) }
+                        .and_then(|title| CString::new(title).ok())
+                        .unwrap_or_default();
                     context.send_notification(
-                        &summary,
-                        tray_message.as_string(),
+                        summary.as_c_str(),
+                        tray_message.as_c_str(),
                         tray_message.id as u32,
                         tray_message.timeout,
                     );
@@ -402,8 +403,9 @@ impl App {
     }
 
     fn register_tray_item(&mut self, icon_window: xlib::Window, xembed_info: &XEmbedInfo) {
-        let icon_title =
-            unsafe { utils::get_window_title(self.display, icon_window).unwrap_or_default() };
+        let icon_title = unsafe {
+            utils::get_window_title(self.display, icon_window).unwrap_or_default()
+        };
         let tray_item = WidgetPod::new(TrayItem::new(
             icon_window,
             icon_title,
@@ -507,29 +509,40 @@ impl Drop for App {
 struct TrayMessage {
     buffer: Vec<u8>,
     timeout: Duration,
+    length: usize,
     id: i64,
 }
 
 impl TrayMessage {
     fn new(data: &xlib::ClientMessageData) -> Self {
+        let timeout = data.get_long(2) as u64;
+        let length = data.get_long(3) as usize;
+        let id = data.get_long(4) as i64;
         Self {
-            buffer: Vec::with_capacity(data.get_long(3) as usize),
-            timeout: Duration::from_millis(data.get_long(2) as u64),
-            id: data.get_long(4),
+            buffer: Vec::with_capacity(length + 1),
+            timeout: Duration::from_millis(timeout),
+            length,
+            id,
         }
     }
 
-    fn receive_message(&mut self, bytes: &[u8]) -> usize {
-        let remaining_len = self.buffer.capacity() - self.buffer.len();
-        let receiving_len = remaining_len.max(20);
-        self.buffer.extend_from_slice(&bytes[..receiving_len]);
-        self.buffer.capacity() - self.buffer.len()
+    fn remaining_len(&self) -> usize {
+        self.length.saturating_sub(self.buffer.len())
     }
 
-    fn as_string(&self) -> &str {
-        str::from_utf8(self.buffer.as_slice())
-            .ok()
-            .unwrap_or_default()
+    fn receive_message(&mut self, bytes: &[u8]) {
+        let incoming_len = self.remaining_len().min(20);
+        if incoming_len > 0 {
+            self.buffer.extend_from_slice(&bytes[..incoming_len]);
+            if self.remaining_len() == 0 {
+                assert_eq!(self.buffer.capacity().saturating_sub(self.buffer.len()), 1);
+                self.buffer.push(0);
+            }
+        }
+    }
+
+    fn as_c_str(&self) -> &CStr {
+        CStr::from_bytes_with_nul(self.buffer.as_slice()).ok().unwrap_or_default()
     }
 }
 

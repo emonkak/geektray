@@ -158,33 +158,14 @@ pub unsafe fn get_window_title(
     display: *mut xlib::Display,
     window: xlib::Window,
 ) -> Option<String> {
-    if let Some(mut prop) = get_window_variable_property::<u8>(
-        display,
-        window,
-        xlib::XA_WM_NAME,
-        xlib::XA_STRING,
-        256,
-    ) {
-        if let Some(null_position) = prop.iter().position(|c| *c == 0) {
-            prop.resize(null_position, 0);
-        }
-        return String::from_utf8(prop).ok();
-    }
-
-    if let Some(mut prop) = get_window_variable_property::<u8>(
-        display,
-        window,
-        xlib::XA_WM_CLASS,
-        xlib::XA_STRING,
-        256,
-    ) {
-        if let Some(null_position) = prop.iter().position(|c| *c == 0) {
-            prop.resize(null_position, 0);
-        }
-        return String::from_utf8(prop).ok();
-    }
-
-    None
+    get_window_variable_property::<u8>(display, window, xlib::XA_WM_NAME, xlib::XA_STRING, 256)
+        .or_else(|| get_window_variable_property::<u8>(display, window, xlib::XA_WM_CLASS, xlib::XA_STRING, 256))
+        .and_then(|mut bytes| {
+            if let Some(null_position) = bytes.iter().position(|c| *c == 0) {
+                bytes.resize(null_position, 0);
+            }
+            String::from_utf8(bytes).ok()
+        })
 }
 
 #[inline]
@@ -199,12 +180,19 @@ pub unsafe fn get_window_fixed_property<T: Sized, const N: usize>(
     let mut bytes_after: u64 = 0;
     let mut prop: *mut u8 = ptr::null_mut();
 
+    let expected_format = match mem::size_of::<T>() {
+        8 | 4 => 32,
+        2 => 16,
+        1 => 8,
+        _ => 0,
+    };
+
     let result = xlib::XGetWindowProperty(
         display,
         window,
         property_atom,
         0,
-        ceiling_div(mem::size_of::<T>() * N, 4) as i64,
+        ceiling_div(expected_format * N, 4) as i64,
         xlib::False,
         xlib::AnyPropertyType as u64,
         &mut actual_type,
@@ -214,15 +202,8 @@ pub unsafe fn get_window_fixed_property<T: Sized, const N: usize>(
         &mut prop,
     );
 
-    let expected_format = match mem::size_of::<T>() {
-        8 | 4 => 32,
-        2 => 16,
-        1 => 8,
-        _ => 0,
-    };
-
     if result != xlib::Success.into()
-        || actual_format != expected_format
+        || actual_format != expected_format as c_int
         || nitems != N as c_ulong
         || bytes_after != 0
         || prop.is_null()
@@ -349,7 +330,7 @@ pub unsafe fn get_pointer_position(
 #[inline]
 fn ceiling_div<T>(n: T, divisor: T) -> T
 where
-    T: Copy + Add<Output = T> + Div<Output = T> + Rem<Output = T>
+    T: Copy + Add<Output = T> + Div<Output = T> + Rem<Output = T>,
 {
     (n + n % divisor) / divisor
 }
