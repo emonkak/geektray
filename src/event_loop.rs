@@ -26,8 +26,8 @@ const DBUS_INTERFACE_NAME: &'static str = "io.github.emonkak.keytray\0";
 pub struct EventLoop {
     display: *mut xlib::Display,
     epoll_fd: RawFd,
-    signal_fd: mem::ManuallyDrop<signalfd::SignalFd>,
-    dbus_connection: mem::ManuallyDrop<DBusConnection>,
+    signal_fd: signalfd::SignalFd,
+    dbus_connection: DBusConnection,
 }
 
 impl EventLoop {
@@ -77,21 +77,17 @@ impl EventLoop {
         Ok(Self {
             display,
             epoll_fd,
-            signal_fd: mem::ManuallyDrop::new(signal_fd),
-            dbus_connection: mem::ManuallyDrop::new(dbus_connection),
+            signal_fd,
+            dbus_connection,
         })
     }
 
     pub fn run<F>(&mut self, mut callback: F)
     where
-        F: FnMut(Event, &mut EventLoopContext) -> ControlFlow,
+        F: FnMut(Event, &mut EventLoop) -> ControlFlow,
     {
         let mut epoll_events = vec![epoll::EpollEvent::empty(); 3];
         let mut x11_event: xlib::XEvent = unsafe { mem::MaybeUninit::uninit().assume_init() };
-
-        let mut context = EventLoopContext {
-            dbus_connection: &self.dbus_connection,
-        };
 
         'outer: loop {
             let available_fds =
@@ -106,7 +102,7 @@ impl EventLoop {
                         }
 
                         if matches!(
-                            callback(Event::X11Event(x11_event.into()), &mut context),
+                            callback(Event::X11Event(x11_event.into()), self),
                             ControlFlow::Break
                         ) {
                             break 'outer;
@@ -115,7 +111,7 @@ impl EventLoop {
                 } else if epoll_event.data() == EVENT_KIND_SIGNAL {
                     if let Ok(Some(signal)) = self.signal_fd.read_signal() {
                         if matches!(
-                            callback(Event::Signal(signal), &mut context),
+                            callback(Event::Signal(signal), self),
                             ControlFlow::Break
                         ) {
                             break 'outer;
@@ -125,7 +121,7 @@ impl EventLoop {
                     if self.dbus_connection.read_write(0) {
                         while let Some(message) = self.dbus_connection.pop_message() {
                             if matches!(
-                                callback(Event::DBusMessage(message), &mut context),
+                                callback(Event::DBusMessage(message), self),
                                 ControlFlow::Break
                             ) {
                                 break 'outer;
@@ -138,22 +134,7 @@ impl EventLoop {
             }
         }
     }
-}
 
-impl Drop for EventLoop {
-    fn drop(&mut self) {
-        unistd::close(self.epoll_fd).unwrap();
-        unsafe {
-            mem::ManuallyDrop::drop(&mut self.signal_fd);
-        }
-    }
-}
-
-pub struct EventLoopContext<'a> {
-    dbus_connection: &'a DBusConnection,
-}
-
-impl<'a> EventLoopContext<'a> {
     pub fn send_dbus_message(&self, message: &DBusMessage) -> bool {
         let result = self.dbus_connection.send(message, None);
         self.dbus_connection.flush();
@@ -189,6 +170,12 @@ impl<'a> EventLoopContext<'a> {
         let result = self.dbus_connection.send(&message, None);
         self.dbus_connection.flush();
         result
+    }
+}
+
+impl Drop for EventLoop {
+    fn drop(&mut self) {
+        unistd::close(self.epoll_fd).ok();
     }
 }
 

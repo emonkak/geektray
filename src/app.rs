@@ -15,7 +15,7 @@ use x11::xlib;
 use crate::atoms::Atoms;
 use crate::config::Config;
 use crate::error_handler;
-use crate::event_loop::{self, ControlFlow, Event, EventLoop, EventLoopContext, X11Event};
+use crate::event_loop::{self, ControlFlow, Event, EventLoop, X11Event};
 use crate::geometrics::{PhysicalPoint, PhysicalSize, Size};
 use crate::render_context::RenderContext;
 use crate::styles::Styles;
@@ -336,7 +336,7 @@ impl App {
     fn on_client_message(
         &mut self,
         event: xlib::XClientMessageEvent,
-        context: &mut EventLoopContext,
+        context: &mut EventLoop,
     ) -> ControlFlow {
         if event.message_type == self.atoms.WM_PROTOCOLS && event.format == 32 {
             let protocol = event.data.get_long(0) as xlib::Atom;
