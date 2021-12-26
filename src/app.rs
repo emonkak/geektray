@@ -26,10 +26,6 @@ use crate::utils;
 use crate::widget::{SideEffect, WidgetPod};
 use crate::xembed::{XEmbedInfo, XEmbedMessage};
 
-const SYSTEM_TRAY_REQUEST_DOCK: i64 = 0;
-const SYSTEM_TRAY_BEGIN_MESSAGE: i64 = 1;
-const SYSTEM_TRAY_CANCEL_MESSAGE: i64 = 2;
-
 #[derive(Debug)]
 pub struct App {
     display: *mut xlib::Display,
@@ -77,7 +73,7 @@ impl App {
             })
             .snap();
         let window_position = unsafe { get_centered_position_on_display(display, window_size) };
-        let window = unsafe { create_window(display, window_position, window_size, &atoms) };
+        let window = unsafe { create_window(display, window_position, window_size, &config, &atoms) };
 
         let system_tray_atom = unsafe {
             let screen_number = xlib::XDefaultScreen(display);
@@ -364,7 +360,7 @@ impl App {
             }
         } else if event.message_type == self.atoms.NET_SYSTEM_TRAY_OPCODE {
             let opcode = event.data.get_long(1);
-            if opcode == SYSTEM_TRAY_REQUEST_DOCK {
+            if opcode == SystemTrayOpcode::RequestDock as _ {
                 let icon_window = event.data.get_long(2) as xlib::Window;
                 if let Some(xembed_info) =
                     unsafe { get_xembed_info(self.display, icon_window, &self.atoms) }
@@ -372,11 +368,11 @@ impl App {
                     self.register_tray_item(icon_window, &xembed_info);
                     self.recaclulate_layout();
                 }
-            } else if opcode == SYSTEM_TRAY_BEGIN_MESSAGE {
+            } else if opcode == SystemTrayOpcode::BeginMessage as _ {
                 let tray_message = TrayMessage::new(&event.data);
                 self.pending_tray_messages
                     .insert(event.window, tray_message);
-            } else if opcode == SYSTEM_TRAY_CANCEL_MESSAGE {
+            } else if opcode == SystemTrayOpcode::CancelMessage as _ {
                 if let hash_map::Entry::Occupied(entry) =
                     self.pending_tray_messages.entry(event.window)
                 {
@@ -592,56 +588,114 @@ impl TrayMessage {
     }
 }
 
+#[repr(i32)]
+enum SystemTrayOpcode {
+    RequestDock = 0,
+    BeginMessage = 1,
+    CancelMessage = 2,
+}
+
+#[allow(dead_code)]
+#[repr(i32)]
+enum SystemTrayOrientation {
+    Horzontal = 0,
+    Vertical = 1,
+}
+
 unsafe fn create_window(
     display: *mut xlib::Display,
     position: PhysicalPoint,
     size: PhysicalSize,
+    config: &Config,
     atoms: &Atoms,
 ) -> xlib::Window {
-    let screen = xlib::XDefaultScreenOfDisplay(display);
-    let root = xlib::XRootWindowOfScreen(screen);
+    let window = {
+        let screen = xlib::XDefaultScreenOfDisplay(display);
+        let root = xlib::XRootWindowOfScreen(screen);
 
-    let mut attributes: xlib::XSetWindowAttributes = mem::MaybeUninit::uninit().assume_init();
-    attributes.backing_store = xlib::WhenMapped;
-    attributes.bit_gravity = xlib::CenterGravity;
-    attributes.event_mask = xlib::KeyPressMask
-        | xlib::ButtonPressMask
-        | xlib::ButtonReleaseMask
-        | xlib::EnterWindowMask
-        | xlib::ExposureMask
-        | xlib::FocusChangeMask
-        | xlib::LeaveWindowMask
-        | xlib::KeyReleaseMask
-        | xlib::PropertyChangeMask
-        | xlib::StructureNotifyMask;
+        let mut attributes: xlib::XSetWindowAttributes = mem::MaybeUninit::uninit().assume_init();
+        attributes.backing_store = xlib::WhenMapped;
+        attributes.bit_gravity = xlib::CenterGravity;
+        attributes.event_mask = xlib::KeyPressMask
+            | xlib::ButtonPressMask
+            | xlib::ButtonReleaseMask
+            | xlib::EnterWindowMask
+            | xlib::ExposureMask
+            | xlib::FocusChangeMask
+            | xlib::LeaveWindowMask
+            | xlib::KeyReleaseMask
+            | xlib::PropertyChangeMask
+            | xlib::StructureNotifyMask;
 
-    let window = xlib::XCreateWindow(
-        display,
-        root,
-        position.x as i32,
-        position.y as i32,
-        size.width,
-        size.height,
-        0,
-        xlib::CopyFromParent,
-        xlib::InputOutput as u32,
-        xlib::CopyFromParent as *mut xlib::Visual,
-        xlib::CWBackingStore | xlib::CWBitGravity | xlib::CWEventMask,
-        &mut attributes,
-    );
+        xlib::XCreateWindow(
+            display,
+            root,
+            position.x as i32,
+            position.y as i32,
+            size.width,
+            size.height,
+            0,
+            xlib::CopyFromParent,
+            xlib::InputOutput as u32,
+            xlib::CopyFromParent as *mut xlib::Visual,
+            xlib::CWBackingStore | xlib::CWBitGravity | xlib::CWEventMask,
+            &mut attributes,
+        )
+    };
 
-    let mut protocol_atoms = [
-        atoms.NET_WM_PING,
-        atoms.NET_WM_SYNC_REQUEST,
-        atoms.WM_DELETE_WINDOW,
-    ];
+    {
+        let mut protocol_atoms = [
+            atoms.NET_WM_PING,
+            atoms.NET_WM_SYNC_REQUEST,
+            atoms.WM_DELETE_WINDOW,
+        ];
+        xlib::XSetWMProtocols(
+            display,
+            window,
+            protocol_atoms.as_mut_ptr(),
+            protocol_atoms.len() as i32,
+        );
+    }
 
-    xlib::XSetWMProtocols(
+    {
+        let name_string = format!("{}\0", config.program_name);
+        let class_string = format!("{}\0{}\0", config.program_name, config.program_name);
+
+        let mut class_hint = mem::MaybeUninit::<xlib::XClassHint>::uninit().assume_init();
+        class_hint.res_name = name_string.as_ptr() as *mut c_char;
+        class_hint.res_class = class_string.as_ptr() as *mut c_char;
+
+        xlib::XSetClassHint(display, window, &mut class_hint);
+    }
+
+    utils::set_window_property(
         display,
         window,
-        protocol_atoms.as_mut_ptr(),
-        protocol_atoms.len() as i32,
+        atoms.NET_WM_WINDOW_TYPE,
+        xlib::XA_ATOM,
+        &[atoms.NET_WM_WINDOW_TYPE_DIALOG],
     );
+
+    utils::set_window_property(
+        display,
+        window,
+        atoms.NET_WM_STATE,
+        xlib::XA_ATOM,
+        &[atoms.NET_WM_STATE_STICKY],
+    );
+
+    {
+        let screen = xlib::XDefaultScreenOfDisplay(display);
+        let visual = xlib::XDefaultVisualOfScreen(screen);
+        let visual_id = xlib::XVisualIDFromVisual(visual);
+        utils::set_window_property(
+            display,
+            window,
+            atoms.NET_SYSTEM_TRAY_VISUAL,
+            xlib::XA_VISUALID,
+            &[visual_id],
+        );
+    }
 
     window
 }

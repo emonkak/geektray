@@ -192,7 +192,7 @@ pub unsafe fn get_window_fixed_property<T: Sized, const N: usize>(
         8 | 4 => 32,
         2 => 16,
         1 => 8,
-        _ => 0,
+        _ => unreachable!(),
     };
 
     let result = xlib::XGetWindowProperty(
@@ -236,11 +236,11 @@ pub unsafe fn get_window_variable_property<T: Sized>(
     let mut bytes_after: u64 = 0;
     let mut prop: *mut u8 = ptr::null_mut();
 
-    let expected_format = match mem::size_of::<T>() {
+    let format = match mem::size_of::<T>() {
         8 | 4 => 32,
         2 => 16,
         1 => 8,
-        _ => 0,
+        _ => unreachable!(),
     };
 
     let result = xlib::XGetWindowProperty(
@@ -260,7 +260,7 @@ pub unsafe fn get_window_variable_property<T: Sized>(
 
     if result != xlib::Success.into()
         || actual_type != property_type
-        || actual_format != expected_format
+        || actual_format != format
         || nitems == 0
         || prop.is_null()
     {
@@ -292,7 +292,7 @@ pub unsafe fn get_window_variable_property<T: Sized>(
 
         if result != xlib::Success.into()
             || actual_type != property_type
-            || actual_format != expected_format
+            || actual_format != format
             || prop.is_null()
         {
             return None;
@@ -305,6 +305,33 @@ pub unsafe fn get_window_variable_property<T: Sized>(
     }
 
     Some(data)
+}
+
+#[inline]
+pub unsafe fn set_window_property<T: Sized>(
+    display: *mut xlib::Display,
+    window: xlib::Window,
+    property_atom: xlib::Atom,
+    property_type: xlib::Atom,
+    property_value: &[T],
+) {
+    let format = match mem::size_of::<T>() {
+        8 | 4 => 32,
+        2 => 16,
+        1 => 8,
+        _ => unreachable!(),
+    };
+
+    xlib::XChangeProperty(
+        display,
+        window,
+        property_atom,
+        property_type,
+        format,
+        xlib::PropModeReplace,
+        property_value as *const _ as *const u8,
+        property_value.len() as i32,
+    );
 }
 
 #[inline]

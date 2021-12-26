@@ -1,6 +1,9 @@
+use std::path::Path;
+
 use crate::font::{FontFamily, FontStretch, FontStyle, FontWeight};
 
 pub struct Config {
+    pub program_name: String,
     pub window_width: f32,
     pub icon_size: f32,
     pub padding: f32,
@@ -17,14 +20,13 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn parse(_args: Vec<String>) -> Self {
-        Self::default()
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
+    pub fn parse(args: Vec<String>) -> Self {
+        let program_name = args.first()
+            .and_then(|arg| Path::new(arg).file_name())
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or("keytray".to_owned());
         Self {
+            program_name,
             window_width: 480.0,
             icon_size: 24.0,
             padding: 8.0,
