@@ -701,6 +701,14 @@ unsafe fn create_window(
         &[atoms.NET_WM_STATE_STICKY],
     );
 
+    utils::set_window_property(
+        display,
+        window,
+        atoms.NET_SYSTEM_TRAY_ORIENTATION,
+        xlib::XA_CARDINAL,
+        &[SystemTrayOrientation::Vertical],
+    );
+
     {
         let screen = xlib::XDefaultScreenOfDisplay(display);
         let visual = xlib::XDefaultVisualOfScreen(screen);
