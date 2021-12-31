@@ -110,10 +110,7 @@ impl EventLoop {
                     }
                 } else if epoll_event.data() == EVENT_KIND_SIGNAL {
                     if let Ok(Some(signal)) = self.signal_fd.read_signal() {
-                        if matches!(
-                            callback(Event::Signal(signal), self),
-                            ControlFlow::Break
-                        ) {
+                        if matches!(callback(Event::Signal(signal), self), ControlFlow::Break) {
                             break 'outer;
                         }
                     }

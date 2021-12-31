@@ -7,7 +7,7 @@ use crate::geometrics::{PhysicalSize, Rect};
 use crate::text::{Text, TextRenderer};
 
 #[derive(Debug)]
-pub struct RenderContext<'a> {
+pub struct PaintContext<'a> {
     display: *mut xlib::Display,
     window: xlib::Window,
     viewport: PhysicalSize,
@@ -17,7 +17,7 @@ pub struct RenderContext<'a> {
     text_renderer: &'a mut TextRenderer,
 }
 
-impl<'a> RenderContext<'a> {
+impl<'a> PaintContext<'a> {
     pub fn new(
         display: *mut xlib::Display,
         window: xlib::Window,
@@ -107,7 +107,7 @@ impl<'a> RenderContext<'a> {
     }
 }
 
-impl<'a> Drop for RenderContext<'a> {
+impl<'a> Drop for PaintContext<'a> {
     fn drop(&mut self) {
         unsafe {
             xlib::XFreeGC(self.display, self.gc);

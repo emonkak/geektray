@@ -7,6 +7,15 @@ pub struct Rect<P = f32, S = f32> {
 }
 
 impl Rect {
+    pub fn new(position: Point, size: Size) -> Self {
+        Self {
+            x: position.x,
+            y: position.y,
+            width: size.width,
+            height: size.height,
+        }
+    }
+
     pub fn snap(self) -> PhysicalRect {
         PhysicalRect {
             x: self.x.round() as i32,

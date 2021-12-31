@@ -34,7 +34,10 @@ impl Atoms {
                     "_NET_SYSTEM_TRAY_MESSAGE_DATA\0",
                 ),
                 NET_SYSTEM_TRAY_OPCODE: utils::new_atom(display, "_NET_SYSTEM_TRAY_OPCODE\0"),
-                NET_SYSTEM_TRAY_ORIENTATION: utils::new_atom(display, "_NET_SYSTEM_TRAY_ORIENTATION\0"),
+                NET_SYSTEM_TRAY_ORIENTATION: utils::new_atom(
+                    display,
+                    "_NET_SYSTEM_TRAY_ORIENTATION\0",
+                ),
                 NET_SYSTEM_TRAY_VISUAL: utils::new_atom(display, "_NET_SYSTEM_TRAY_VISUAL\0"),
                 NET_WM_NAME: utils::new_atom(display, "_NET_WM_NAME\0"),
                 NET_WM_PID: utils::new_atom(display, "_NET_WM_PID\0"),

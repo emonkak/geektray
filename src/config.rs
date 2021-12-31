@@ -21,7 +21,8 @@ pub struct Config {
 
 impl Config {
     pub fn parse(args: Vec<String>) -> Self {
-        let program_name = args.first()
+        let program_name = args
+            .first()
             .and_then(|arg| Path::new(arg).file_name())
             .map(|path| path.to_string_lossy().into_owned())
             .unwrap_or("keytray".to_owned());

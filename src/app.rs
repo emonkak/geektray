@@ -16,14 +16,14 @@ use crate::atoms::Atoms;
 use crate::config::Config;
 use crate::error_handler;
 use crate::event_loop::{self, ControlFlow, Event, EventLoop, X11Event};
-use crate::geometrics::{PhysicalPoint, PhysicalSize, Size};
-use crate::render_context::RenderContext;
+use crate::geometrics::{PhysicalPoint, PhysicalSize, Point, Size};
+use crate::paint_context::PaintContext;
 use crate::styles::Styles;
 use crate::text::TextRenderer;
 use crate::tray::Tray;
 use crate::tray_item::TrayItem;
 use crate::utils;
-use crate::widget::{SideEffect, WidgetPod};
+use crate::widget::{LayoutResult, SideEffect, Widget};
 use crate::xembed::{XEmbedInfo, XEmbedMessage};
 
 #[derive(Debug)]
@@ -31,11 +31,12 @@ pub struct App {
     display: *mut xlib::Display,
     atoms: Rc<Atoms>,
     styles: Rc<Styles>,
-    tray: WidgetPod<Tray>,
+    tray: Tray,
     window: xlib::Window,
     window_position: PhysicalPoint,
     window_size: PhysicalSize,
     window_mapped: bool,
+    layout: LayoutResult,
     tray_status: TrayStatus,
     system_tray_atom: xlib::Atom,
     text_renderer: TextRenderer,
@@ -64,16 +65,16 @@ impl App {
 
         let atoms = Rc::new(Atoms::new(display));
         let styles = Rc::new(Styles::new(display, &config)?);
-        let mut tray = WidgetPod::new(Tray::new(styles.clone()));
+        let mut tray = Tray::new(styles.clone());
 
-        let window_size = tray
-            .layout(Size {
-                width: config.window_width,
-                height: 0.0,
-            })
-            .snap();
+        let layout = tray.layout(Size {
+            width: config.window_width,
+            height: 0.0,
+        });
+        let window_size = layout.size.snap();
         let window_position = unsafe { get_centered_position_on_display(display, window_size) };
-        let window = unsafe { create_window(display, window_position, window_size, &config, &atoms) };
+        let window =
+            unsafe { create_window(display, window_position, window_size, &config, &atoms) };
 
         let system_tray_atom = unsafe {
             let screen_number = xlib::XDefaultScreen(display);
@@ -89,6 +90,7 @@ impl App {
             window_position,
             window_size,
             window_mapped: false,
+            layout,
             tray_status: TrayStatus::Waiting,
             system_tray_atom,
             text_renderer: TextRenderer::new(),
@@ -99,11 +101,8 @@ impl App {
 
     pub fn run(&mut self) -> Result<(), event_loop::Error> {
         unsafe {
-            let previous_selection_owner = acquire_tray_selection(
-                self.display,
-                self.window,
-                self.system_tray_atom,
-            );
+            let previous_selection_owner =
+                acquire_tray_selection(self.display, self.window, self.system_tray_atom);
             if previous_selection_owner == 0 {
                 broadcast_manager_message(
                     self.display,
@@ -113,7 +112,11 @@ impl App {
                 );
                 self.tray_status = TrayStatus::Managed;
             } else {
-                xlib::XSelectInput(self.display, previous_selection_owner, xlib::StructureNotifyMask);
+                xlib::XSelectInput(
+                    self.display,
+                    previous_selection_owner,
+                    xlib::StructureNotifyMask,
+                );
                 self.tray_status = TrayStatus::Pending(previous_selection_owner);
             }
             xlib::XMapWindow(self.display, self.window);
@@ -138,7 +141,13 @@ impl App {
                     _ => ControlFlow::Continue,
                 };
                 if event.window() == self.window {
-                    match self.tray.on_event(self.display, self.window, &event) {
+                    match self.tray.on_event(
+                        self.display,
+                        self.window,
+                        &event,
+                        Point::default(),
+                        &self.layout,
+                    ) {
                         SideEffect::None => {}
                         SideEffect::RequestLayout => self.recaclulate_layout(),
                         SideEffect::RequestRedraw => self.request_redraw(),
@@ -192,21 +201,19 @@ impl App {
         };
         match keysym as c_uint {
             keysym::XK_Down | keysym::XK_j => {
-                self.tray.widget.select_next();
+                self.tray.select_next();
                 self.request_redraw();
             }
             keysym::XK_Up | keysym::XK_k => {
-                self.tray.widget.select_previous();
+                self.tray.select_previous();
                 self.request_redraw();
             }
             keysym::XK_Right | keysym::XK_l => {
                 self.tray
-                    .widget
                     .click_selected_icon(self.display, xlib::Button1, xlib::Button1Mask)
             }
             keysym::XK_Left | keysym::XK_h => {
                 self.tray
-                    .widget
                     .click_selected_icon(self.display, xlib::Button3, xlib::Button3Mask)
             }
             keysym::XK_Escape => {
@@ -247,15 +254,15 @@ impl App {
             return ControlFlow::Break;
         }
         match self.tray_status {
-            TrayStatus::Pending(previous_selection_owner) if event.window == previous_selection_owner => {
-                unsafe {
-                    broadcast_manager_message(
-                        self.display,
-                        self.window,
-                        self.system_tray_atom,
-                        &self.atoms,
-                    );
-                }
+            TrayStatus::Pending(previous_selection_owner)
+                if event.window == previous_selection_owner =>
+            unsafe {
+                broadcast_manager_message(
+                    self.display,
+                    self.window,
+                    self.system_tray_atom,
+                    &self.atoms,
+                );
             }
             _ => {
                 if let Some(_) = self.unregister_tray_item(event.window) {
@@ -289,19 +296,29 @@ impl App {
 
     fn on_property_notify(&mut self, event: xlib::XPropertyEvent) -> ControlFlow {
         if event.atom == xlib::XA_WM_NAME || event.atom == self.atoms.NET_WM_NAME {
-            if let Some(tray_item) = self.tray.widget.find_tray_item_mut(event.window) {
+            if let Some(tray_item) = self
+                .tray
+                .tray_items_mut()
+                .iter_mut()
+                .find(|tray_item| tray_item.icon_window() == event.window)
+            {
                 let icon_title = unsafe {
                     utils::get_window_title(self.display, event.window).unwrap_or_default()
                 };
-                tray_item.widget.change_icon_title(icon_title);
+                tray_item.set_icon_title(icon_title);
                 self.request_redraw();
             }
         } else if event.atom == self.atoms.XEMBED_INFO {
             let xembed_info = unsafe { get_xembed_info(self.display, event.window, &self.atoms) };
             match xembed_info {
                 Some(xembed_info) if xembed_info.is_mapped() => {
-                    if let Some(tray_item) = self.tray.widget.find_tray_item_mut(event.window) {
-                        tray_item.widget.set_embedded(true);
+                    if let Some(tray_item) = self
+                        .tray
+                        .tray_items_mut()
+                        .iter_mut()
+                        .find(|tray_item| tray_item.icon_window() == event.window)
+                    {
+                        tray_item.set_embedded(true);
                         unsafe {
                             begin_embedding(self.display, event.window, self.window);
                         }
@@ -310,7 +327,7 @@ impl App {
                 }
                 _ => {
                     if let Some(tray_item) = self.unregister_tray_item(event.window) {
-                        if tray_item.widget.is_embedded() {
+                        if tray_item.is_embedded() {
                             unsafe {
                                 release_embedding(self.display, event.window);
                             }
@@ -436,13 +453,13 @@ impl App {
     fn register_tray_item(&mut self, icon_window: xlib::Window, xembed_info: &XEmbedInfo) {
         let icon_title =
             unsafe { utils::get_window_title(self.display, icon_window).unwrap_or_default() };
-        let tray_item = WidgetPod::new(TrayItem::new(
+        let tray_item = TrayItem::new(
             icon_window,
             icon_title,
             xembed_info.is_mapped(),
             self.styles.clone(),
-        ));
-        self.tray.widget.add_tray_item(tray_item);
+        );
+        self.tray.add_tray_item(tray_item);
         unsafe {
             request_embedding(
                 self.display,
@@ -454,13 +471,15 @@ impl App {
         }
     }
 
-    fn unregister_tray_item(&mut self, icon_window: xlib::Window) -> Option<WidgetPod<TrayItem>> {
+    fn unregister_tray_item(&mut self, icon_window: xlib::Window) -> Option<TrayItem> {
         self.pending_tray_messages.remove(&icon_window);
-        self.tray.widget.remove_tray_item(icon_window)
+        self.tray.remove_tray_item(icon_window)
     }
 
     fn recaclulate_layout(&mut self) {
-        let size = self.tray.layout(self.window_size.unsnap()).snap();
+        self.layout = self.tray.layout(self.window_size.unsnap());
+
+        let size = self.layout.size.snap();
 
         unsafe {
             if self.window_size != size {
@@ -495,14 +514,15 @@ impl App {
     }
 
     fn redraw(&mut self) {
-        let mut context = RenderContext::new(
+        let mut context = PaintContext::new(
             self.display,
             self.window,
             self.window_size,
             &mut self.text_renderer,
         );
 
-        self.tray.render(&mut context);
+        self.tray
+            .render(Point::default(), &self.layout, &mut context);
 
         context.commit();
     }
@@ -510,10 +530,10 @@ impl App {
 
 impl Drop for App {
     fn drop(&mut self) {
-        for tray_item in self.tray.widget.tray_items() {
-            if tray_item.widget.is_embedded() {
+        for tray_item in self.tray.tray_items() {
+            if tray_item.is_embedded() {
                 unsafe {
-                    release_embedding(self.display, tray_item.widget.icon_window());
+                    release_embedding(self.display, tray_item.icon_window());
                 }
             }
         }
@@ -522,10 +542,7 @@ impl Drop for App {
 
         if matches!(self.tray_status, TrayStatus::Managed) {
             unsafe {
-                release_tray_selection(
-                    self.display,
-                    self.system_tray_atom,
-                );
+                release_tray_selection(self.display, self.system_tray_atom);
             }
         }
 
@@ -726,16 +743,8 @@ unsafe fn broadcast_manager_message(
     utils::send_client_message(display, root, root, atoms.MANAGER, data);
 }
 
-unsafe fn release_tray_selection(
-    display: *mut xlib::Display,
-    system_tray_atom: xlib::Atom,
-) {
-    xlib::XSetSelectionOwner(
-        display,
-        system_tray_atom,
-        0,
-        xlib::CurrentTime,
-    );
+unsafe fn release_tray_selection(display: *mut xlib::Display, system_tray_atom: xlib::Atom) {
+    xlib::XSetSelectionOwner(display, system_tray_atom, 0, xlib::CurrentTime);
 }
 
 unsafe fn request_embedding(

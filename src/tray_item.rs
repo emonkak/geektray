@@ -3,12 +3,12 @@ use std::rc::Rc;
 use x11::xlib;
 
 use crate::event_loop::X11Event;
-use crate::geometrics::{PhysicalPoint, Rect, Size};
-use crate::render_context::RenderContext;
+use crate::geometrics::{PhysicalPoint, Point, Rect, Size};
+use crate::paint_context::PaintContext;
 use crate::styles::Styles;
 use crate::text::{HorizontalAlign, Text, VerticalAlign};
 use crate::utils;
-use crate::widget::{SideEffect, Widget};
+use crate::widget::{LayoutResult, SideEffect, Widget};
 
 #[derive(Debug)]
 pub struct TrayItem {
@@ -45,10 +45,6 @@ impl TrayItem {
         self.is_embedded
     }
 
-    pub fn change_icon_title(&mut self, icon_title: String) {
-        self.icon_title = icon_title;
-    }
-
     pub fn emit_click(&self, display: *mut xlib::Display, button: c_uint, button_mask: c_uint) {
         let center = (self.styles.icon_size / 2.0) as i32;
 
@@ -64,6 +60,10 @@ impl TrayItem {
         }
     }
 
+    pub fn set_icon_title(&mut self, icon_title: String) {
+        self.icon_title = icon_title;
+    }
+
     pub fn set_embedded(&mut self, value: bool) {
         self.is_embedded = value;
     }
@@ -74,7 +74,7 @@ impl TrayItem {
 }
 
 impl Widget for TrayItem {
-    fn render(&mut self, bounds: Rect, context: &mut RenderContext) {
+    fn render(&mut self, position: Point, layout: &LayoutResult, context: &mut PaintContext) {
         let (bg_color, fg_color) = if self.is_selected {
             (
                 self.styles.selected_background,
@@ -84,7 +84,7 @@ impl Widget for TrayItem {
             (self.styles.normal_background, self.styles.normal_foreground)
         };
 
-        context.fill_rectange(bg_color, bounds);
+        context.fill_rectange(bg_color, Rect::new(position, layout.size));
 
         context.render_single_line_text(
             fg_color,
@@ -96,10 +96,10 @@ impl Widget for TrayItem {
                 vertical_align: VerticalAlign::Middle,
             },
             Rect {
-                x: bounds.x + (self.styles.icon_size + self.styles.padding * 2.0),
-                y: bounds.y,
-                width: bounds.width - (self.styles.icon_size + self.styles.padding * 2.0),
-                height: bounds.height,
+                x: position.x + (self.styles.icon_size + self.styles.padding * 2.0),
+                y: position.y,
+                width: layout.size.width - (self.styles.icon_size + self.styles.padding * 2.0),
+                height: layout.size.height,
             },
         );
 
@@ -110,8 +110,8 @@ impl Widget for TrayItem {
                 xlib::XMoveResizeWindow(
                     context.display(),
                     self.icon_window,
-                    (bounds.x + self.styles.padding) as _,
-                    (bounds.y + self.styles.padding) as _,
+                    (position.x + self.styles.padding) as _,
+                    (position.y + self.styles.padding) as _,
                     self.styles.icon_size as _,
                     self.styles.icon_size as _,
                 );
@@ -119,10 +119,13 @@ impl Widget for TrayItem {
         }
     }
 
-    fn layout(&mut self, container_size: Size) -> Size {
-        Size {
-            width: container_size.width as f32,
-            height: self.styles.item_height(),
+    fn layout(&mut self, container_size: Size) -> LayoutResult {
+        LayoutResult {
+            size: Size {
+                width: container_size.width as f32,
+                height: self.styles.item_height(),
+            },
+            children: Vec::new(),
         }
     }
 
@@ -131,10 +134,12 @@ impl Widget for TrayItem {
         display: *mut xlib::Display,
         _window: xlib::Window,
         event: &X11Event,
-        bounds: Rect,
+        position: Point,
+        layout: &LayoutResult,
     ) -> SideEffect {
         match event {
             X11Event::ButtonPress(event) => {
+                let bounds = Rect::new(position, layout.size);
                 let pointer_position = PhysicalPoint {
                     x: event.x as _,
                     y: event.y as _,
@@ -144,6 +149,7 @@ impl Widget for TrayItem {
                 }
             }
             X11Event::ButtonRelease(event) => {
+                let bounds = Rect::new(position, layout.size);
                 let pointer_position = PhysicalPoint {
                     x: event.x as _,
                     y: event.y as _,
