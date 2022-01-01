@@ -4,10 +4,10 @@ use x11::xlib;
 
 use crate::event_loop::X11Event;
 use crate::geometrics::{Point, Size};
-use crate::paint_context::PaintContext;
+use crate::render_context::RenderContext;
 use crate::styles::Styles;
-use crate::tray_item::TrayItem;
-use crate::widget::{LayoutResult, SideEffect, Widget};
+use crate::tray_item::{TrayItem, TrayItemMessage};
+use crate::widget::{Effect, LayoutResult, Widget};
 
 #[derive(Debug)]
 pub struct Tray {
@@ -25,23 +25,17 @@ impl Tray {
         }
     }
 
-    pub fn tray_items(&self) -> &[TrayItem] {
-        &self.tray_items
-    }
-
-    pub fn tray_items_mut(&mut self) -> &mut [TrayItem] {
-        &mut self.tray_items
-    }
-
-    pub fn add_tray_item(&mut self, tray_item: TrayItem) {
+    fn add_tray_item(&mut self, window: xlib::Window, title: String) -> Effect {
+        let tray_item = TrayItem::new(window, title, self.styles.clone());
         self.tray_items.push(tray_item);
+        Effect::RequestLayout
     }
 
-    pub fn remove_tray_item(&mut self, icon_window: xlib::Window) -> Option<TrayItem> {
+    fn remove_tray_item(&mut self, window: xlib::Window) -> Effect {
         if let Some(index) = self
             .tray_items
             .iter()
-            .position(|tray_item| tray_item.icon_window() == icon_window)
+            .position(|tray_item| tray_item.window() == window)
         {
             match self.selected_index {
                 Some(selected_index) if selected_index > index => {
@@ -52,27 +46,41 @@ impl Tray {
                 }
                 _ => {}
             }
-            Some(self.tray_items.remove(index))
+            self.tray_items.remove(index);
+            Effect::RequestLayout
         } else {
-            None
+            Effect::None
         }
     }
 
-    pub fn click_selected_icon(
-        &mut self,
-        display: *mut xlib::Display,
-        button: c_uint,
-        button_mask: c_uint,
-    ) {
-        if let Some(index) = self.selected_index {
-            let tray_item = &self.tray_items[index];
-            tray_item.emit_click(display, button, button_mask);
+    fn change_title(&mut self, window: xlib::Window, title: String) -> Effect {
+        if let Some(tray_item) = self
+            .tray_items
+            .iter_mut()
+            .find(|tray_item| tray_item.window() == window)
+        {
+            tray_item.on_message(TrayItemMessage::ChangeTitle { title })
+        } else {
+            Effect::None
         }
     }
 
-    pub fn select_next(&mut self) {
+    fn deselect_item(&mut self) -> Effect {
         if self.tray_items.len() == 0 {
-            return;
+            return Effect::None;
+        }
+
+        if let Some(selected_index) = self.selected_index {
+            let tray_item = &mut self.tray_items[selected_index];
+            tray_item.on_message(TrayItemMessage::DeselectItem)
+        } else {
+            return Effect::None;
+        }
+    }
+
+    fn select_next(&mut self) -> Effect {
+        if self.tray_items.len() == 0 {
+            return Effect::None;
         }
 
         let selected_index = match self.selected_index {
@@ -81,12 +89,12 @@ impl Tray {
             _ => Some(0),
         };
 
-        self.update_selected_index(selected_index);
+        self.update_selected_index(selected_index)
     }
 
-    pub fn select_previous(&mut self) {
+    fn select_previous(&mut self) -> Effect {
         if self.tray_items.len() == 0 {
-            return;
+            return Effect::None;
         }
 
         let selected_index = match self.selected_index {
@@ -95,26 +103,42 @@ impl Tray {
             _ => Some(self.tray_items.len() - 1),
         };
 
-        self.update_selected_index(selected_index);
+        self.update_selected_index(selected_index)
     }
 
-    fn update_selected_index(&mut self, new_index: Option<usize>) {
+    fn update_selected_index(&mut self, new_index: Option<usize>) -> Effect {
+        let mut result = Effect::None;
+
         if let Some(index) = self.selected_index {
-            let current_tray_item = &mut self.tray_items[index];
-            current_tray_item.set_selected(false);
+            let tray_item = &mut self.tray_items[index];
+            result = result + tray_item.on_message(TrayItemMessage::DeselectItem);
         }
 
         if let Some(index) = new_index {
             let tray_item = &mut self.tray_items[index];
-            tray_item.set_selected(true);
+            result = result + tray_item.on_message(TrayItemMessage::SelectItem);
         }
 
         self.selected_index = new_index;
+
+        result
+    }
+
+    fn click_selected_item(&mut self, button: c_uint, button_mask: c_uint) -> Effect {
+        if let Some(index) = self.selected_index {
+            let tray_item = &mut self.tray_items[index];
+            tray_item.on_message(TrayItemMessage::ClickItem {
+                button,
+                button_mask,
+            })
+        } else {
+            Effect::None
+        }
     }
 }
 
-impl Widget for Tray {
-    fn render(&mut self, _position: Point, layout: &LayoutResult, context: &mut PaintContext) {
+impl Widget<TrayMessage> for Tray {
+    fn render(&mut self, _position: Point, layout: &LayoutResult, context: &mut RenderContext) {
         context.clear_viewport(self.styles.normal_background);
 
         for (tray_item, (child_position, child_layout)) in
@@ -146,23 +170,41 @@ impl Widget for Tray {
         }
     }
 
-    fn on_event(
-        &mut self,
-        display: *mut xlib::Display,
-        window: xlib::Window,
-        event: &X11Event,
-        _position: Point,
-        layout: &LayoutResult,
-    ) -> SideEffect {
-        let mut side_effect = SideEffect::None;
+    fn on_event(&mut self, event: &X11Event, _position: Point, layout: &LayoutResult) -> Effect {
+        let mut side_effect = Effect::None;
 
         for (tray_item, (position, layout)) in
             self.tray_items.iter_mut().zip(layout.children.iter())
         {
-            side_effect =
-                side_effect.compose(tray_item.on_event(display, window, event, *position, layout));
+            side_effect = side_effect + tray_item.on_event(event, *position, layout);
         }
 
         side_effect
     }
+
+    fn on_message(&mut self, message: TrayMessage) -> Effect {
+        match message {
+            TrayMessage::AddTrayIcon { window, title } => self.add_tray_item(window, title),
+            TrayMessage::RemoveTrayIcon { window } => self.remove_tray_item(window),
+            TrayMessage::ChangeTitle { window, title } => self.change_title(window, title),
+            TrayMessage::DeselectItem => self.deselect_item(),
+            TrayMessage::SelectNextItem => self.select_next(),
+            TrayMessage::SelectPreviousItem => self.select_previous(),
+            TrayMessage::ClickSelectedItem {
+                button,
+                button_mask,
+            } => self.click_selected_item(button, button_mask),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum TrayMessage {
+    AddTrayIcon { window: xlib::Window, title: String },
+    RemoveTrayIcon { window: xlib::Window },
+    ChangeTitle { window: xlib::Window, title: String },
+    DeselectItem,
+    SelectNextItem,
+    SelectPreviousItem,
+    ClickSelectedItem { button: c_uint, button_mask: c_uint },
 }

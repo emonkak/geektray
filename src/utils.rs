@@ -157,8 +157,18 @@ pub unsafe fn emit_click_event(
 pub unsafe fn get_window_title(
     display: *mut xlib::Display,
     window: xlib::Window,
+    net_wm_name_atom: xlib::Atom,
 ) -> Option<String> {
-    get_window_variable_property::<u8>(display, window, xlib::XA_WM_NAME, xlib::XA_STRING, 256)
+    get_window_variable_property::<u8>(display, window, net_wm_name_atom, xlib::XA_STRING, 256)
+        .or_else(|| {
+            get_window_variable_property::<u8>(
+                display,
+                window,
+                xlib::XA_WM_NAME,
+                xlib::XA_STRING,
+                256,
+            )
+        })
         .or_else(|| {
             get_window_variable_property::<u8>(
                 display,

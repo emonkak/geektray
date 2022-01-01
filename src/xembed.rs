@@ -21,7 +21,7 @@ pub enum XEmbedMessage {
 }
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct XEmbedInfo {
     pub version: u64,
     pub flags: u64,

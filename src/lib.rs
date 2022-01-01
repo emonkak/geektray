@@ -10,7 +10,7 @@ mod color;
 mod error_handler;
 mod event_loop;
 mod geometrics;
-mod paint_context;
+mod render_context;
 mod styles;
 mod tray;
 mod tray_item;
