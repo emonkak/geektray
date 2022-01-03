@@ -1,8 +1,9 @@
 use libdbus_sys as dbus;
-use std::collections::hash_map;
 use std::collections::HashMap;
 use std::collections::VecDeque;
+use std::collections::hash_map;
 use std::env;
+use std::error::Error;
 use std::ffi::CStr;
 use std::ffi::CString;
 use std::mem;
@@ -16,7 +17,7 @@ use x11::xlib;
 use crate::atoms::Atoms;
 use crate::config::Config;
 use crate::error_handler;
-use crate::event_loop::{self, ControlFlow, Event, EventLoop, X11Event};
+use crate::event_loop::{ControlFlow, Event, EventLoop, X11Event};
 use crate::geometrics::{PhysicalPoint, PhysicalSize, Point, Size};
 use crate::render_context::RenderContext;
 use crate::styles::Styles;
@@ -99,7 +100,7 @@ impl App {
         })
     }
 
-    pub fn run(&mut self) -> Result<(), event_loop::Error> {
+    pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
         unsafe {
             let previous_selection_owner =
                 acquire_tray_selection(self.display, self.window, self.system_tray_atom);

@@ -1,4 +1,5 @@
 use libdbus_sys as dbus;
+use std::error;
 use std::ffi::CStr;
 use std::fmt;
 use std::mem;
@@ -129,12 +130,23 @@ impl DBusError {
     }
 }
 
+impl error::Error for DBusError {}
+
 impl fmt::Debug for DBusError {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         f.debug_struct("DBusError")
             .field("name", &self.name())
             .field("message", &self.message())
             .finish()
+    }
+}
+
+impl fmt::Display for DBusError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some((name, message)) = self.message().zip(self.name()) {
+            write!(f, "{} ({})", message, name)?;
+        }
+        Ok(())
     }
 }
 

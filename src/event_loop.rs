@@ -5,6 +5,7 @@ use nix::sys::epoll;
 use nix::sys::signal;
 use nix::sys::signalfd;
 use nix::unistd;
+use std::error::Error;
 use std::ffi::CStr;
 use std::mem;
 use std::os::raw::*;
@@ -14,7 +15,7 @@ use std::str;
 use std::time::Duration;
 use x11::xlib;
 
-use crate::dbus::{DBusArguments, DBusConnection, DBusError, DBusMessage, DBusVariant};
+use crate::dbus::{DBusArguments, DBusConnection, DBusMessage, DBusVariant};
 
 const EVENT_KIND_X11: u64 = 1;
 const EVENT_KIND_SIGNAL: u64 = 2;
@@ -31,16 +32,15 @@ pub struct EventLoop {
 }
 
 impl EventLoop {
-    pub fn new(display: *mut xlib::Display) -> Result<Self, Error> {
-        let epoll_fd = epoll::epoll_create().map_err(Error::NixError)?;
+    pub fn new(display: *mut xlib::Display) -> Result<Self, Box<dyn Error>> {
+        let epoll_fd = epoll::epoll_create()?;
         let signal_fd = {
             let mut mask = signalfd::SigSet::empty();
             mask.add(signal::Signal::SIGINT);
-            mask.thread_block().unwrap();
+            mask.thread_block()?;
             signalfd::SignalFd::new(&mask)
-        }
-        .map_err(Error::NixError)?;
-        let dbus_connection = DBusConnection::new(DBUS_INTERFACE_NAME).map_err(Error::DBusError)?;
+        }?;
+        let dbus_connection = DBusConnection::new(DBUS_INTERFACE_NAME)?;
 
         dbus_connection.set_watch_functions(
             Some(handle_dbus_add_watch),
@@ -58,8 +58,7 @@ impl EventLoop {
                 epoll::EpollOp::EpollCtlAdd,
                 raw_fd,
                 Some(&mut event),
-            )
-            .map_err(Error::NixError)?;
+            )?;
         }
 
         {
@@ -70,8 +69,7 @@ impl EventLoop {
                 epoll::EpollOp::EpollCtlAdd,
                 raw_fd,
                 Some(&mut event),
-            )
-            .map_err(Error::NixError)?;
+            )?;
         }
 
         Ok(Self {
@@ -174,12 +172,6 @@ impl Drop for EventLoop {
     fn drop(&mut self) {
         unistd::close(self.epoll_fd).ok();
     }
-}
-
-#[derive(Debug)]
-pub enum Error {
-    NixError(nix::Error),
-    DBusError(DBusError),
 }
 
 #[derive(Debug)]
