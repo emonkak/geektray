@@ -139,7 +139,7 @@ impl Tray {
 
 impl Widget<TrayMessage> for Tray {
     fn render(&mut self, _position: Point, layout: &LayoutResult, context: &mut RenderContext) {
-        context.clear_viewport(self.styles.normal_background);
+        context.clear_viewport(self.styles.window_background);
 
         for (tray_item, (child_position, child_layout)) in
             self.tray_items.iter_mut().zip(layout.children.iter())

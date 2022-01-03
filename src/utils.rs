@@ -220,7 +220,7 @@ pub unsafe fn get_window_fixed_property<T: Sized, const N: usize>(
         &mut prop,
     );
 
-    if result != xlib::Success.into()
+    if result != xlib::Success as c_int
         || actual_format != expected_format as c_int
         || nitems != N as c_ulong
         || bytes_after != 0
@@ -268,7 +268,7 @@ pub unsafe fn get_window_variable_property<T: Sized>(
         &mut prop,
     );
 
-    if result != xlib::Success.into()
+    if result != xlib::Success as c_int
         || actual_type != property_type
         || actual_format != format
         || nitems == 0
@@ -300,7 +300,7 @@ pub unsafe fn get_window_variable_property<T: Sized>(
             &mut prop,
         );
 
-        if result != xlib::Success.into()
+        if result != xlib::Success as c_int
             || actual_type != property_type
             || actual_format != format
             || prop.is_null()

@@ -11,48 +11,55 @@ pub struct Styles {
     pub padding: f32,
     pub font_size: f32,
     pub font_set: FontSet,
-    pub normal_background: Color,
-    pub normal_foreground: Color,
-    pub selected_background: Color,
-    pub selected_foreground: Color,
+    pub window_background: Color,
+    pub normal_item_background: Color,
+    pub normal_item_foreground: Color,
+    pub selected_item_background: Color,
+    pub selected_item_foreground: Color,
 }
 
 impl Styles {
     pub fn new(display: *mut xlib::Display, config: &Config) -> Result<Self, String> {
         Ok(Self {
-            icon_size: config.icon_size,
-            padding: config.padding,
-            font_size: config.font_size,
+            icon_size: config.ui.icon_size,
+            padding: config.ui.window_padding,
+            font_size: config.font.size,
             font_set: FontSet::new(FontDescriptor {
-                family: config.font_family.clone(),
-                style: config.font_style,
-                weight: config.font_weight,
-                stretch: config.font_stretch,
+                family: config.font.family.clone(),
+                style: config.font.style,
+                weight: config.font.weight.into(),
+                stretch: config.font.stretch,
             })
             .ok_or(format!(
                 "Failed to initialize `font_set`: {:?}",
-                config.font_family
+                config.font.family
             ))?,
-            normal_background: Color::parse(display, &config.normal_background).ok_or(format!(
-                "Failed to parse `normal_background`: {:?}",
-                config.normal_background
-            ))?,
-            normal_foreground: Color::parse(display, &config.normal_foreground).ok_or(format!(
-                "Failed to parse `normal_foreground`: {:?}",
-                config.normal_foreground
-            ))?,
-            selected_background: Color::parse(display, &config.selected_background).ok_or(
+            window_background: Color::parse(display, &config.color.window_background).ok_or(
                 format!(
+                    "Failed to parse `windowground`: {:?}",
+                    config.color.window_background
+                ),
+            )?,
+            normal_item_background: Color::parse(display, &config.color.normal_item_background)
+                .ok_or(format!(
+                    "Failed to parse `normal_background`: {:?}",
+                    config.color.normal_item_background
+                ))?,
+            normal_item_foreground: Color::parse(display, &config.color.normal_item_foreground)
+                .ok_or(format!(
+                    "Failed to parse `normal_foreground`: {:?}",
+                    config.color.normal_item_foreground
+                ))?,
+            selected_item_background: Color::parse(display, &config.color.selected_item_background)
+                .ok_or(format!(
                     "Failed to parse `selected_background`: {:?}",
-                    config.selected_background
-                ),
-            )?,
-            selected_foreground: Color::parse(display, &config.selected_foreground).ok_or(
-                format!(
+                    config.color.selected_item_background
+                ))?,
+            selected_item_foreground: Color::parse(display, &config.color.selected_item_foreground)
+                .ok_or(format!(
                     "Failed to parse `selected_foreground`: {:?}",
-                    config.selected_foreground
-                ),
-            )?,
+                    config.color.selected_item_foreground
+                ))?,
         })
     }
 

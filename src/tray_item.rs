@@ -39,11 +39,14 @@ impl Widget<TrayItemMessage> for TrayItem {
     fn render(&mut self, position: Point, layout: &LayoutResult, context: &mut RenderContext) {
         let (bg_color, fg_color) = if self.is_selected {
             (
-                self.styles.selected_background,
-                self.styles.selected_foreground,
+                self.styles.selected_item_background,
+                self.styles.selected_item_foreground,
             )
         } else {
-            (self.styles.normal_background, self.styles.normal_foreground)
+            (
+                self.styles.normal_item_background,
+                self.styles.normal_item_foreground,
+            )
         };
 
         context.fill_rectange(bg_color, Rect::new(position, layout.size));

@@ -1,5 +1,7 @@
 extern crate libdbus_sys;
 extern crate nix;
+extern crate serde;
+extern crate serde_json;
 extern crate x11;
 
 pub mod app;

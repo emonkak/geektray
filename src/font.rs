@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub struct FontDescriptor {
     pub family: FontFamily,
@@ -6,7 +8,8 @@ pub struct FontDescriptor {
     pub stretch: FontStretch,
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Deserialize, Serialize)]
+#[serde(untagged)]
 pub enum FontFamily {
     Name(String),
     SansSerif,
@@ -20,7 +23,7 @@ impl Default for FontFamily {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Deserialize, Serialize)]
 pub enum FontStretch {
     UltraCondensed,
     ExtraCondensed,
@@ -39,7 +42,7 @@ impl Default for FontStretch {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Deserialize, Serialize)]
 pub enum FontStyle {
     Normal,
     Italic,
@@ -52,7 +55,7 @@ impl Default for FontStyle {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Deserialize, Serialize)]
 pub struct FontWeight(pub u16);
 
 impl FontWeight {
@@ -61,7 +64,7 @@ impl FontWeight {
     pub const LIGHT: Self = Self(300);
     pub const NORMAL: Self = Self(400);
     pub const MEDIUM: Self = Self(500);
-    pub const SEMIBOLD: Self = Self(600);
+    pub const SEMI_BOLD: Self = Self(600);
     pub const BOLD: Self = Self(700);
     pub const EXTRA_BOLD: Self = Self(800);
     pub const BLACK: Self = Self(900);

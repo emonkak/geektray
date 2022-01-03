@@ -1,7 +1,7 @@
 use libdbus_sys as dbus;
+use std::collections::hash_map;
 use std::collections::HashMap;
 use std::collections::VecDeque;
-use std::collections::hash_map;
 use std::env;
 use std::error::Error;
 use std::ffi::CStr;
@@ -27,6 +27,10 @@ use crate::utils;
 use crate::widget::{Effect, LayoutResult, Widget};
 use crate::xembed::{XEmbedInfo, XEmbedMessage};
 
+const SYSTEM_TRAY_REQUEST_DOCK: c_long = 0;
+const SYSTEM_TRAY_BEGIN_MESSAGE: c_long = 1;
+const SYSTEM_TRAY_CANCEL_MESSAGE: c_long = 2;
+
 #[derive(Debug)]
 pub struct App {
     display: *mut xlib::Display,
@@ -49,7 +53,7 @@ pub struct App {
 impl App {
     pub fn new(config: Config) -> Result<Self, String> {
         let old_error_handler = unsafe {
-            xlib::XSetErrorHandler(if config.is_debugging {
+            xlib::XSetErrorHandler(if config.print_x11_errors {
                 Some(error_handler::print_error)
             } else {
                 Some(error_handler::ignore_error)
@@ -69,7 +73,7 @@ impl App {
         let mut tray = Tray::new(styles);
 
         let layout = tray.layout(Size {
-            width: config.window_width,
+            width: config.ui.window_width,
             height: 0.0,
         });
         let window_size = layout.size.snap();
@@ -345,17 +349,17 @@ impl App {
             }
         } else if event.message_type == self.atoms.NET_SYSTEM_TRAY_OPCODE {
             let opcode = event.data.get_long(1);
-            if opcode == SystemTrayOpcode::RequestDock as _ {
+            if opcode == SYSTEM_TRAY_REQUEST_DOCK {
                 let icon_window = event.data.get_long(2) as xlib::Window;
                 if let Some(xembed_info) =
                     unsafe { get_xembed_info(self.display, icon_window, &self.atoms) }
                 {
                     self.register_tray_icon(icon_window, xembed_info);
                 }
-            } else if opcode == SystemTrayOpcode::BeginMessage as _ {
+            } else if opcode == SYSTEM_TRAY_BEGIN_MESSAGE {
                 let balloon_message = BalloonMessage::new(&event.data);
                 self.balloon_messages.insert(event.window, balloon_message);
-            } else if opcode == SystemTrayOpcode::CancelMessage as _ {
+            } else if opcode == SYSTEM_TRAY_CANCEL_MESSAGE {
                 if let hash_map::Entry::Occupied(entry) = self.balloon_messages.entry(event.window)
                 {
                     let id = event.data.get_long(2);
@@ -620,14 +624,6 @@ impl Drop for App {
     }
 }
 
-#[repr(i64)]
-#[derive(Debug)]
-enum SystemTrayOpcode {
-    RequestDock = 0,
-    BeginMessage = 1,
-    CancelMessage = 2,
-}
-
 #[derive(Debug)]
 enum TrayStatus {
     Waiting,
@@ -741,8 +737,8 @@ unsafe fn create_window(
     }
 
     {
-        let name_string = format!("{}\0", config.program_name);
-        let class_string = format!("{}\0{}\0", config.program_name, config.program_name);
+        let name_string = format!("{}\0", config.ui.window_name);
+        let class_string = format!("{}\0{}\0", config.ui.window_class, config.ui.window_class);
 
         let mut class_hint = mem::MaybeUninit::<xlib::XClassHint>::uninit().assume_init();
         class_hint.res_name = name_string.as_ptr() as *mut c_char;
