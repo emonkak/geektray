@@ -1,7 +1,7 @@
 {
+    "window_name": "KeyTray",
+    "window_class": "KeyTray",
     "ui": {
-        "window_name": "KeyTray",
-        "window_class": "KeyTray",
         "window_padding": 8.0,
         "window_width": 480,
         "item_gap": 8.0,
@@ -9,7 +9,7 @@
     },
     "font": {
         "size": 12.0,
-        "family": "SansSerif",
+        "family": "Sans",
         "weight": "Normal",
         "style": "Normal",
         "stretch": "Normal"
@@ -24,60 +24,60 @@
     "keys": [
         {
             "key": "j",
-            "action": "SelectNextItem"
+            "commands": ["SelectNextItem"]
         },
         {
             "key": "Down",
-            "action": "SelectNextItem"
+            "commands": ["SelectNextItem"]
         },
         {
             "key": "n",
             "modifiers": {
                 "control": true
             },
-            "action": "SelectNextItem"
+            "commands": ["SelectNextItem"]
         },
         {
             "key": "k",
-            "action": "SelectPreviousItem"
+            "commands": ["SelectPreviousItem"]
         },
         {
             "key": "Down",
-            "action": "SelectPreviousItem"
+            "commands": ["SelectPreviousItem"]
         },
         {
             "key": "p",
             "modifiers": {
                 "control": true
             },
-            "action": "SelectPreviousItem"
+            "commands": ["SelectPreviousItem"]
         },
         {
             "key": "l",
-            "action": "ClickLeftButton"
+            "commands": ["ClickLeftButton", "HideWindow"]
         },
         {
-            "key": "Enter",
-            "action": "ClickLeftButton"
+            "key": "Return",
+            "commands": ["ClickLeftButton", "HideWindow"]
         },
         {
             "key": "h",
-            "action": "ClickRightButton"
+            "commands": ["ClickRightButton", "HideWindow"]
         },
         {
-            "key": "Enter",
+            "key": "Return",
             "modifiers": {
                 "shift": true
             },
-            "action": "ClickRightButton"
-        },
-        {
-            "key": "Escape",
-            "action": "HideWindow"
+            "commands": ["ClickRightButton", "HideWindow"]
         },
         {
             "key": "q",
-            "action": "HideWindow"
+            "commands": ["HideWindow"]
+        },
+        {
+            "key": "Escape",
+            "commands": ["HideWindow"]
         }
     ],
     "print_x11_errors": true

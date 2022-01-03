@@ -737,8 +737,12 @@ unsafe fn create_window(
     }
 
     {
-        let name_string = format!("{}\0", config.ui.window_name);
-        let class_string = format!("{}\0{}\0", config.ui.window_class, config.ui.window_class);
+        let name_string = format!("{}\0", config.window_name.as_ref());
+        let class_string = format!(
+            "{}\0{}\0",
+            config.window_class.as_ref(),
+            config.window_class.as_ref()
+        );
 
         let mut class_hint = mem::MaybeUninit::<xlib::XClassHint>::uninit().assume_init();
         class_hint.res_name = name_string.as_ptr() as *mut c_char;

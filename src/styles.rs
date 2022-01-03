@@ -36,28 +36,28 @@ impl Styles {
             ))?,
             window_background: Color::parse(display, &config.color.window_background).ok_or(
                 format!(
-                    "Failed to parse `windowground`: {:?}",
+                    "Failed to parse `window_background`: {:?}",
                     config.color.window_background
                 ),
             )?,
             normal_item_background: Color::parse(display, &config.color.normal_item_background)
                 .ok_or(format!(
-                    "Failed to parse `normal_background`: {:?}",
+                    "Failed to parse `normal_item_background`: {:?}",
                     config.color.normal_item_background
                 ))?,
             normal_item_foreground: Color::parse(display, &config.color.normal_item_foreground)
                 .ok_or(format!(
-                    "Failed to parse `normal_foreground`: {:?}",
+                    "Failed to parse `normal_item_foreground`: {:?}",
                     config.color.normal_item_foreground
                 ))?,
             selected_item_background: Color::parse(display, &config.color.selected_item_background)
                 .ok_or(format!(
-                    "Failed to parse `selected_background`: {:?}",
+                    "Failed to parse `selected_item_background`: {:?}",
                     config.color.selected_item_background
                 ))?,
             selected_item_foreground: Color::parse(display, &config.color.selected_item_foreground)
                 .ok_or(format!(
-                    "Failed to parse `selected_foreground`: {:?}",
+                    "Failed to parse `selected_item_foreground`: {:?}",
                     config.color.selected_item_foreground
                 ))?,
         })

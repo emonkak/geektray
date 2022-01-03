@@ -11,13 +11,9 @@ use x11::xlib;
 use x11::xrender;
 
 use crate::color::Color;
-use crate::font::{FontDescriptor, FontFamily, FontStretch, FontStyle};
+use crate::font::{FontDescriptor, FontStretch, FontStyle};
 use crate::fontconfig as fc;
 use crate::geometrics::{Rect, Size};
-
-const SERIF_FAMILY: &'static str = "Serif\0";
-const SANS_SERIF_FAMILY: &'static str = "Sans\0";
-const MONOSPACE_FAMILY: &'static str = "Monospace\0";
 
 #[derive(Debug)]
 pub struct TextRenderer {
@@ -378,38 +374,13 @@ impl<'a> Iterator for TextChunkIter<'a> {
 unsafe fn prepare_pattern(descriptor: &FontDescriptor) -> *mut fc::FcPattern {
     let pattern = fc::FcPatternCreate();
 
-    match &descriptor.family {
-        FontFamily::Name(name) => {
-            if let Ok(name_str) = CString::new(name.as_str()) {
-                fc::FcPatternAddString(
-                    pattern,
-                    fc::FC_FAMILY.as_ptr() as *mut c_char,
-                    name_str.as_ptr() as *mut c_uchar,
-                );
-            }
-        }
-        FontFamily::Serif => {
-            fc::FcPatternAddString(
-                pattern,
-                fc::FC_FAMILY.as_ptr() as *mut c_char,
-                SERIF_FAMILY.as_ptr(),
-            );
-        }
-        FontFamily::SansSerif => {
-            fc::FcPatternAddString(
-                pattern,
-                fc::FC_FAMILY.as_ptr() as *mut c_char,
-                SANS_SERIF_FAMILY.as_ptr(),
-            );
-        }
-        FontFamily::Monospace => {
-            fc::FcPatternAddString(
-                pattern,
-                fc::FC_FAMILY.as_ptr() as *mut c_char,
-                MONOSPACE_FAMILY.as_ptr(),
-            );
-        }
-    };
+    if let Ok(name_str) = CString::new(descriptor.family.0.as_ref()) {
+        fc::FcPatternAddString(
+            pattern,
+            fc::FC_FAMILY.as_ptr() as *mut c_char,
+            name_str.as_ptr() as *mut c_uchar,
+        );
+    }
 
     fc::FcPatternAddDouble(
         pattern,

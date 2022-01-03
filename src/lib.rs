@@ -9,6 +9,7 @@ pub mod config;
 
 mod atoms;
 mod color;
+mod command;
 mod error_handler;
 mod event_loop;
 mod geometrics;

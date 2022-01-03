@@ -17,3 +17,6 @@ x11 = { version = "2.18.2", features = ["xft", "xinerama", "xlib"] }
 
 [[example]]
 name = "tray_icon_test"
+
+[[example]]
+name = "list_keysyms"

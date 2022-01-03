@@ -133,7 +133,7 @@ impl DBusError {
 impl error::Error for DBusError {}
 
 impl fmt::Debug for DBusError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("DBusError")
             .field("name", &self.name())
             .field("message", &self.message())
@@ -244,7 +244,7 @@ impl DBusMessage {
 }
 
 impl fmt::Debug for DBusMessage {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("DBusMessage")
             .field("message_type", &self.message_type())
             .field("reply_serial", &self.reply_serial())
