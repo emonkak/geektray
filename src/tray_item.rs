@@ -60,7 +60,7 @@ impl TrayItem {
 }
 
 impl Widget for TrayItem {
-    fn render(&mut self, position: Point, layout: &LayoutResult, context: &mut RenderContext) {
+    fn render(&self, position: Point, layout: &LayoutResult, context: &mut RenderContext) {
         let (bg_color, fg_color) = if self.is_selected {
             (
                 self.styles.selected_item_background,
@@ -85,9 +85,9 @@ impl Widget for TrayItem {
                 vertical_align: VerticalAlign::Middle,
             },
             Rect {
-                x: position.x + (self.styles.icon_size + self.styles.padding * 2.0),
+                x: position.x + (self.styles.icon_size + self.styles.item_padding * 2.0),
                 y: position.y,
-                width: layout.size.width - (self.styles.icon_size + self.styles.padding * 2.0),
+                width: layout.size.width - (self.styles.icon_size + self.styles.item_padding * 2.0),
                 height: layout.size.height,
             },
         );
@@ -98,15 +98,15 @@ impl Widget for TrayItem {
             xlib::XMoveResizeWindow(
                 context.display(),
                 self.window,
-                (position.x + self.styles.padding) as _,
-                (position.y + self.styles.padding) as _,
+                (position.x + self.styles.item_padding) as _,
+                (position.y + self.styles.item_padding) as _,
                 self.styles.icon_size as _,
                 self.styles.icon_size as _,
             );
         }
     }
 
-    fn layout(&mut self, container_size: Size) -> LayoutResult {
+    fn layout(&self, container_size: Size) -> LayoutResult {
         LayoutResult {
             size: Size {
                 width: container_size.width as f32,

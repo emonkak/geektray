@@ -6,8 +6,10 @@ use crate::font::{FontDescriptor, FontSet};
 
 #[derive(Debug)]
 pub struct Styles {
+    pub window_padding: f32,
     pub icon_size: f32,
-    pub padding: f32,
+    pub item_padding: f32,
+    pub item_gap: f32,
     pub font_size: f32,
     pub font_set: FontSet,
     pub window_background: Color,
@@ -21,7 +23,9 @@ impl Styles {
     pub fn new(display: *mut xlib::Display, config: &Config) -> Result<Self, String> {
         Ok(Self {
             icon_size: config.ui.icon_size,
-            padding: config.ui.window_padding,
+            window_padding: config.ui.window_padding,
+            item_padding: config.ui.item_padding,
+            item_gap: config.ui.item_gap,
             font_size: config.font.size,
             font_set: FontSet::new(FontDescriptor {
                 family: config.font.family.clone(),
@@ -63,6 +67,6 @@ impl Styles {
     }
 
     pub fn item_height(&self) -> f32 {
-        self.icon_size + self.padding * 2.0
+        self.icon_size + self.item_padding * 2.0
     }
 }

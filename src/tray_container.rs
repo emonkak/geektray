@@ -143,27 +143,36 @@ impl TrayContainer {
 }
 
 impl Widget for TrayContainer {
-    fn render(&mut self, _position: Point, layout: &LayoutResult, context: &mut RenderContext) {
+    fn render(&self, _position: Point, layout: &LayoutResult, context: &mut RenderContext) {
         context.clear_viewport(self.styles.window_background);
 
         for (tray_item, (child_position, child_layout)) in
-            self.tray_items.iter_mut().zip(layout.children.iter())
+            self.tray_items.iter().zip(layout.children.iter())
         {
             tray_item.render(*child_position, child_layout, context);
         }
     }
 
-    fn layout(&mut self, container_size: Size) -> LayoutResult {
-        let mut total_height = 0.0;
-        let mut child_position = Point { x: 0.0, y: 0.0 };
+    fn layout(&self, container_size: Size) -> LayoutResult {
+        let mut total_height = self.styles.window_padding * 2.0;
+        let mut child_position = Point { x: self.styles.window_padding, y: self.styles.window_padding };
         let mut children = Vec::with_capacity(self.tray_items.len());
 
-        for tray_item in &mut self.tray_items {
-            let child_layout = tray_item.layout(container_size);
+        let container_inset = Size {
+            width: container_size.width - self.styles.window_padding * 2.0,
+            height: container_size.height - self.styles.window_padding * 2.0,
+        };
+
+        for (index, tray_item) in self.tray_items.iter().enumerate() {
+            let child_layout = tray_item.layout(container_inset);
             let child_size = child_layout.size;
             children.push((child_position, child_layout));
-            child_position.y += child_size.height;
-            total_height += child_size.height;
+            child_position.y += child_size.height + self.styles.item_gap;
+            if index > 0 {
+                total_height += child_size.height + self.styles.item_gap;
+            } else {
+                total_height += child_size.height;
+            }
         }
 
         LayoutResult {

@@ -62,7 +62,7 @@ impl App {
 
         let atoms = Rc::new(Atoms::new(display));
         let styles = Rc::new(Styles::new(display, &config)?);
-        let mut tray_container = TrayContainer::new(styles);
+        let tray_container = TrayContainer::new(styles);
 
         let layout = tray_container.layout(Size {
             width: config.ui.window_width,

@@ -104,6 +104,7 @@ impl Default for Config {
 pub struct UiConfig {
     pub window_padding: f32,
     pub window_width: f32,
+    pub item_padding: f32,
     pub item_gap: f32,
     pub icon_size: f32,
 }
@@ -113,6 +114,7 @@ impl Default for UiConfig {
         Self {
             window_padding: 8.0,
             window_width: 480.0,
+            item_padding: 0.0,
             item_gap: 8.0,
             icon_size: 24.0,
         }
