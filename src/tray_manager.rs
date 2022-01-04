@@ -45,6 +45,10 @@ impl TrayManager {
     }
 
     pub fn acquire_tray_selection(&mut self) {
+        if matches!(self.status, TrayStatus::Managed | TrayStatus::Pending(_)) {
+            return;
+        }
+
         unsafe {
             let previous_selection_owner =
                 xlib::XGetSelectionOwner(self.display, self.system_tray_atom);
@@ -91,7 +95,10 @@ impl TrayManager {
         }
     }
 
-    pub fn process_event(&mut self, event: &X11Event) -> Option<TrayEvent> {
+    pub fn process_event<F>(&mut self, event: &X11Event, mut callback: F)
+    where
+        F: FnMut(TrayEvent)
+    {
         match event {
             X11Event::ClientMessage(event)
                 if event.message_type == self.atoms.NET_SYSTEM_TRAY_OPCODE =>
@@ -102,7 +109,9 @@ impl TrayManager {
                     if let Some(xembed_info) =
                         unsafe { get_xembed_info(self.display, icon_window, &self.atoms) }
                     {
-                        return self.register_tray_icon(icon_window, xembed_info);
+                        if let Some(event) = self.register_tray_icon(icon_window, xembed_info) {
+                            callback(event);
+                        }
                     }
                 } else if opcode == SYSTEM_TRAY_BEGIN_MESSAGE {
                     let balloon_message = BalloonMessage::new(&event.data);
@@ -127,7 +136,7 @@ impl TrayManager {
                     entry.get_mut().write_message(event.data.as_ref());
                     if entry.get().remaining_len() == 0 {
                         let balloon_message = entry.remove();
-                        return Some(TrayEvent::BalloonMessageReceived(
+                        callback(TrayEvent::BalloonMessageReceived(
                             event.window,
                             balloon_message,
                         ));
@@ -138,19 +147,22 @@ impl TrayManager {
                 if event.window == self.window {
                     self.embedded_icons.clear();
                     self.status = TrayStatus::Waiting;
-                    return Some(TrayEvent::SelectionCleared);
+                    callback(TrayEvent::SelectionCleared);
                 }
             }
             X11Event::PropertyNotify(event) if event.atom == self.atoms.XEMBED_INFO => {
                 if let Some(xembed_info) =
                     unsafe { get_xembed_info(self.display, event.window, &self.atoms) }
                 {
-                    return self.register_tray_icon(event.window, xembed_info);
+                    if let Some(event) = self.register_tray_icon(event.window, xembed_info) {
+                        callback(event);
+                    }
                 }
             }
             X11Event::ReparentNotify(event) => {
                 if event.parent != self.window {
-                    return self.unregister_tray_icon(event.window);
+                    let event = self.unregister_tray_icon(event.window);
+                    callback(event);
                 }
             }
             X11Event::DestroyNotify(event) => match self.status {
@@ -163,16 +175,15 @@ impl TrayManager {
                     );
                 },
                 _ => {
-                    return self.unregister_tray_icon(event.window);
+                    let event = self.unregister_tray_icon(event.window);
+                    callback(event);
                 }
             },
             _ => {}
         }
-
-        None
     }
 
-    pub fn register_tray_icon(
+    fn register_tray_icon(
         &mut self,
         icon_window: xlib::Window,
         xembed_info: XEmbedInfo,
@@ -225,7 +236,7 @@ impl TrayManager {
         }
     }
 
-    pub fn unregister_tray_icon(&mut self, icon_window: xlib::Window) -> Option<TrayEvent> {
+    fn unregister_tray_icon(&mut self, icon_window: xlib::Window) -> TrayEvent {
         if let Some(xembed_info) = self.embedded_icons.remove(&icon_window) {
             if xembed_info.is_mapped() {
                 unsafe {
@@ -236,7 +247,7 @@ impl TrayManager {
 
         self.balloon_messages.remove(&icon_window);
 
-        Some(TrayEvent::TrayIconRemoved(icon_window))
+        TrayEvent::TrayIconRemoved(icon_window)
     }
 }
 

@@ -34,9 +34,32 @@ impl TrayItem {
     pub fn window(&self) -> xlib::Window {
         self.window
     }
+
+    pub fn click_item(&mut self, button: c_uint, button_mask: c_uint) -> Effect {
+        let center = (self.styles.icon_size / 2.0) as i32;
+        let window = self.window;
+        return Effect::Action(Box::new(move |display, _| unsafe {
+            utils::emit_click_event(display, window, button, button_mask, center, center);
+        }));
+    }
+
+    pub fn change_title(&mut self, title: String) -> Effect {
+        self.title = title;
+        Effect::RequestRedraw
+    }
+
+    pub fn select_item(&mut self) -> Effect {
+        self.is_selected = true;
+        Effect::RequestRedraw
+    }
+
+    pub fn deselect_item(&mut self) -> Effect {
+        self.is_selected = false;
+        Effect::RequestRedraw
+    }
 }
 
-impl Widget<TrayItemMessage> for TrayItem {
+impl Widget for TrayItem {
     fn render(&mut self, position: Point, layout: &LayoutResult, context: &mut RenderContext) {
         let (bg_color, fg_color) = if self.is_selected {
             (
@@ -139,39 +162,4 @@ impl Widget<TrayItemMessage> for TrayItem {
 
         Effect::None
     }
-
-    fn on_message(&mut self, message: TrayItemMessage) -> Effect {
-        match message {
-            TrayItemMessage::ClickItem {
-                button,
-                button_mask,
-            } => {
-                let center = (self.styles.icon_size / 2.0) as i32;
-                let window = self.window;
-                return Effect::Action(Box::new(move |display, _| unsafe {
-                    utils::emit_click_event(display, window, button, button_mask, center, center);
-                }));
-            }
-            TrayItemMessage::ChangeTitle { title } => {
-                self.title = title;
-                Effect::RequestRedraw
-            }
-            TrayItemMessage::SelectItem => {
-                self.is_selected = true;
-                Effect::RequestRedraw
-            }
-            TrayItemMessage::DeselectItem => {
-                self.is_selected = false;
-                Effect::RequestRedraw
-            }
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum TrayItemMessage {
-    ClickItem { button: c_uint, button_mask: c_uint },
-    ChangeTitle { title: String },
-    SelectItem,
-    DeselectItem,
 }

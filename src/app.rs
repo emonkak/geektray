@@ -21,7 +21,7 @@ use crate::key_mapping::{KeyInterpreter, Keysym, Modifiers};
 use crate::render_context::RenderContext;
 use crate::styles::Styles;
 use crate::text::TextRenderer;
-use crate::tray::{Tray, TrayMessage};
+use crate::tray::Tray;
 use crate::tray_manager::{TrayEvent, TrayManager};
 use crate::utils;
 use crate::widget::{LayoutResult, Widget};
@@ -36,7 +36,6 @@ pub struct App {
     window_size: PhysicalSize,
     window_mapped: bool,
     layout: LayoutResult,
-    tray_manager: TrayManager,
     key_interpreter: KeyInterpreter,
     text_renderer: TextRenderer,
     old_error_handler:
@@ -74,8 +73,6 @@ impl App {
         let window =
             unsafe { create_window(display, window_position, window_size, &config, &atoms) };
 
-        let tray_manager = TrayManager::new(display, window, atoms.clone());
-
         Ok(Self {
             display,
             atoms,
@@ -85,7 +82,6 @@ impl App {
             window_size,
             window_mapped: false,
             layout,
-            tray_manager,
             key_interpreter: KeyInterpreter::new(config.keys),
             text_renderer: TextRenderer::new(),
             old_error_handler,
@@ -93,22 +89,25 @@ impl App {
     }
 
     pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
+        let mut tray_manager = TrayManager::new(self.display, self.window, self.atoms.clone());
+
+        tray_manager.acquire_tray_selection();
+
         unsafe {
-            self.tray_manager.acquire_tray_selection();
             xlib::XMapWindow(self.display, self.window);
             xlib::XFlush(self.display);
         }
 
         let mut event_loop = EventLoop::new(self.display)?;
 
-        event_loop.run(move |event, control_flow, context| match event {
+        event_loop.run(|event, control_flow, context| match event {
             Event::X11Event(event) => {
-                if let Some(tray_event) = self.tray_manager.process_event(&event) {
-                    self.on_tray_event(tray_event, context, control_flow);
-                }
+                tray_manager.process_event(&event, |event| {
+                    self.on_tray_event(event, context, control_flow);
+                });
                 if event.window() == self.window {
                     let effect = self.tray.on_event(&event, Point::default(), &self.layout);
-                    self.apply_effect(effect, control_flow);
+                    self.apply_effect(effect);
                 }
                 self.on_x11_event(event, context, control_flow);
             }
@@ -122,7 +121,7 @@ impl App {
                 ) {
                     (MethodCall, "/", command_str) => {
                         if let Ok(command) = Command::from_str(command_str) {
-                            self.run_command(command, control_flow);
+                            self.run_command(command);
                         }
                         context.send_dbus_message(&message.new_method_return());
                     }
@@ -133,6 +132,8 @@ impl App {
                 *control_flow = ControlFlow::Break;
             }
         });
+
+        tray_manager.release_tray_selection();
 
         Ok(())
     }
@@ -162,16 +163,12 @@ impl App {
                     utils::get_window_title(self.display, window, self.atoms.NET_WM_NAME)
                         .unwrap_or_default()
                 };
-                self.dispatch_message(
-                    TrayMessage::AddTrayIcon {
-                        window: window,
-                        title,
-                    },
-                    control_flow,
-                );
+                let effect = self.tray.add_tray_item(window, title);
+                self.apply_effect(effect);
             }
             TrayEvent::TrayIconRemoved(window) => {
-                self.dispatch_message(TrayMessage::RemoveTrayIcon { window }, control_flow);
+                let effect = self.tray.remove_tray_item(window);
+                self.apply_effect(effect);
             }
             TrayEvent::SelectionCleared => {
                 *control_flow = ControlFlow::Break;
@@ -193,7 +190,9 @@ impl App {
                     let modifiers = Modifiers::new(event.state);
                     let commands = self.key_interpreter.eval(keysym, modifiers);
                     for command in commands {
-                        self.run_command(command, control_flow);
+                        if !self.run_command(command) {
+                            break;
+                        }
                     }
                 }
             }
@@ -254,13 +253,8 @@ impl App {
                         utils::get_window_title(self.display, event.window, self.atoms.NET_WM_NAME)
                             .unwrap_or_default()
                     };
-                    self.dispatch_message(
-                        TrayMessage::ChangeTitle {
-                            window: event.window,
-                            title,
-                        },
-                        control_flow,
-                    );
+                    let effect = self.tray.change_title(event.window, title);
+                    self.apply_effect(effect);
                 }
             }
             _ => {}
@@ -282,6 +276,8 @@ impl App {
     }
 
     fn hide_window(&mut self) {
+        let effect = self.tray.deselect_item();
+        self.apply_effect(effect);
         unsafe {
             xlib::XUnmapWindow(self.display, self.window);
             xlib::XFlush(self.display);
@@ -296,17 +292,58 @@ impl App {
         }
     }
 
-    fn dispatch_message(&mut self, message: TrayMessage, control_flow: &mut ControlFlow) {
-        let effect = self.tray.on_message(message);
-        self.apply_effect(effect, control_flow);
+    fn run_command(&mut self, command: Command) -> bool {
+        match command {
+            Command::HideWindow => {
+                self.hide_window();
+                true
+            }
+            Command::ShowWindow => {
+                self.show_window();
+                true
+            }
+            Command::ToggleWindow => {
+                self.toggle_window();
+                true
+            }
+            Command::SelectNextItem => {
+                let effect = self.tray.select_next_item();
+                self.apply_effect(effect)
+            }
+            Command::SelectPreviousItem => {
+                let effect = self.tray.select_previous_item();
+                self.apply_effect(effect)
+            }
+            Command::ClickLeftButton => {
+                let effect = self.tray.click_selected_item(xlib::Button1, xlib::Button1Mask);
+                self.apply_effect(effect)
+            }
+            Command::ClickRightButton => {
+                let effect = self.tray.click_selected_item(xlib::Button3, xlib::Button3Mask);
+                self.apply_effect(effect)
+            }
+            Command::ClickMiddleButton => {
+                let effect = self.tray.click_selected_item(xlib::Button2, xlib::Button2Mask);
+                self.apply_effect(effect)
+            }
+            Command::ClickX1Button => {
+                let effect = self.tray.click_selected_item(xlib::Button4, xlib::Button4Mask);
+                self.apply_effect(effect)
+            }
+            Command::ClickX2Button => {
+                let effect = self.tray.click_selected_item(xlib::Button5, xlib::Button5Mask);
+                self.apply_effect(effect)
+            }
+        }
     }
 
-    fn apply_effect(&mut self, effect: Effect, control_flow: &mut ControlFlow) {
+    fn apply_effect(&mut self, effect: Effect) -> bool {
         let mut pending_effects = VecDeque::new();
         let mut current = effect;
 
         let mut redraw_requested = false;
         let mut layout_requested = false;
+        let mut result = false;
 
         loop {
             match current {
@@ -316,12 +353,15 @@ impl App {
                 }
                 Effect::Action(action) => {
                     action(self.display, self.window);
+                    result = true;
                 }
                 Effect::RequestRedraw => {
                     redraw_requested = true;
+                    result = true;
                 }
                 Effect::RequestLayout => {
                     layout_requested = true;
+                    result = true;
                 }
             }
             if let Some(next) = pending_effects.pop_front() {
@@ -336,71 +376,8 @@ impl App {
         } else if redraw_requested {
             self.request_redraw();
         }
-    }
 
-    fn run_command(&mut self, command: Command, control_flow: &mut ControlFlow) {
-        match command {
-            Command::HideWindow => {
-                self.hide_window();
-            }
-            Command::ShowWindow => {
-                self.show_window();
-            }
-            Command::ToggleWindow => {
-                self.toggle_window();
-            }
-            Command::SelectNextItem => {
-                self.dispatch_message(TrayMessage::SelectNextItem, control_flow);
-            }
-            Command::SelectPreviousItem => {
-                self.dispatch_message(TrayMessage::SelectPreviousItem, control_flow);
-            }
-            Command::ClickLeftButton => {
-                self.dispatch_message(
-                    TrayMessage::ClickSelectedItem {
-                        button: xlib::Button1,
-                        button_mask: xlib::Button1Mask,
-                    },
-                    control_flow,
-                );
-            }
-            Command::ClickRightButton => {
-                self.dispatch_message(
-                    TrayMessage::ClickSelectedItem {
-                        button: xlib::Button3,
-                        button_mask: xlib::Button3Mask,
-                    },
-                    control_flow,
-                );
-            }
-            Command::ClickMiddleButton => {
-                self.dispatch_message(
-                    TrayMessage::ClickSelectedItem {
-                        button: xlib::Button2,
-                        button_mask: xlib::Button2Mask,
-                    },
-                    control_flow,
-                );
-            }
-            Command::ClickX1Button => {
-                self.dispatch_message(
-                    TrayMessage::ClickSelectedItem {
-                        button: xlib::Button4,
-                        button_mask: xlib::Button4Mask,
-                    },
-                    control_flow,
-                );
-            }
-            Command::ClickX2Button => {
-                self.dispatch_message(
-                    TrayMessage::ClickSelectedItem {
-                        button: xlib::Button5,
-                        button_mask: xlib::Button5Mask,
-                    },
-                    control_flow,
-                );
-            }
-        }
+        result
     }
 
     fn recaclulate_layout(&mut self) {
@@ -459,8 +436,6 @@ impl App {
 
 impl Drop for App {
     fn drop(&mut self) {
-        self.tray_manager.release_tray_selection();
-
         self.text_renderer.clear_caches(self.display);
 
         unsafe {
@@ -470,13 +445,6 @@ impl Drop for App {
             xlib::XSetErrorHandler(self.old_error_handler);
         }
     }
-}
-
-#[allow(dead_code)]
-#[repr(i32)]
-enum SystemTrayOrientation {
-    Horzontal = 0,
-    Vertical = 1,
 }
 
 unsafe fn create_window(
@@ -570,7 +538,7 @@ unsafe fn create_window(
         window,
         atoms.NET_SYSTEM_TRAY_ORIENTATION,
         xlib::XA_CARDINAL,
-        &[SystemTrayOrientation::Vertical],
+        &[1], // _NET_SYSTEM_TRAY_ORIENTATION_VERT
     );
 
     {

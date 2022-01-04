@@ -1,6 +1,7 @@
 use std::ops::Add;
 use x11::xlib;
 
+#[must_use]
 pub enum Effect {
     None,
     Batch(Vec<Effect>),
