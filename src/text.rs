@@ -1,7 +1,5 @@
 use std::collections::hash_map;
 use std::collections::HashMap;
-use std::ffi::CString;
-use std::hash::{Hash, Hasher};
 use std::mem;
 use std::os::raw::*;
 use std::ptr;
@@ -11,13 +9,13 @@ use x11::xlib;
 use x11::xrender;
 
 use crate::color::Color;
-use crate::font::{FontDescriptor, FontStretch, FontStyle};
+use crate::font::{FontId, FontSet};
 use crate::fontconfig as fc;
 use crate::geometrics::{Rect, Size};
 
 #[derive(Debug)]
 pub struct TextRenderer {
-    font_caches: HashMap<FontKey, *mut xft::XftFont>,
+    font_caches: HashMap<FontId, *mut xft::XftFont>,
 }
 
 impl TextRenderer {
@@ -56,7 +54,7 @@ impl TextRenderer {
                 display,
                 text_chunk.font,
                 text.font_size,
-                text.font_set.pattern,
+                text.font_set.pattern(),
             ) {
                 font
             } else {
@@ -109,7 +107,7 @@ impl TextRenderer {
                 display,
                 text_chunk.font,
                 text.font_size,
-                text.font_set.pattern,
+                text.font_set.pattern(),
             ) {
                 font
             } else {
@@ -136,10 +134,10 @@ impl TextRenderer {
     }
 
     pub fn clear_caches(&mut self, display: *mut xlib::Display) {
-        for (key, font) in self.font_caches.drain() {
+        for (id, font) in self.font_caches.drain() {
             unsafe {
                 xft::XftFontClose(display, font);
-                fc::FcPatternDestroy(key.pattern);
+                fc::FcPatternDestroy(id.0);
             }
         }
     }
@@ -161,7 +159,7 @@ impl TextRenderer {
                 font_size as f64,
             );
 
-            match self.font_caches.entry(FontKey { pattern }) {
+            match self.font_caches.entry(FontId(pattern)) {
                 hash_map::Entry::Occupied(entry) => {
                     fc::FcPatternDestroy(pattern);
                     Some(*entry.get())
@@ -180,116 +178,6 @@ impl TextRenderer {
     }
 }
 
-#[derive(Debug)]
-pub struct FontSet {
-    pattern: *mut fc::FcPattern,
-    fontset: *mut fc::FcFontSet,
-    charsets: Vec<*mut fc::FcCharSet>,
-    coverage: *mut fc::FcCharSet,
-}
-
-impl FontSet {
-    pub fn new(font_descriptor: FontDescriptor) -> Option<FontSet> {
-        unsafe {
-            let pattern = prepare_pattern(&font_descriptor);
-
-            fc::FcConfigSubstitute(ptr::null_mut(), pattern, fc::FcMatchKind::Pattern);
-            fc::FcDefaultSubstitute(pattern);
-
-            let mut result: fc::FcResult = fc::FcResult::NoMatch;
-            let fontset = fc::FcFontSort(ptr::null_mut(), pattern, 1, ptr::null_mut(), &mut result);
-
-            if result != fc::FcResult::Match || (*fontset).nfont == 0 {
-                return None;
-            }
-
-            let mut coverage = fc::FcCharSetNew();
-            let mut charsets = Vec::with_capacity((*fontset).nfont as usize);
-
-            for i in 0..(*fontset).nfont {
-                let font = *(*fontset).fonts.offset(i as isize);
-
-                let mut charset: *mut fc::FcCharSet = ptr::null_mut();
-                let result = fc::FcPatternGetCharSet(
-                    font,
-                    fc::FC_CHARSET.as_ptr() as *mut c_char,
-                    0,
-                    &mut charset,
-                );
-
-                if result == fc::FcResult::Match {
-                    coverage = fc::FcCharSetUnion(coverage, charset);
-                }
-
-                charsets.push(charset);
-            }
-
-            Some(Self {
-                pattern,
-                fontset,
-                charsets,
-                coverage,
-            })
-        }
-    }
-
-    fn default_font(&self) -> *mut fc::FcPattern {
-        unsafe { *(*self.fontset).fonts.offset(0) }
-    }
-
-    fn match_font(&self, c: char) -> Option<*mut fc::FcPattern> {
-        unsafe {
-            if fc::FcCharSetHasChar(self.coverage, c as u32) == 0 {
-                return None;
-            }
-
-            for i in 0..(*self.fontset).nfont {
-                let font = *(*self.fontset).fonts.offset(i as isize);
-                let charset = self.charsets[i as usize];
-
-                if !charset.is_null() && fc::FcCharSetHasChar(charset, c as u32) != 0 {
-                    return Some(font);
-                }
-            }
-        }
-
-        None
-    }
-}
-
-impl Drop for FontSet {
-    fn drop(&mut self) {
-        unsafe {
-            for charset in self.charsets.iter() {
-                fc::FcCharSetDestroy(*charset);
-            }
-            fc::FcCharSetDestroy(self.coverage);
-            fc::FcFontSetDestroy(self.fontset);
-            fc::FcPatternDestroy(self.pattern);
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct FontKey {
-    pattern: *mut fc::FcPattern,
-}
-
-impl PartialEq for FontKey {
-    fn eq(&self, other: &Self) -> bool {
-        unsafe { fc::FcPatternEqual(self.pattern, other.pattern) != 0 }
-    }
-}
-
-impl Eq for FontKey {}
-
-impl Hash for FontKey {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        let hash = unsafe { fc::FcPatternHash(self.pattern) };
-        state.write_u32(hash);
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 pub struct Text<'a> {
     pub content: &'a str,
@@ -300,6 +188,7 @@ pub struct Text<'a> {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)]
 pub enum VerticalAlign {
     Top,
     Middle,
@@ -307,6 +196,7 @@ pub enum VerticalAlign {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)]
 pub enum HorizontalAlign {
     Left,
     Center,
@@ -369,44 +259,4 @@ impl<'a> Iterator for TextChunkIter<'a> {
 
         None
     }
-}
-
-unsafe fn prepare_pattern(descriptor: &FontDescriptor) -> *mut fc::FcPattern {
-    let pattern = fc::FcPatternCreate();
-
-    if let Ok(name_str) = CString::new(descriptor.family.0.as_ref()) {
-        fc::FcPatternAddString(
-            pattern,
-            fc::FC_FAMILY.as_ptr() as *mut c_char,
-            name_str.as_ptr() as *mut c_uchar,
-        );
-    }
-
-    fc::FcPatternAddDouble(
-        pattern,
-        fc::FC_WEIGHT.as_ptr() as *mut c_char,
-        descriptor.weight.0 as f64,
-    );
-
-    let slant = match descriptor.style {
-        FontStyle::Italic => fc::FC_SLANT_ITALIC,
-        FontStyle::Normal => fc::FC_SLANT_ROMAN,
-        FontStyle::Oblique => fc::FC_SLANT_OBLIQUE,
-    };
-    fc::FcPatternAddInteger(pattern, fc::FC_SLANT.as_ptr() as *mut c_char, slant);
-
-    let width = match descriptor.stretch {
-        FontStretch::UltraCondensed => fc::FC_WIDTH_ULTRACONDENSED,
-        FontStretch::ExtraCondensed => fc::FC_WIDTH_EXTRACONDENSED,
-        FontStretch::Condensed => fc::FC_WIDTH_CONDENSED,
-        FontStretch::SemiCondensed => fc::FC_WIDTH_SEMICONDENSED,
-        FontStretch::Normal => fc::FC_WIDTH_NORMAL,
-        FontStretch::SemiExpanded => fc::FC_WIDTH_SEMIEXPANDED,
-        FontStretch::Expanded => fc::FC_WIDTH_EXPANDED,
-        FontStretch::ExtraExpanded => fc::FC_WIDTH_EXTRAEXPANDED,
-        FontStretch::UltraExpanded => fc::FC_WIDTH_ULTRAEXPANDED,
-    };
-    fc::FcPatternAddInteger(pattern, fc::FC_WIDTH.as_ptr() as *mut c_char, width);
-
-    pattern
 }

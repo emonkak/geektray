@@ -11,14 +11,14 @@ use crate::tray_item::TrayItem;
 use crate::widget::{LayoutResult, Widget};
 
 #[derive(Debug)]
-pub struct Tray {
+pub struct TrayContainer {
     tray_items: Vec<TrayItem>,
     selected_index: Option<usize>,
     styles: Rc<Styles>,
 }
 
-impl Tray {
-    pub fn new(styles: Rc<Styles>) -> Tray {
+impl TrayContainer {
+    pub fn new(styles: Rc<Styles>) -> TrayContainer {
         Self {
             tray_items: Vec::new(),
             selected_index: None,
@@ -142,7 +142,7 @@ impl Tray {
     }
 }
 
-impl Widget for Tray {
+impl Widget for TrayContainer {
     fn render(&mut self, _position: Point, layout: &LayoutResult, context: &mut RenderContext) {
         context.clear_viewport(self.styles.window_background);
 

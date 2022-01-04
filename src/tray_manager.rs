@@ -97,7 +97,7 @@ impl TrayManager {
 
     pub fn process_event<F>(&mut self, event: &X11Event, mut callback: F)
     where
-        F: FnMut(TrayEvent)
+        F: FnMut(TrayEvent),
     {
         match event {
             X11Event::ClientMessage(event)

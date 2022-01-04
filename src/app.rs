@@ -21,7 +21,7 @@ use crate::key_mapping::{KeyInterpreter, Keysym, Modifiers};
 use crate::render_context::RenderContext;
 use crate::styles::Styles;
 use crate::text::TextRenderer;
-use crate::tray::Tray;
+use crate::tray_container::TrayContainer;
 use crate::tray_manager::{TrayEvent, TrayManager};
 use crate::utils;
 use crate::widget::{LayoutResult, Widget};
@@ -30,11 +30,11 @@ use crate::widget::{LayoutResult, Widget};
 pub struct App {
     display: *mut xlib::Display,
     atoms: Rc<Atoms>,
-    tray: Tray,
     window: xlib::Window,
     window_position: PhysicalPoint,
     window_size: PhysicalSize,
     window_mapped: bool,
+    tray_container: TrayContainer,
     layout: LayoutResult,
     key_interpreter: KeyInterpreter,
     text_renderer: TextRenderer,
@@ -62,25 +62,25 @@ impl App {
 
         let atoms = Rc::new(Atoms::new(display));
         let styles = Rc::new(Styles::new(display, &config)?);
-        let mut tray = Tray::new(styles);
+        let mut tray_container = TrayContainer::new(styles);
 
-        let layout = tray.layout(Size {
+        let layout = tray_container.layout(Size {
             width: config.ui.window_width,
             height: 0.0,
         });
         let window_size = layout.size.snap();
-        let window_position = unsafe { get_centered_position_on_display(display, window_size) };
+        let window_position = unsafe { get_window_position_on_display(display, window_size) };
         let window =
             unsafe { create_window(display, window_position, window_size, &config, &atoms) };
 
         Ok(Self {
             display,
             atoms,
-            tray,
             window,
             window_position,
             window_size,
             window_mapped: false,
+            tray_container,
             layout,
             key_interpreter: KeyInterpreter::new(config.keys),
             text_renderer: TextRenderer::new(),
@@ -106,7 +106,9 @@ impl App {
                     self.on_tray_event(event, context, control_flow);
                 });
                 if event.window() == self.window {
-                    let effect = self.tray.on_event(&event, Point::default(), &self.layout);
+                    let effect =
+                        self.tray_container
+                            .on_event(&event, Point::default(), &self.layout);
                     self.apply_effect(effect);
                 }
                 self.on_x11_event(event, context, control_flow);
@@ -163,11 +165,11 @@ impl App {
                     utils::get_window_title(self.display, window, self.atoms.NET_WM_NAME)
                         .unwrap_or_default()
                 };
-                let effect = self.tray.add_tray_item(window, title);
+                let effect = self.tray_container.add_tray_item(window, title);
                 self.apply_effect(effect);
             }
             TrayEvent::TrayIconRemoved(window) => {
-                let effect = self.tray.remove_tray_item(window);
+                let effect = self.tray_container.remove_tray_item(window);
                 self.apply_effect(effect);
             }
             TrayEvent::SelectionCleared => {
@@ -248,12 +250,12 @@ impl App {
             X11Event::PropertyNotify(event)
                 if event.atom == xlib::XA_WM_NAME || event.atom == self.atoms.NET_WM_NAME =>
             {
-                if self.tray.contains_window(event.window) {
+                if self.tray_container.contains_window(event.window) {
                     let title = unsafe {
                         utils::get_window_title(self.display, event.window, self.atoms.NET_WM_NAME)
                             .unwrap_or_default()
                     };
-                    let effect = self.tray.change_title(event.window, title);
+                    let effect = self.tray_container.change_title(event.window, title);
                     self.apply_effect(effect);
                 }
             }
@@ -263,7 +265,7 @@ impl App {
 
     fn show_window(&mut self) {
         unsafe {
-            let window_position = get_centered_position_on_display(self.display, self.window_size);
+            let window_position = get_window_position_on_display(self.display, self.window_size);
             xlib::XMoveWindow(
                 self.display,
                 self.window,
@@ -276,7 +278,7 @@ impl App {
     }
 
     fn hide_window(&mut self) {
-        let effect = self.tray.deselect_item();
+        let effect = self.tray_container.deselect_item();
         self.apply_effect(effect);
         unsafe {
             xlib::XUnmapWindow(self.display, self.window);
@@ -307,31 +309,41 @@ impl App {
                 true
             }
             Command::SelectNextItem => {
-                let effect = self.tray.select_next_item();
+                let effect = self.tray_container.select_next_item();
                 self.apply_effect(effect)
             }
             Command::SelectPreviousItem => {
-                let effect = self.tray.select_previous_item();
+                let effect = self.tray_container.select_previous_item();
                 self.apply_effect(effect)
             }
             Command::ClickLeftButton => {
-                let effect = self.tray.click_selected_item(xlib::Button1, xlib::Button1Mask);
+                let effect = self
+                    .tray_container
+                    .click_selected_item(xlib::Button1, xlib::Button1Mask);
                 self.apply_effect(effect)
             }
             Command::ClickRightButton => {
-                let effect = self.tray.click_selected_item(xlib::Button3, xlib::Button3Mask);
+                let effect = self
+                    .tray_container
+                    .click_selected_item(xlib::Button3, xlib::Button3Mask);
                 self.apply_effect(effect)
             }
             Command::ClickMiddleButton => {
-                let effect = self.tray.click_selected_item(xlib::Button2, xlib::Button2Mask);
+                let effect = self
+                    .tray_container
+                    .click_selected_item(xlib::Button2, xlib::Button2Mask);
                 self.apply_effect(effect)
             }
             Command::ClickX1Button => {
-                let effect = self.tray.click_selected_item(xlib::Button4, xlib::Button4Mask);
+                let effect = self
+                    .tray_container
+                    .click_selected_item(xlib::Button4, xlib::Button4Mask);
                 self.apply_effect(effect)
             }
             Command::ClickX2Button => {
-                let effect = self.tray.click_selected_item(xlib::Button5, xlib::Button5Mask);
+                let effect = self
+                    .tray_container
+                    .click_selected_item(xlib::Button5, xlib::Button5Mask);
                 self.apply_effect(effect)
             }
         }
@@ -381,7 +393,7 @@ impl App {
     }
 
     fn recaclulate_layout(&mut self) {
-        self.layout = self.tray.layout(self.window_size.unsnap());
+        self.layout = self.tray_container.layout(self.window_size.unsnap());
 
         let size = self.layout.size.snap();
 
@@ -427,7 +439,7 @@ impl App {
             &mut self.text_renderer,
         );
 
-        self.tray
+        self.tray_container
             .render(Point::default(), &self.layout, &mut context);
 
         context.commit();
@@ -557,7 +569,7 @@ unsafe fn create_window(
     window
 }
 
-unsafe fn get_centered_position_on_display(
+unsafe fn get_window_position_on_display(
     display: *mut xlib::Display,
     window_size: PhysicalSize,
 ) -> PhysicalPoint {

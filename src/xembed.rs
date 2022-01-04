@@ -1,7 +1,8 @@
 const XEMBED_MAPPED: u64 = 1 << 0;
 
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
 #[repr(C)]
-#[derive(Debug)]
 pub enum XEmbedMessage {
     EmbeddedNotify = 0,
     WindowActivate = 1,

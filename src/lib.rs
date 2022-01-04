@@ -13,27 +13,21 @@ mod command;
 mod effect;
 mod error_handler;
 mod event_loop;
+mod font;
 mod geometrics;
 mod key_mapping;
 mod render_context;
 mod styles;
-mod tray;
+mod text;
+mod tray_container;
 mod tray_item;
 mod tray_manager;
 mod utils;
 mod widget;
-
-#[allow(dead_code)]
-mod dbus;
-
-#[allow(dead_code)]
 mod xembed;
 
 #[allow(dead_code)]
-mod text;
-
-#[allow(dead_code)]
-mod font;
+mod dbus;
 
 #[allow(dead_code)]
 mod fontconfig;
