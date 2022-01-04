@@ -6,10 +6,7 @@ use x11::xlib;
 
 #[inline]
 pub unsafe fn new_atom(display: *mut xlib::Display, null_terminated_name: &str) -> xlib::Atom {
-    assert!(null_terminated_name
-        .chars()
-        .last()
-        .map_or(false, |c| c == '\0'));
+    assert_eq!(null_terminated_name.bytes().last(), Some(b'\0'));
     xlib::XInternAtom(
         display,
         null_terminated_name.as_ptr() as *const c_char,

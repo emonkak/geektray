@@ -11,7 +11,6 @@ use std::mem;
 use std::os::raw::*;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::io::RawFd;
-use std::str;
 use std::time::Duration;
 use x11::xlib;
 
@@ -21,7 +20,7 @@ const EVENT_KIND_X11: u64 = 1;
 const EVENT_KIND_SIGNAL: u64 = 2;
 const EVENT_KIND_DBUS: u64 = 3;
 
-const DBUS_INTERFACE_NAME: &'static str = "io.github.emonkak.keytray\0";
+const DBUS_INTERFACE_NAME: &'static [u8] = b"io.github.emonkak.keytray\0";
 
 #[derive(Debug)]
 pub struct EventLoop {
@@ -40,7 +39,9 @@ impl EventLoop {
             mask.thread_block()?;
             signalfd::SignalFd::new(&mask)
         }?;
-        let dbus_connection = DBusConnection::new(DBUS_INTERFACE_NAME)?;
+        let dbus_connection = DBusConnection::new(
+            CStr::from_bytes_with_nul(DBUS_INTERFACE_NAME).unwrap()
+        )?;
 
         dbus_connection.set_watch_functions(
             Some(handle_dbus_add_watch),
@@ -144,20 +145,20 @@ impl EventLoop {
         timeout: Option<Duration>,
     ) -> bool {
         let message = DBusMessage::new_method_call(
-            "org.freedesktop.Notifications\0",
-            "/org/freedesktop/Notifications\0",
-            "org.freedesktop.Notifications\0",
-            "Notify\0",
+            CStr::from_bytes_with_nul(b"org.freedesktop.Notifications\0").unwrap(),
+            CStr::from_bytes_with_nul(b"/org/freedesktop/Notifications\0").unwrap(),
+            CStr::from_bytes_with_nul(b"org.freedesktop.Notifications\0").unwrap(),
+            CStr::from_bytes_with_nul(b"Notify\0").unwrap(),
         );
 
         let mut args = DBusArguments::new();
-        args.add_argument(DBUS_INTERFACE_NAME); // STRING app_name
+        args.add_argument(CStr::from_bytes_with_nul(DBUS_INTERFACE_NAME).unwrap()); // STRING app_name
         args.add_argument(id); // UINT32 replaces_id
-        args.add_argument("\0"); // STRING app_icon
+        args.add_argument(CStr::from_bytes_with_nul(b"\0").unwrap()); // STRING app_icon
         args.add_argument(summary); // STRING summary
         args.add_argument(body); // STRING body
-        args.add_argument(vec![] as Vec<&str>); // as actions
-        args.add_argument(vec![] as Vec<(&str, DBusVariant)>); // a{sv} hints
+        args.add_argument(vec![] as Vec<&CStr>); // as actions
+        args.add_argument(vec![] as Vec<(&CStr, DBusVariant)>); // a{sv} hints
         args.add_argument(timeout.map_or(-1, |duration| duration.as_millis() as i32)); // INT32 expire_timeout
 
         message.add_arguments(args);

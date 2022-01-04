@@ -13,7 +13,7 @@ pub struct DBusConnection {
 }
 
 impl DBusConnection {
-    pub fn new(name: &str) -> Result<Self, DBusError> {
+    pub fn new(name: &CStr) -> Result<Self, DBusError> {
         let mut error = DBusError::init();
 
         let connection =
@@ -163,11 +163,7 @@ pub struct DBusMessage {
 }
 
 impl DBusMessage {
-    pub fn new_method_call(destination: &str, path: &str, iface: &str, method: &str) -> Self {
-        assert!(destination.chars().last().map_or(false, |c| c == '\0'));
-        assert!(path.chars().last().map_or(false, |c| c == '\0'));
-        assert!(iface.chars().last().map_or(false, |c| c == '\0'));
-        assert!(method.chars().last().map_or(false, |c| c == '\0'));
+    pub fn new_method_call(destination: &CStr, path: &CStr, iface: &CStr, method: &CStr) -> Self {
         let message = unsafe {
             dbus::dbus_message_new_method_call(
                 destination.as_ptr() as *const i8,
@@ -325,23 +321,6 @@ impl_dbus_basic_type!(u32, dbus::DBUS_TYPE_UINT32);
 impl_dbus_basic_type!(i64, dbus::DBUS_TYPE_INT64);
 impl_dbus_basic_type!(u64, dbus::DBUS_TYPE_UINT64);
 impl_dbus_basic_type!(f64, dbus::DBUS_TYPE_DOUBLE);
-
-impl<'a> DBusType for &'a str {
-    const TYPE: c_int = dbus::DBUS_TYPE_STRING;
-}
-
-impl<'a> DBusValue for &'a str {
-    fn append_to(&self, message_iter: *mut dbus::DBusMessageIter) {
-        assert!(self.chars().last().map_or(false, |c| c == '\0'));
-        unsafe {
-            dbus::dbus_message_iter_append_basic(
-                message_iter,
-                dbus::DBUS_TYPE_STRING,
-                &self.as_ptr() as *const _ as *const c_void,
-            );
-        }
-    }
-}
 
 impl<'a> DBusType for &'a CStr {
     const TYPE: c_int = dbus::DBUS_TYPE_STRING;
