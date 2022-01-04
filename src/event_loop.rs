@@ -82,10 +82,11 @@ impl EventLoop {
 
     pub fn run<F>(&mut self, mut callback: F)
     where
-        F: FnMut(Event, &mut EventLoop) -> ControlFlow,
+        F: FnMut(Event, &mut ControlFlow, &mut EventLoop),
     {
         let mut epoll_events = vec![epoll::EpollEvent::empty(); 3];
         let mut x11_event: xlib::XEvent = unsafe { mem::MaybeUninit::uninit().assume_init() };
+        let mut control_flow = ControlFlow::Continue;
 
         'outer: loop {
             let available_fds =
@@ -99,26 +100,26 @@ impl EventLoop {
                             xlib::XNextEvent(self.display, &mut x11_event);
                         }
 
-                        if matches!(
-                            callback(Event::X11Event(x11_event.into()), self),
-                            ControlFlow::Break
-                        ) {
+                        callback(Event::X11Event(x11_event.into()), &mut control_flow, self);
+
+                        if matches!(control_flow, ControlFlow::Break) {
                             break 'outer;
                         }
                     }
                 } else if epoll_event.data() == EVENT_KIND_SIGNAL {
                     if let Ok(Some(signal)) = self.signal_fd.read_signal() {
-                        if matches!(callback(Event::Signal(signal), self), ControlFlow::Break) {
+                        callback(Event::Signal(signal), &mut control_flow, self);
+
+                        if matches!(control_flow, ControlFlow::Break) {
                             break 'outer;
                         }
                     }
                 } else if epoll_event.data() == EVENT_KIND_DBUS {
                     if self.dbus_connection.read_write(0) {
                         while let Some(message) = self.dbus_connection.pop_message() {
-                            if matches!(
-                                callback(Event::DBusMessage(message), self),
-                                ControlFlow::Break
-                            ) {
+                            callback(Event::DBusMessage(message), &mut control_flow, self);
+
+                            if matches!(control_flow, ControlFlow::Break) {
                                 break 'outer;
                             }
                         }

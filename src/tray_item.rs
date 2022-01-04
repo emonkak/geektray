@@ -2,13 +2,14 @@ use std::os::raw::*;
 use std::rc::Rc;
 use x11::xlib;
 
+use crate::effect::Effect;
 use crate::event_loop::X11Event;
 use crate::geometrics::{PhysicalPoint, Point, Rect, Size};
 use crate::render_context::RenderContext;
 use crate::styles::Styles;
 use crate::text::{HorizontalAlign, Text, VerticalAlign};
 use crate::utils;
-use crate::widget::{Effect, LayoutResult, Widget};
+use crate::widget::{LayoutResult, Widget};
 
 #[derive(Debug)]
 pub struct TrayItem {

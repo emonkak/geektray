@@ -10,6 +10,7 @@ pub mod config;
 mod atoms;
 mod color;
 mod command;
+mod effect;
 mod error_handler;
 mod event_loop;
 mod geometrics;
@@ -18,6 +19,7 @@ mod render_context;
 mod styles;
 mod tray;
 mod tray_item;
+mod tray_manager;
 mod utils;
 mod widget;
 

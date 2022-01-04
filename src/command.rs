@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use serde::de;
+use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]

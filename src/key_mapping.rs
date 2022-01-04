@@ -17,12 +17,12 @@ impl KeyInterpreter {
     pub fn new(key_mappings: Vec<KeyMapping>) -> Self {
         let mut command_table: HashMap<(Keysym, Modifiers), Vec<Command>> = HashMap::new();
         for key_mapping in key_mappings {
-            command_table
-                .insert((key_mapping.key, key_mapping.modifiers), key_mapping.commands);
+            command_table.insert(
+                (key_mapping.key, key_mapping.modifiers),
+                key_mapping.commands,
+            );
         }
-        Self {
-            command_table,
-        }
+        Self { command_table }
     }
 
     pub fn eval(&self, keysym: Keysym, modifiers: Modifiers) -> Vec<Command> {
@@ -59,16 +59,16 @@ impl KeyMapping {
 pub struct Keysym(#[serde(with = "keysym_serde")] pub xlib::KeySym);
 
 impl Keysym {
-    pub fn new(display: *mut xlib::Display, keycode: xlib::KeyCode, keymask: Keymask) -> Option<Self> {
+    pub fn new(
+        display: *mut xlib::Display,
+        keycode: xlib::KeyCode,
+        keymask: Keymask,
+    ) -> Option<Self> {
         let keysym = unsafe {
             xlib::XkbKeycodeToKeysym(
                 display,
                 keycode,
-                if keymask & xlib::ShiftMask != 0 {
-                    1
-                } else {
-                    0
-                },
+                if keymask & xlib::ShiftMask != 0 { 1 } else { 0 },
                 0,
             )
         };

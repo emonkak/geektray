@@ -2,12 +2,13 @@ use std::os::raw::*;
 use std::rc::Rc;
 use x11::xlib;
 
+use crate::effect::Effect;
 use crate::event_loop::X11Event;
 use crate::geometrics::{Point, Size};
 use crate::render_context::RenderContext;
 use crate::styles::Styles;
 use crate::tray_item::{TrayItem, TrayItemMessage};
-use crate::widget::{Effect, LayoutResult, Widget};
+use crate::widget::{LayoutResult, Widget};
 
 #[derive(Debug)]
 pub struct Tray {
@@ -23,6 +24,13 @@ impl Tray {
             selected_index: None,
             styles,
         }
+    }
+
+    pub fn contains_window(&self, window: xlib::Window) -> bool {
+        self.tray_items
+            .iter()
+            .find(|tray_item| tray_item.window() == window)
+            .is_some()
     }
 
     fn add_tray_item(&mut self, window: xlib::Window, title: String) -> Effect {
