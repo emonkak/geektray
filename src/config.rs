@@ -1,11 +1,11 @@
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use std::ops::Add;
-use std::os::raw::*;
 use x11::keysym;
+use x11::xlib;
 
-use crate::font::{FontFamily, FontStretch, FontStyle, FontWeight};
 use crate::command::Command;
+use crate::font::{FontFamily, FontStretch, FontStyle, FontWeight};
+use crate::key_mapping::{KeyMapping, Keysym, Modifiers};
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(default)]
@@ -15,7 +15,7 @@ pub struct Config {
     pub ui: UiConfig,
     pub font: FontConfig,
     pub color: ColorConfig,
-    pub keys: Vec<KeyConfig>,
+    pub keys: Vec<KeyMapping>,
     pub print_x11_errors: bool,
 }
 
@@ -28,71 +28,71 @@ impl Default for Config {
             font: FontConfig::default(),
             color: ColorConfig::default(),
             keys: vec![
-                KeyConfig {
-                    key: Keysym(keysym::XK_j),
-                    commands: vec![Command::SelectNextItem],
-                    modifiers: Modifiers::none(),
-                },
-                KeyConfig {
-                    key: Keysym(keysym::XK_Down),
-                    commands: vec![Command::SelectNextItem],
-                    modifiers: Modifiers::none(),
-                },
-                KeyConfig {
-                    key: Keysym(keysym::XK_n),
-                    commands: vec![Command::SelectNextItem],
-                    modifiers: Modifiers::control(),
-                },
-                KeyConfig {
-                    key: Keysym(keysym::XK_k),
-                    commands: vec![Command::SelectPreviousItem],
-                    modifiers: Modifiers::none(),
-                },
-                KeyConfig {
-                    key: Keysym(keysym::XK_Down),
-                    commands: vec![Command::SelectPreviousItem],
-                    modifiers: Modifiers::none(),
-                },
-                KeyConfig {
-                    key: Keysym(keysym::XK_p),
-                    commands: vec![Command::SelectPreviousItem],
-                    modifiers: Modifiers::control(),
-                },
-                KeyConfig {
-                    key: Keysym(keysym::XK_l),
-                    commands: vec![Command::ClickLeftButton],
-                    modifiers: Modifiers::control(),
-                },
-                KeyConfig {
-                    key: Keysym(keysym::XK_Return),
-                    commands: vec![Command::ClickLeftButton],
-                    modifiers: Modifiers::none(),
-                },
-                KeyConfig {
-                    key: Keysym(keysym::XK_Return),
-                    commands: vec![Command::ClickLeftButton],
-                    modifiers: Modifiers::none(),
-                },
-                KeyConfig {
-                    key: Keysym(keysym::XK_h),
-                    commands: vec![Command::ClickRightButton],
-                    modifiers: Modifiers::none(),
-                },
-                KeyConfig {
-                    key: Keysym(keysym::XK_Return),
-                    commands: vec![Command::ClickRightButton],
-                    modifiers: Modifiers::shift(),
-                },
-                KeyConfig {
-                    key: Keysym(keysym::XK_q),
-                    commands: vec![Command::HideWindow],
-                    modifiers: Modifiers::none(),
-                },
-                KeyConfig {
-                    key: Keysym(keysym::XK_Escape),
-                    commands: vec![Command::HideWindow],
-                    modifiers: Modifiers::none(),
-                },
+                KeyMapping::new(
+                    Keysym(keysym::XK_j as xlib::KeySym),
+                    Modifiers::none(),
+                    vec![Command::SelectNextItem],
+                ),
+                KeyMapping::new(
+                    Keysym(keysym::XK_Down as xlib::KeySym),
+                    Modifiers::none(),
+                    vec![Command::SelectNextItem],
+                ),
+                KeyMapping::new(
+                    Keysym(keysym::XK_n as xlib::KeySym),
+                    Modifiers::control(),
+                    vec![Command::SelectNextItem],
+                ),
+                KeyMapping::new(
+                    Keysym(keysym::XK_k as xlib::KeySym),
+                    Modifiers::none(),
+                    vec![Command::SelectPreviousItem],
+                ),
+                KeyMapping::new(
+                    Keysym(keysym::XK_Down as xlib::KeySym),
+                    Modifiers::none(),
+                    vec![Command::SelectPreviousItem],
+                ),
+                KeyMapping::new(
+                    Keysym(keysym::XK_p as xlib::KeySym),
+                    Modifiers::control(),
+                    vec![Command::SelectPreviousItem],
+                ),
+                KeyMapping::new(
+                    Keysym(keysym::XK_l as xlib::KeySym),
+                    Modifiers::control(),
+                    vec![Command::ClickLeftButton],
+                ),
+                KeyMapping::new(
+                    Keysym(keysym::XK_Return as xlib::KeySym),
+                    Modifiers::none(),
+                    vec![Command::ClickLeftButton],
+                ),
+                KeyMapping::new(
+                    Keysym(keysym::XK_Return as xlib::KeySym),
+                    Modifiers::none(),
+                    vec![Command::ClickLeftButton],
+                ),
+                KeyMapping::new(
+                    Keysym(keysym::XK_h as xlib::KeySym),
+                    Modifiers::none(),
+                    vec![Command::ClickRightButton],
+                ),
+                KeyMapping::new(
+                    Keysym(keysym::XK_Return as xlib::KeySym),
+                    Modifiers::shift(),
+                    vec![Command::ClickRightButton],
+                ),
+                KeyMapping::new(
+                    Keysym(keysym::XK_q as xlib::KeySym),
+                    Modifiers::none(),
+                    vec![Command::HideWindow],
+                ),
+                KeyMapping::new(
+                    Keysym(keysym::XK_Escape as xlib::KeySym),
+                    Modifiers::none(),
+                    vec![Command::HideWindow],
+                ),
             ],
             print_x11_errors: false,
         }
@@ -158,136 +158,6 @@ impl Default for ColorConfig {
             normal_item_foreground: "#e8eaeb".to_owned(),
             selected_item_background: "#1c95e6".to_owned(),
             selected_item_foreground: "#e8eaeb".to_owned(),
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct KeyConfig {
-    key: Keysym,
-    commands: Vec<Command>,
-    #[serde(default = "Modifiers::none")]
-    modifiers: Modifiers,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
-pub struct Keysym(#[serde(with = "keysym_serde")] c_uint);
-
-mod keysym_serde {
-    use serde::de;
-    use serde::ser;
-    use serde::{self, Deserialize, Deserializer, Serializer};
-    use std::ffi::{CStr, CString};
-    use std::os::raw::*;
-    use std::str;
-    use x11::xlib;
-
-    pub fn serialize<S>(value: &c_uint, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let c = unsafe { xlib::XKeysymToString(*value as c_ulong) };
-        if c.is_null() {
-            return Err(ser::Error::custom(format!(
-                "The specified Keysym `{}` is not defined",
-                value
-            )));
-        }
-        match str::from_utf8(unsafe { CStr::from_ptr(c) }.to_bytes()) {
-            Ok(s) => serializer.serialize_str(&s),
-            Err(error) => Err(ser::Error::custom(error)),
-        }
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<c_uint, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        let c_str = CString::new(s).map_err(de::Error::custom)?;
-        let keysym = unsafe { xlib::XStringToKeysym(c_str.as_ptr()) };
-        if keysym == xlib::NoSymbol as c_ulong {
-            return Err(de::Error::custom(format!(
-                "The specified string `{}` does not match a valid Keysym.",
-                c_str.to_string_lossy()
-            )));
-        }
-        Ok(keysym as c_uint)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
-#[serde(default)]
-pub struct Modifiers {
-    pub control: bool,
-    pub shift: bool,
-    pub alt: bool,
-    #[serde(rename = "super")]
-    pub super_: bool,
-}
-
-impl Modifiers {
-    pub const fn none() -> Self {
-        Self {
-            control: false,
-            shift: false,
-            alt: false,
-            super_: false,
-        }
-    }
-
-    pub const fn control() -> Self {
-        Self {
-            control: true,
-            shift: false,
-            alt: false,
-            super_: false,
-        }
-    }
-
-    pub const fn shift() -> Self {
-        Self {
-            control: false,
-            shift: true,
-            alt: false,
-            super_: false,
-        }
-    }
-
-    pub const fn alt() -> Self {
-        Self {
-            control: false,
-            shift: false,
-            alt: true,
-            super_: false,
-        }
-    }
-
-    pub const fn super_() -> Self {
-        Self {
-            control: false,
-            shift: false,
-            alt: false,
-            super_: true,
-        }
-    }
-}
-
-impl Default for Modifiers {
-    fn default() -> Self {
-        Self::none()
-    }
-}
-
-impl Add for Modifiers {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Self {
-            control: self.control || rhs.control,
-            shift: self.shift || rhs.shift,
-            alt: self.alt || rhs.alt,
-            super_: self.super_ || rhs.super_,
         }
     }
 }

@@ -130,10 +130,10 @@ where
             if 1 <= n && n <= 1000 {
                 Ok(n)
             } else {
-                Err(de::Error::custom(format!(
-                    "Invalid weight `{}`, The value must be in the range 1 to 1000.",
-                    n
-                )))
+                Err(de::Error::invalid_value(
+                    de::Unexpected::Unsigned(n as u64),
+                    &"The value must be in the range 1 to 1000.",
+                ))
             }
         }
     }

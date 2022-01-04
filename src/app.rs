@@ -1,7 +1,7 @@
 use libdbus_sys as dbus;
-use std::collections::hash_map;
 use std::collections::HashMap;
 use std::collections::VecDeque;
+use std::collections::hash_map;
 use std::env;
 use std::error::Error;
 use std::ffi::CStr;
@@ -10,15 +10,17 @@ use std::mem;
 use std::os::raw::*;
 use std::ptr;
 use std::rc::Rc;
+use std::str::FromStr;
 use std::time::Duration;
-use x11::keysym;
 use x11::xlib;
 
 use crate::atoms::Atoms;
+use crate::command::Command;
 use crate::config::Config;
 use crate::error_handler;
 use crate::event_loop::{ControlFlow, Event, EventLoop, X11Event};
 use crate::geometrics::{PhysicalPoint, PhysicalSize, Point, Size};
+use crate::key_mapping::{KeyInterpreter, Keysym, Modifiers};
 use crate::render_context::RenderContext;
 use crate::styles::Styles;
 use crate::text::TextRenderer;
@@ -45,6 +47,7 @@ pub struct App {
     balloon_messages: HashMap<xlib::Window, BalloonMessage>,
     tray_status: TrayStatus,
     system_tray_atom: xlib::Atom,
+    key_interpreter: KeyInterpreter,
     text_renderer: TextRenderer,
     old_error_handler:
         Option<unsafe extern "C" fn(*mut xlib::Display, *mut xlib::XErrorEvent) -> c_int>,
@@ -99,6 +102,7 @@ impl App {
             tray_status: TrayStatus::Waiting,
             balloon_messages: HashMap::new(),
             system_tray_atom,
+            key_interpreter: KeyInterpreter::new(config.keys),
             text_renderer: TextRenderer::new(),
             old_error_handler,
         })
@@ -159,16 +163,10 @@ impl App {
                     message.path().unwrap_or_default(),
                     message.member().unwrap_or_default(),
                 ) {
-                    (MethodCall, "/", "ShowWindow") => {
-                        self.show_window();
-                        context.send_dbus_message(&message.new_method_return());
-                    }
-                    (MethodCall, "/", "HideWindow") => {
-                        self.hide_window();
-                        context.send_dbus_message(&message.new_method_return());
-                    }
-                    (MethodCall, "/", "ToggleWindow") => {
-                        self.toggle_window();
+                    (MethodCall, "/", command_str) => {
+                        if let Ok(command) = Command::from_str(command_str) {
+                            self.run_command(command);
+                        }
                         context.send_dbus_message(&message.new_method_return());
                     }
                     _ => {}
@@ -183,41 +181,12 @@ impl App {
     }
 
     fn on_key_release(&mut self, event: xlib::XKeyEvent) -> ControlFlow {
-        let keysym = unsafe {
-            xlib::XkbKeycodeToKeysym(
-                self.display,
-                event.keycode as c_uchar,
-                if event.state & xlib::ShiftMask != 0 {
-                    1
-                } else {
-                    0
-                },
-                0,
-            )
-        };
-        match keysym as c_uint {
-            keysym::XK_Down | keysym::XK_j => {
-                self.dispatch_message(TrayMessage::SelectNextItem);
+        if let Some(keysym) = Keysym::new(self.display, event.keycode as xlib::KeyCode, event.state) {
+            let modifiers = Modifiers::new(event.state);
+            let commands = self.key_interpreter.eval(keysym, modifiers);
+            for command in commands {
+                self.run_command(command);
             }
-            keysym::XK_Up | keysym::XK_k => {
-                self.dispatch_message(TrayMessage::SelectPreviousItem);
-            }
-            keysym::XK_Right | keysym::XK_l => {
-                self.dispatch_message(TrayMessage::ClickSelectedItem {
-                    button: xlib::Button1,
-                    button_mask: xlib::Button1Mask,
-                });
-            }
-            keysym::XK_Left | keysym::XK_h => {
-                self.dispatch_message(TrayMessage::ClickSelectedItem {
-                    button: xlib::Button3,
-                    button_mask: xlib::Button3Mask,
-                });
-            }
-            keysym::XK_Escape => {
-                self.hide_window();
-            }
-            _ => (),
         }
         ControlFlow::Continue
     }
@@ -540,6 +509,56 @@ impl App {
             self.recaclulate_layout();
         } else if redraw_requested {
             self.request_redraw();
+        }
+    }
+
+    fn run_command(&mut self, command: Command) {
+        match command {
+            Command::HideWindow => {
+                self.hide_window();
+            }
+            Command::ShowWindow => {
+                self.show_window();
+            }
+            Command::ToggleWindow => {
+                self.toggle_window();
+            }
+            Command::SelectNextItem => {
+                self.dispatch_message(TrayMessage::SelectNextItem);
+            }
+            Command::SelectPreviousItem => {
+                self.dispatch_message(TrayMessage::SelectPreviousItem);
+            }
+            Command::ClickLeftButton => {
+                self.dispatch_message(TrayMessage::ClickSelectedItem {
+                    button: xlib::Button1,
+                    button_mask: xlib::Button1Mask,
+                });
+            }
+            Command::ClickRightButton => {
+                self.dispatch_message(TrayMessage::ClickSelectedItem {
+                    button: xlib::Button3,
+                    button_mask: xlib::Button3Mask,
+                });
+            }
+            Command::ClickMiddleButton => {
+                self.dispatch_message(TrayMessage::ClickSelectedItem {
+                    button: xlib::Button2,
+                    button_mask: xlib::Button2Mask,
+                });
+            },
+            Command::ClickX1Button => {
+                self.dispatch_message(TrayMessage::ClickSelectedItem {
+                    button: xlib::Button4,
+                    button_mask: xlib::Button4Mask,
+                });
+            },
+            Command::ClickX2Button => {
+                self.dispatch_message(TrayMessage::ClickSelectedItem {
+                    button: xlib::Button5,
+                    button_mask: xlib::Button5Mask,
+                });
+            }
         }
     }
 

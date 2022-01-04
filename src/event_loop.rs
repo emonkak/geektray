@@ -39,9 +39,8 @@ impl EventLoop {
             mask.thread_block()?;
             signalfd::SignalFd::new(&mask)
         }?;
-        let dbus_connection = DBusConnection::new(
-            CStr::from_bytes_with_nul(DBUS_INTERFACE_NAME).unwrap()
-        )?;
+        let dbus_connection =
+            DBusConnection::new(CStr::from_bytes_with_nul(DBUS_INTERFACE_NAME).unwrap())?;
 
         dbus_connection.set_watch_functions(
             Some(handle_dbus_add_watch),

@@ -13,6 +13,7 @@ mod command;
 mod error_handler;
 mod event_loop;
 mod geometrics;
+mod key_mapping;
 mod render_context;
 mod styles;
 mod tray;
