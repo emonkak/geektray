@@ -19,16 +19,16 @@ impl KeyInterpreter {
         for key_mapping in key_mappings {
             command_table.insert(
                 (key_mapping.key, key_mapping.modifiers),
-                key_mapping.commands,
+                key_mapping.commands.clone(),
             );
         }
         Self { command_table }
     }
 
-    pub fn eval(&self, keysym: Keysym, modifiers: Modifiers) -> Vec<Command> {
+    pub fn eval(&self, keysym: Keysym, modifiers: Modifiers) -> &[Command] {
         self.command_table
             .get(&(keysym, modifiers))
-            .map(|commands| commands.clone())
+            .map(|commands| commands.as_slice())
             .unwrap_or_default()
     }
 }

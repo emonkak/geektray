@@ -45,6 +45,10 @@ pub struct Point<T = f32> {
 
 pub type PhysicalPoint = Point<i32>;
 
+impl Point {
+    pub const ZERO: Self = Self { x: 0.0, y: 0.0 };
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Size<T = f32> {
     pub width: T,

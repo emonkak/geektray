@@ -1,7 +1,7 @@
 use x11::xlib;
 
 use crate::color::Color;
-use crate::config::Config;
+use crate::config::UiConfig;
 use crate::font::{FontDescriptor, FontSet};
 
 #[derive(Debug)]
@@ -20,12 +20,12 @@ pub struct Styles {
 }
 
 impl Styles {
-    pub fn new(display: *mut xlib::Display, config: &Config) -> Result<Self, String> {
+    pub fn new(display: *mut xlib::Display, config: &UiConfig) -> Result<Self, String> {
         Ok(Self {
-            icon_size: config.ui.icon_size,
-            window_padding: config.ui.window_padding,
-            item_padding: config.ui.item_padding,
-            item_gap: config.ui.item_gap,
+            icon_size: config.icon_size,
+            window_padding: config.window_padding,
+            item_padding: config.item_padding,
+            item_gap: config.item_gap,
             font_size: config.font.size,
             font_set: FontSet::new(FontDescriptor {
                 family: config.font.family.clone(),

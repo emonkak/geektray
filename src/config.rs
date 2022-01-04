@@ -10,11 +10,7 @@ use crate::key_mapping::{KeyMapping, Keysym, Modifiers};
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Config {
-    pub window_name: Cow<'static, str>,
-    pub window_class: Cow<'static, str>,
     pub ui: UiConfig,
-    pub font: FontConfig,
-    pub color: ColorConfig,
     pub keys: Vec<KeyMapping>,
     pub print_x11_errors: bool,
 }
@@ -22,11 +18,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            window_name: Cow::Borrowed("KeyTray"),
-            window_class: Cow::Borrowed("KeyTray"),
             ui: UiConfig::default(),
-            font: FontConfig::default(),
-            color: ColorConfig::default(),
             keys: vec![
                 KeyMapping::new(
                     Keysym(keysym::XK_j as xlib::KeySym),
@@ -102,21 +94,29 @@ impl Default for Config {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(default)]
 pub struct UiConfig {
+    pub window_name: Cow<'static, str>,
+    pub window_class: Cow<'static, str>,
     pub window_padding: f32,
     pub window_width: f32,
     pub item_padding: f32,
     pub item_gap: f32,
     pub icon_size: f32,
+    pub font: FontConfig,
+    pub color: ColorConfig,
 }
 
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
+            window_name: Cow::Borrowed("KeyTray"),
+            window_class: Cow::Borrowed("KeyTray"),
             window_padding: 8.0,
             window_width: 480.0,
             item_padding: 0.0,
             item_gap: 8.0,
             icon_size: 24.0,
+            font: FontConfig::default(),
+            color: ColorConfig::default(),
         }
     }
 }

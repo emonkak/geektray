@@ -2,14 +2,14 @@ use std::os::raw::*;
 use std::rc::Rc;
 use x11::xlib;
 
-use crate::effect::Effect;
 use crate::event_loop::X11Event;
 use crate::geometrics::{PhysicalPoint, Point, Rect, Size};
 use crate::render_context::RenderContext;
 use crate::styles::Styles;
 use crate::text::{HorizontalAlign, Text, VerticalAlign};
 use crate::utils;
-use crate::widget::{LayoutResult, Widget};
+use crate::widget::{Layout, Widget};
+use crate::window::WindowEffcet;
 
 #[derive(Debug)]
 pub struct TrayItem {
@@ -35,32 +35,32 @@ impl TrayItem {
         self.window
     }
 
-    pub fn click_item(&mut self, button: c_uint, button_mask: c_uint) -> Effect {
+    pub fn click_item(&mut self, button: c_uint, button_mask: c_uint) -> WindowEffcet {
         let center = (self.styles.icon_size / 2.0) as i32;
         let window = self.window;
-        return Effect::Action(Box::new(move |display, _| unsafe {
+        return WindowEffcet::Action(Box::new(move |display, _| unsafe {
             utils::emit_click_event(display, window, button, button_mask, center, center);
         }));
     }
 
-    pub fn change_title(&mut self, title: String) -> Effect {
+    pub fn change_title(&mut self, title: String) -> WindowEffcet {
         self.title = title;
-        Effect::RequestRedraw
+        WindowEffcet::RequestRedraw
     }
 
-    pub fn select_item(&mut self) -> Effect {
+    pub fn select_item(&mut self) -> WindowEffcet {
         self.is_selected = true;
-        Effect::RequestRedraw
+        WindowEffcet::RequestRedraw
     }
 
-    pub fn deselect_item(&mut self) -> Effect {
+    pub fn deselect_item(&mut self) -> WindowEffcet {
         self.is_selected = false;
-        Effect::RequestRedraw
+        WindowEffcet::RequestRedraw
     }
 }
 
 impl Widget for TrayItem {
-    fn render(&self, position: Point, layout: &LayoutResult, context: &mut RenderContext) {
+    fn render(&self, position: Point, layout: &Layout, context: &mut RenderContext) {
         let (bg_color, fg_color) = if self.is_selected {
             (
                 self.styles.selected_item_background,
@@ -106,8 +106,8 @@ impl Widget for TrayItem {
         }
     }
 
-    fn layout(&self, container_size: Size) -> LayoutResult {
-        LayoutResult {
+    fn layout(&self, container_size: Size) -> Layout {
+        Layout {
             size: Size {
                 width: container_size.width as f32,
                 height: self.styles.item_height(),
@@ -116,7 +116,7 @@ impl Widget for TrayItem {
         }
     }
 
-    fn on_event(&mut self, event: &X11Event, position: Point, layout: &LayoutResult) -> Effect {
+    fn on_event(&mut self, event: &X11Event, position: Point, layout: &Layout) -> WindowEffcet {
         match event {
             X11Event::ButtonPress(event) => {
                 let bounds = Rect::new(position, layout.size);
@@ -141,7 +141,7 @@ impl Widget for TrayItem {
                         let window = self.window;
                         let button = event.button;
                         let button_mask = event.state;
-                        return Effect::Action(Box::new(move |display, _| unsafe {
+                        return WindowEffcet::Action(Box::new(move |display, _| unsafe {
                             utils::emit_click_event(
                                 display,
                                 window,
@@ -160,6 +160,6 @@ impl Widget for TrayItem {
             _ => {}
         }
 
-        Effect::None
+        WindowEffcet::None
     }
 }

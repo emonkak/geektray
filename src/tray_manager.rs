@@ -287,10 +287,6 @@ impl BalloonMessage {
         }
     }
 
-    pub fn id(&self) -> i64 {
-        self.id
-    }
-
     pub fn timeout(&self) -> Duration {
         self.timeout
     }

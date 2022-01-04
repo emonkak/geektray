@@ -1,20 +1,20 @@
-use crate::effect::Effect;
 use crate::event_loop::X11Event;
 use crate::geometrics::{Point, Size};
 use crate::render_context::RenderContext;
+use crate::window::WindowEffcet;
 
 pub trait Widget {
-    fn render(&self, position: Point, layout: &LayoutResult, context: &mut RenderContext);
+    fn render(&self, position: Point, layout: &Layout, context: &mut RenderContext);
 
-    fn layout(&self, container_size: Size) -> LayoutResult;
+    fn layout(&self, container_size: Size) -> Layout;
 
-    fn on_event(&mut self, _event: &X11Event, _position: Point, _layout: &LayoutResult) -> Effect {
-        Effect::None
+    fn on_event(&mut self, _event: &X11Event, _position: Point, _layout: &Layout) -> WindowEffcet {
+        WindowEffcet::None
     }
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct LayoutResult {
+pub struct Layout {
     pub size: Size,
-    pub children: Vec<(Point, LayoutResult)>,
+    pub children: Vec<(Point, Layout)>,
 }

@@ -1,26 +1,26 @@
 {
-    "window_name": "KeyTray",
-    "window_class": "KeyTray",
     "ui": {
+        "window_name": "KeyTray",
+        "window_class": "KeyTray",
         "window_padding": 0,
         "window_width": 480,
         "item_gap": 0,
         "item_padding": 8.0,
-        "icon_size": 24.0
-    },
-    "font": {
-        "size": 12.0,
-        "family": "Sans",
-        "weight": "Normal",
-        "style": "Normal",
-        "stretch": "Normal"
-    },
-    "color": {
-        "window_background": "#21272b",
-        "normal_item_background": "#21272b",
-        "normal_item_foreground": "#e8eaeb",
-        "selected_item_background": "#1c95e6",
-        "selected_item_foreground": "#e8eaeb"
+        "icon_size": 24.0,
+        "font": {
+            "size": 12.0,
+            "family": "Sans",
+            "weight": "Normal",
+            "style": "Normal",
+            "stretch": "Normal"
+        },
+        "color": {
+            "window_background": "#21272b",
+            "normal_item_background": "#21272b",
+            "normal_item_foreground": "#e8eaeb",
+            "selected_item_background": "#1c95e6",
+            "selected_item_foreground": "#e8eaeb"
+        }
     },
     "keys": [
         {
