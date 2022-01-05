@@ -73,7 +73,18 @@ impl Widget for TrayItem {
             )
         };
 
-        context.fill_rectange(bg_color, Rect::new(position, layout.size));
+        if self.styles.item_corner_radius > 0.0 {
+            context.fill_rounded_rectange(
+                bg_color,
+                Rect::new(position, layout.size),
+                Size {
+                    width: self.styles.item_corner_radius,
+                    height: self.styles.item_corner_radius,
+                },
+            );
+        } else {
+            context.fill_rectange(bg_color, Rect::new(position, layout.size));
+        }
 
         let title = if self.styles.show_index {
             format!("{}. {}", index + 1, self.title)
@@ -115,7 +126,7 @@ impl Widget for TrayItem {
     fn layout(&self, container_size: Size) -> Layout {
         Layout {
             size: Size {
-                width: container_size.width as f32,
+                width: container_size.width as f64,
                 height: self.styles.item_height(),
             },
             children: Vec::new(),

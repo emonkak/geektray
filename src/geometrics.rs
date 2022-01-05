@@ -1,5 +1,5 @@
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Rect<P = f32, S = f32> {
+pub struct Rect<P = f64, S = f64> {
     pub x: P,
     pub y: P,
     pub width: S,
@@ -38,7 +38,7 @@ impl PhysicalRect {
 pub type PhysicalRect = Rect<i32, u32>;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Point<T = f32> {
+pub struct Point<T = f64> {
     pub x: T,
     pub y: T,
 }
@@ -50,7 +50,7 @@ impl Point {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Size<T = f32> {
+pub struct Size<T = f64> {
     pub width: T,
     pub height: T,
 }
@@ -69,8 +69,8 @@ impl Size {
 impl PhysicalSize {
     pub fn unsnap(self) -> Size {
         Size {
-            width: self.width as f32,
-            height: self.height as f32,
+            width: self.width as f64,
+            height: self.height as f64,
         }
     }
 }

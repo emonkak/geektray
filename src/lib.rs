@@ -1,3 +1,4 @@
+extern crate cairo_sys;
 extern crate libdbus_sys;
 extern crate nix;
 extern crate serde;

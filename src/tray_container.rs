@@ -180,7 +180,7 @@ impl Widget for TrayContainer {
 
         Layout {
             size: Size {
-                width: container_size.width as f32,
+                width: container_size.width as f64,
                 height: total_height.max(self.styles.item_height()),
             },
             children,

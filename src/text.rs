@@ -73,7 +73,7 @@ impl TextRenderer {
                 extents.assume_init()
             };
 
-            let ascent = unsafe { (*font).ascent } as f32;
+            let ascent = unsafe { (*font).ascent } as f64;
             let y_adjustment = if text.font_size > ascent {
                 (text.font_size - ascent) / 2.0
             } else {
@@ -83,16 +83,16 @@ impl TextRenderer {
             unsafe {
                 xft::XftDrawStringUtf8(
                     draw,
-                    &mut color.as_xft_color(),
+                    &mut color.into_xft_color(),
                     font,
-                    (origin_x + x_offset + extents.x as f32) as i32,
-                    (origin_y + y_adjustment + extents.height as f32) as i32,
+                    (origin_x + x_offset + extents.x as f64) as i32,
+                    (origin_y + y_adjustment + extents.height as f64) as i32,
                     text_chunk.content.as_ptr(),
                     text_chunk.content.len() as i32,
                 );
             }
 
-            x_offset += extents.width as f32;
+            x_offset += extents.width as f64;
         }
     }
 
@@ -126,8 +126,8 @@ impl TextRenderer {
                 extents.assume_init()
             };
 
-            measured_size.width += extents.width as f32;
-            measured_size.height += measured_size.height.max(extents.height as f32);
+            measured_size.width += extents.width as f64;
+            measured_size.height += measured_size.height.max(extents.height as f64);
         }
 
         measured_size
@@ -146,7 +146,7 @@ impl TextRenderer {
         &mut self,
         display: *mut xlib::Display,
         font: *mut fc::FcPattern,
-        font_size: f32,
+        font_size: f64,
         fontset_pattern: *mut fc::FcPattern,
     ) -> Option<*mut xft::XftFont> {
         unsafe {
@@ -181,7 +181,7 @@ impl TextRenderer {
 #[derive(Clone, Copy, Debug)]
 pub struct Text<'a> {
     pub content: &'a str,
-    pub font_size: f32,
+    pub font_size: f64,
     pub font_set: &'a FontSet,
     pub horizontal_align: HorizontalAlign,
     pub vertical_align: VerticalAlign,

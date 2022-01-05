@@ -141,11 +141,12 @@ impl Default for Config {
 pub struct UiConfig {
     pub window_name: Cow<'static, str>,
     pub window_class: Cow<'static, str>,
-    pub window_padding: f32,
-    pub window_width: f32,
-    pub item_padding: f32,
-    pub item_gap: f32,
-    pub icon_size: f32,
+    pub window_padding: f64,
+    pub window_width: f64,
+    pub item_padding: f64,
+    pub item_gap: f64,
+    pub icon_size: f64,
+    pub item_corner_radius: f64,
     pub font: FontConfig,
     pub color: ColorConfig,
     pub show_index: bool,
@@ -160,6 +161,7 @@ impl Default for UiConfig {
             window_width: 480.0,
             item_padding: 0.0,
             item_gap: 8.0,
+            item_corner_radius: 4.0,
             icon_size: 24.0,
             font: FontConfig::default(),
             color: ColorConfig::default(),
@@ -175,7 +177,7 @@ pub struct FontConfig {
     pub weight: FontWeight,
     pub style: FontStyle,
     pub stretch: FontStretch,
-    pub size: f32,
+    pub size: f64,
 }
 
 impl Default for FontConfig {

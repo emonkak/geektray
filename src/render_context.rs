@@ -1,9 +1,10 @@
+use cairo_sys as cairo;
 use std::ptr;
 use x11::xft;
 use x11::xlib;
 
 use crate::color::Color;
-use crate::geometrics::{PhysicalSize, Rect};
+use crate::geometrics::{PhysicalSize, Rect, Size};
 use crate::text::{Text, TextRenderer};
 
 #[derive(Debug)]
@@ -13,6 +14,7 @@ pub struct RenderContext<'a> {
     viewport: PhysicalSize,
     pixmap: xlib::Pixmap,
     gc: xlib::GC,
+    cairo: *mut cairo::cairo_t,
     xft_draw: *mut xft::XftDraw,
     text_renderer: &'a mut TextRenderer,
 }
@@ -36,6 +38,14 @@ impl<'a> RenderContext<'a> {
             let visual = xlib::XDefaultVisual(display, screen_number);
             let colormap = xlib::XDefaultColormap(display, screen_number);
             let xft_draw = xft::XftDrawCreate(display, pixmap, visual, colormap);
+            let cairo_surface = cairo::cairo_xlib_surface_create(
+                display,
+                pixmap,
+                visual,
+                viewport.width as i32,
+                viewport.height as i32,
+            );
+            let cairo = cairo::cairo_create(cairo_surface);
 
             Self {
                 display,
@@ -43,6 +53,7 @@ impl<'a> RenderContext<'a> {
                 viewport,
                 pixmap,
                 gc,
+                cairo,
                 xft_draw,
                 text_renderer,
             }
@@ -72,32 +83,105 @@ impl<'a> RenderContext<'a> {
     }
 
     pub fn clear_viewport(&mut self, color: Color) {
+        let [r, g, b] = color.into_f64_components();
+
         unsafe {
-            xlib::XSetForeground(self.display, self.gc, color.pixel());
-            xlib::XFillRectangle(
-                self.display,
-                self.pixmap,
-                self.gc,
-                0,
-                0,
-                self.viewport.width,
-                self.viewport.height,
-            );
+            cairo::cairo_save(self.cairo);
+
+            cairo::cairo_rectangle(self.cairo, 0.0, 0.0, self.viewport.width as f64, self.viewport.height as f64);
+
+            cairo::cairo_set_source_rgb(self.cairo, r, g, b);
+            cairo::cairo_fill(self.cairo);
+
+            cairo::cairo_restore(self.cairo);
         }
     }
 
     pub fn fill_rectange(&mut self, color: Color, bounds: Rect) {
+        let [r, g, b] = color.into_f64_components();
+
         unsafe {
-            xlib::XSetForeground(self.display, self.gc, color.pixel());
-            xlib::XFillRectangle(
-                self.display,
-                self.pixmap,
-                self.gc,
-                bounds.x as _,
-                bounds.y as _,
-                bounds.width as _,
-                bounds.height as _,
+            cairo::cairo_save(self.cairo);
+
+            cairo::cairo_rectangle(self.cairo, bounds.x, bounds.y, bounds.width, bounds.height);
+
+            cairo::cairo_set_source_rgb(self.cairo, r, g, b);
+            cairo::cairo_fill(self.cairo);
+
+            cairo::cairo_restore(self.cairo);
+        }
+    }
+
+    pub fn fill_rounded_rectange(&mut self, color: Color, bounds: Rect, mut radius: Size) {
+        // Reference: https://www.cairographics.org/cookbook/roundedrectangles/ (Method B)
+        const ARC_TO_BEZIER: f64 = 0.55228475;
+
+        if radius.width > bounds.width - radius.width {
+            radius.width = bounds.width / 2.0;
+        }
+        if radius.height > bounds.height - radius.height {
+            radius.height = bounds.height / 2.0;
+        }
+
+        let curve_x = radius.width * ARC_TO_BEZIER;
+        let curve_y = radius.height * ARC_TO_BEZIER;
+        let [r, g, b] = color.into_f64_components();
+
+        unsafe {
+            cairo::cairo_save(self.cairo);
+
+            cairo::cairo_new_path(self.cairo);
+            cairo::cairo_move_to(
+                self.cairo,
+                bounds.x + radius.width,
+                bounds.y,
             );
+            cairo::cairo_rel_line_to(self.cairo, bounds.width - 2.0 * radius.width, 0.0);
+            cairo::cairo_rel_curve_to(
+                self.cairo,
+                curve_x,
+                0.0,
+                radius.width,
+                curve_y,
+                radius.width,
+                radius.height,
+            );
+            cairo::cairo_rel_line_to(self.cairo, 0.0, bounds.height - 2.0 * radius.height);
+            cairo::cairo_rel_curve_to(
+                self.cairo,
+                0.0,
+                curve_y,
+                curve_x - radius.width,
+                radius.height,
+                -radius.width,
+                radius.height,
+            );
+            cairo::cairo_rel_line_to(self.cairo, -bounds.width + 2.0 * radius.width, 0.0);
+            cairo::cairo_rel_curve_to(
+                self.cairo,
+                -curve_x,
+                0.0,
+                -radius.width,
+                -curve_y,
+                -radius.width,
+                -radius.height,
+            );
+            cairo::cairo_rel_line_to(self.cairo, 0.0, -bounds.height + 2.0 * radius.height);
+            cairo::cairo_rel_curve_to(
+                self.cairo,
+                0.0,
+                -curve_y,
+                radius.width - curve_x,
+                -radius.height,
+                radius.width,
+                -radius.height,
+            );
+            cairo::cairo_close_path(self.cairo);
+
+            cairo::cairo_set_source_rgb(self.cairo, r, g, b);
+            cairo::cairo_fill(self.cairo);
+
+            cairo::cairo_restore(self.cairo);
         }
     }
 
