@@ -1,82 +1,60 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::ops::BitOr;
-use std::os::raw::*;
-use x11::xlib;
-
-use crate::command::Command;
-
-type Keymask = c_uint;
+use x11rb::connection::Connection;
+use x11rb::errors::ReplyError;
+use x11rb::protocol::xproto;
+use x11rb::protocol::xproto::ConnectionExt;
 
 #[derive(Debug)]
-pub struct KeyInterpreter {
-    command_table: HashMap<(Keysym, Modifiers), Vec<Command>>,
+pub struct KeyboardMapping {
+    min_keycode: u8,
+    max_keycode: u8,
+    keysyms_per_keycode: u8,
+    keysyms: Vec<xproto::Keysym>,
 }
 
-impl KeyInterpreter {
-    pub fn new(key_mappings: Vec<KeyMapping>) -> Self {
-        let mut command_table: HashMap<(Keysym, Modifiers), Vec<Command>> = HashMap::new();
-        for key_mapping in key_mappings {
-            command_table.insert(
-                (key_mapping.key, key_mapping.modifiers),
-                key_mapping.commands.clone(),
-            );
+impl KeyboardMapping {
+    pub fn from_connection<Connection: self::Connection>(
+        connection: &Connection,
+    ) -> Result<Self, ReplyError> {
+        let setup = &connection.setup();
+        let reply = connection
+            .get_keyboard_mapping(setup.min_keycode, setup.max_keycode - setup.min_keycode + 1)?
+            .reply()?;
+        Ok(Self {
+            min_keycode: setup.min_keycode,
+            max_keycode: setup.max_keycode,
+            keysyms_per_keycode: reply.keysyms_per_keycode,
+            keysyms: reply.keysyms,
+        })
+    }
+
+    pub fn get_key(&self, keycode: xproto::Keycode, level: u8) -> Option<Key> {
+        if level >= self.keysyms_per_keycode
+            || keycode < self.min_keycode
+            || keycode > self.max_keycode
+        {
+            return None;
         }
-        Self { command_table }
-    }
 
-    pub fn eval(&self, keysym: Keysym, modifiers: Modifiers) -> &[Command] {
-        self.command_table
-            .get(&(keysym, modifiers))
-            .map(|commands| commands.as_slice())
-            .unwrap_or_default()
-    }
-}
+        let index = level as usize
+            + (keycode as usize - self.min_keycode as usize) * self.keysyms_per_keycode as usize;
+        let keysym = self.keysyms[index];
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct KeyMapping {
-    key: Keysym,
-    #[serde(default = "Modifiers::none")]
-    modifiers: Modifiers,
-    commands: Vec<Command>,
-}
-
-impl KeyMapping {
-    pub const fn new(key: Keysym, modifiers: Modifiers, commands: Vec<Command>) -> Self {
-        Self {
-            key,
-            modifiers,
-            commands,
+        if keysym == x11rb::NO_SYMBOL {
+            return None;
         }
-    }
 
-    pub const fn matches(&self, keysym: xlib::KeySym, keymask: Keymask) -> bool {
-        self.key.0 == keysym && (keymask & Modifiers::all().keymask()) == self.modifiers.keymask()
+        Some(Key(keysym))
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Deserialize, Serialize)]
-pub struct Keysym(#[serde(with = "keysym_serde")] pub xlib::KeySym);
+pub struct Key(#[serde(with = "keysym_serde")] pub xproto::Keysym);
 
-impl Keysym {
-    pub fn new(
-        display: *mut xlib::Display,
-        keycode: xlib::KeyCode,
-        keymask: Keymask,
-    ) -> Option<Self> {
-        let keysym = unsafe {
-            xlib::XkbKeycodeToKeysym(
-                display,
-                keycode,
-                if keymask & xlib::ShiftMask != 0 { 1 } else { 0 },
-                0,
-            )
-        };
-        if keysym != xlib::NoSymbol as xlib::KeySym {
-            Some(Keysym(keysym))
-        } else {
-            None
-        }
+impl From<xproto::Keysym> for Key {
+    fn from(value: xproto::Keysym) -> Self {
+        Self(value)
     }
 }
 
@@ -84,35 +62,40 @@ mod keysym_serde {
     use serde::de;
     use serde::ser;
     use serde::{self, Deserialize, Deserializer, Serializer};
-    use std::ffi::{CStr, CString};
+    use std::ffi::CString;
     use std::str;
-    use x11::xlib;
+    use x11rb::protocol::xproto;
 
-    pub fn serialize<S>(value: &xlib::KeySym, serializer: S) -> Result<S::Ok, S::Error>
+    use crate::xkbcommon_sys as xkb;
+
+    pub fn serialize<S>(value: &xproto::Keysym, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        let c = unsafe { xlib::XKeysymToString(*value) };
-        if c.is_null() {
+        let mut buffer = [0u8; 256];
+        let length = unsafe {
+            xkb::xkb_keysym_get_name((*value).into(), buffer.as_mut_ptr().cast(), buffer.len())
+        };
+        if length < 0 {
             return Err(ser::Error::custom(format!(
                 "The specified Keysym `{}` is not defined",
                 value
             )));
         }
-        match str::from_utf8(unsafe { CStr::from_ptr(c) }.to_bytes()) {
+        match str::from_utf8(&buffer[0..length as usize]) {
             Ok(s) => serializer.serialize_str(&s),
             Err(error) => Err(ser::Error::custom(error)),
         }
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<xlib::KeySym, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<xproto::Keysym, D::Error>
     where
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
         let c_str = CString::new(s).map_err(de::Error::custom)?;
-        let keysym = unsafe { xlib::XStringToKeysym(c_str.as_ptr()) };
-        if keysym == xlib::NoSymbol as xlib::KeySym {
+        let keysym = unsafe { xkb::xkb_keysym_from_name(c_str.as_ptr(), xkb::XKB_KEYSYM_NO_FLAGS) };
+        if keysym == x11rb::NO_SYMBOL {
             return Err(de::Error::custom(format!(
                 "The specified string `{}` does not match a valid Keysym.",
                 c_str.to_string_lossy()
@@ -133,18 +116,19 @@ pub struct Modifiers {
 }
 
 impl Modifiers {
-    pub const fn new(keymask: Keymask) -> Self {
+    pub fn from_keymask(keymask: impl Into<xproto::KeyButMask>) -> Self {
         let mut modifiers = Self::none();
-        if (keymask & xlib::ControlMask) != 0 {
+        let keymask = u32::from(keymask.into());
+        if (keymask & u32::from(xproto::KeyButMask::CONTROL)) != 0 {
             modifiers.control = true;
         }
-        if (keymask & xlib::ShiftMask) != 0 {
+        if (keymask & u32::from(xproto::KeyButMask::SHIFT)) != 0 {
             modifiers.shift = true;
         }
-        if (keymask & xlib::Mod1Mask) != 0 {
+        if (keymask & u32::from(xproto::KeyButMask::MOD1)) != 0 {
             modifiers.alt = true;
         }
-        if (keymask & xlib::Mod4Mask) != 0 {
+        if (keymask & u32::from(xproto::KeyButMask::MOD4)) != 0 {
             modifiers.super_ = true;
         }
         modifiers
@@ -204,19 +188,19 @@ impl Modifiers {
         }
     }
 
-    pub const fn keymask(&self) -> Keymask {
-        let mut keymask = 0;
+    pub fn keymask(&self) -> xproto::KeyButMask {
+        let mut keymask = xproto::KeyButMask::from(0u16);
         if self.control {
-            keymask |= xlib::ControlMask;
+            keymask = keymask | xproto::KeyButMask::CONTROL;
         }
         if self.shift {
-            keymask |= xlib::ShiftMask;
+            keymask = keymask | xproto::KeyButMask::SHIFT;
         }
         if self.alt {
-            keymask |= xlib::Mod1Mask;
+            keymask = keymask | xproto::KeyButMask::MOD1;
         }
         if self.super_ {
-            keymask |= xlib::Mod4Mask;
+            keymask = keymask | xproto::KeyButMask::MOD4;
         }
         keymask
     }

@@ -130,6 +130,10 @@ impl DBusError {
     }
 }
 
+unsafe impl Send for DBusError {}
+
+unsafe impl Sync for DBusError {}
+
 impl error::Error for DBusError {}
 
 impl fmt::Debug for DBusError {

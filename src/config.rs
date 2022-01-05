@@ -1,19 +1,19 @@
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
-use x11::keysym;
-use x11::xlib;
 
 use crate::color::Color;
-use crate::command::{Command, MouseButton};
+use crate::command::Command;
 use crate::font::{FontFamily, FontStretch, FontStyle, FontWeight};
-use crate::key_mapping::{KeyMapping, Keysym, Modifiers};
+use crate::hotkey::Hotkey;
+use crate::keyboard::Modifiers;
+use crate::mouse::MouseButton;
+use crate::xkbcommon_sys as xkb;
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Config {
     pub ui: UiConfig,
-    pub keys: Vec<KeyMapping>,
-    pub print_x11_errors: bool,
+    pub keys: Vec<Hotkey>,
 }
 
 impl Default for Config {
@@ -21,118 +21,113 @@ impl Default for Config {
         Self {
             ui: UiConfig::default(),
             keys: vec![
-                KeyMapping::new(
-                    Keysym(keysym::XK_1 as xlib::KeySym),
+                Hotkey::new(
+                    xkb::XKB_KEY_1,
                     Modifiers::none(),
                     vec![Command::SelectItem(0)],
                 ),
-                KeyMapping::new(
-                    Keysym(keysym::XK_2 as xlib::KeySym),
+                Hotkey::new(
+                    xkb::XKB_KEY_2,
                     Modifiers::none(),
                     vec![Command::SelectItem(1)],
                 ),
-                KeyMapping::new(
-                    Keysym(keysym::XK_3 as xlib::KeySym),
+                Hotkey::new(
+                    xkb::XKB_KEY_3,
                     Modifiers::none(),
                     vec![Command::SelectItem(2)],
                 ),
-                KeyMapping::new(
-                    Keysym(keysym::XK_4 as xlib::KeySym),
+                Hotkey::new(
+                    xkb::XKB_KEY_4,
                     Modifiers::none(),
                     vec![Command::SelectItem(3)],
                 ),
-                KeyMapping::new(
-                    Keysym(keysym::XK_5 as xlib::KeySym),
+                Hotkey::new(
+                    xkb::XKB_KEY_5,
                     Modifiers::none(),
                     vec![Command::SelectItem(4)],
                 ),
-                KeyMapping::new(
-                    Keysym(keysym::XK_6 as xlib::KeySym),
+                Hotkey::new(
+                    xkb::XKB_KEY_6,
                     Modifiers::none(),
                     vec![Command::SelectItem(5)],
                 ),
-                KeyMapping::new(
-                    Keysym(keysym::XK_7 as xlib::KeySym),
+                Hotkey::new(
+                    xkb::XKB_KEY_7,
                     Modifiers::none(),
                     vec![Command::SelectItem(6)],
                 ),
-                KeyMapping::new(
-                    Keysym(keysym::XK_8 as xlib::KeySym),
+                Hotkey::new(
+                    xkb::XKB_KEY_8,
                     Modifiers::none(),
                     vec![Command::SelectItem(7)],
                 ),
-                KeyMapping::new(
-                    Keysym(keysym::XK_9 as xlib::KeySym),
+                Hotkey::new(
+                    xkb::XKB_KEY_9,
                     Modifiers::none(),
                     vec![Command::SelectItem(8)],
                 ),
-                KeyMapping::new(
-                    Keysym(keysym::XK_j as xlib::KeySym),
+                Hotkey::new(
+                    xkb::XKB_KEY_j,
                     Modifiers::none(),
                     vec![Command::SelectNextItem],
                 ),
-                KeyMapping::new(
-                    Keysym(keysym::XK_Down as xlib::KeySym),
+                Hotkey::new(
+                    xkb::XKB_KEY_Down,
                     Modifiers::none(),
                     vec![Command::SelectNextItem],
                 ),
-                KeyMapping::new(
-                    Keysym(keysym::XK_n as xlib::KeySym),
+                Hotkey::new(
+                    xkb::XKB_KEY_n,
                     Modifiers::control(),
                     vec![Command::SelectNextItem],
                 ),
-                KeyMapping::new(
-                    Keysym(keysym::XK_k as xlib::KeySym),
+                Hotkey::new(
+                    xkb::XKB_KEY_k,
                     Modifiers::none(),
                     vec![Command::SelectPreviousItem],
                 ),
-                KeyMapping::new(
-                    Keysym(keysym::XK_Down as xlib::KeySym),
+                Hotkey::new(
+                    xkb::XKB_KEY_Down,
                     Modifiers::none(),
                     vec![Command::SelectPreviousItem],
                 ),
-                KeyMapping::new(
-                    Keysym(keysym::XK_p as xlib::KeySym),
+                Hotkey::new(
+                    xkb::XKB_KEY_p,
                     Modifiers::control(),
                     vec![Command::SelectPreviousItem],
                 ),
-                KeyMapping::new(
-                    Keysym(keysym::XK_l as xlib::KeySym),
+                Hotkey::new(
+                    xkb::XKB_KEY_l,
                     Modifiers::control(),
                     vec![Command::ClickMouseButton(MouseButton::Left)],
                 ),
-                KeyMapping::new(
-                    Keysym(keysym::XK_Return as xlib::KeySym),
+                Hotkey::new(
+                    xkb::XKB_KEY_Return,
                     Modifiers::none(),
                     vec![Command::ClickMouseButton(MouseButton::Left)],
                 ),
-                KeyMapping::new(
-                    Keysym(keysym::XK_Return as xlib::KeySym),
+                Hotkey::new(
+                    xkb::XKB_KEY_Return,
                     Modifiers::none(),
                     vec![Command::ClickMouseButton(MouseButton::Left)],
                 ),
-                KeyMapping::new(
-                    Keysym(keysym::XK_h as xlib::KeySym),
+                Hotkey::new(
+                    xkb::XKB_KEY_h,
                     Modifiers::none(),
                     vec![Command::ClickMouseButton(MouseButton::Right)],
                 ),
-                KeyMapping::new(
-                    Keysym(keysym::XK_Return as xlib::KeySym),
+                Hotkey::new(
+                    xkb::XKB_KEY_Return,
                     Modifiers::shift(),
                     vec![Command::ClickMouseButton(MouseButton::Right)],
                 ),
-                KeyMapping::new(
-                    Keysym(keysym::XK_q as xlib::KeySym),
-                    Modifiers::none(),
-                    vec![Command::HideWindow],
-                ),
-                KeyMapping::new(
-                    Keysym(keysym::XK_Escape as xlib::KeySym),
+                Hotkey::new(xkb::XKB_KEY_q, Modifiers::none(), vec![Command::HideWindow]),
+                Hotkey::new(
+                    xkb::XKB_KEY_Escape,
                     Modifiers::none(),
                     vec![Command::HideWindow],
                 ),
             ],
-            print_x11_errors: false,
         }
     }
 }

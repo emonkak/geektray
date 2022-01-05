@@ -1,20 +1,20 @@
-use std::os::raw::*;
 use std::rc::Rc;
-use x11::xlib;
+use x11rb::protocol;
+use x11rb::protocol::xproto;
+use x11rb::protocol::xproto::ConnectionExt;
 
 use crate::config::UiConfig;
-use crate::event_loop::X11Event;
 use crate::font::FontDescription;
 use crate::geometrics::{PhysicalPoint, Point, Rect, Size};
+use crate::mouse::MouseButton;
 use crate::render_context::RenderContext;
 use crate::text::{HorizontalAlign, Text, VerticalAlign};
 use crate::utils;
-use crate::widget::{Layout, Widget};
-use crate::window::WindowEffcet;
+use crate::widget::{Effect, Layout, Widget};
 
 #[derive(Debug)]
 pub struct TrayItem {
-    window: xlib::Window,
+    window: xproto::Window,
     title: String,
     is_selected: bool,
     is_pressed: bool,
@@ -24,7 +24,7 @@ pub struct TrayItem {
 
 impl TrayItem {
     pub fn new(
-        window: xlib::Window,
+        window: xproto::Window,
         title: String,
         config: Rc<UiConfig>,
         font: Rc<FontDescription>,
@@ -39,31 +39,46 @@ impl TrayItem {
         }
     }
 
-    pub fn window(&self) -> xlib::Window {
+    pub fn window(&self) -> xproto::Window {
         self.window
     }
 
-    pub fn click_item(&mut self, button: c_uint, button_mask: c_uint) -> WindowEffcet {
-        let center = (self.config.icon_size / 2.0) as i32;
+    pub fn click_item(&mut self, button: MouseButton) -> Effect {
+        let center = (self.config.icon_size / 2.0) as i16;
         let window = self.window;
-        return WindowEffcet::Action(Box::new(move |display, _| unsafe {
-            utils::emit_click_event(display, window, button, button_mask, center, center);
+        let (button, button_mask) = match button {
+            MouseButton::Left => (xproto::ButtonIndex::M1, xproto::ButtonMask::M1),
+            MouseButton::Right => (xproto::ButtonIndex::M3, xproto::ButtonMask::M3),
+            MouseButton::Middle => (xproto::ButtonIndex::M2, xproto::ButtonMask::M2),
+            MouseButton::X1 => (xproto::ButtonIndex::M4, xproto::ButtonMask::M4),
+            MouseButton::X2 => (xproto::ButtonIndex::M5, xproto::ButtonMask::M5),
+        };
+        return Effect::Action(Box::new(move |connection, screen_num, _| {
+            utils::emit_click_event(
+                connection,
+                screen_num,
+                window,
+                button,
+                button_mask,
+                center,
+                center,
+            )
         }));
     }
 
-    pub fn change_title(&mut self, title: String) -> WindowEffcet {
+    pub fn change_title(&mut self, title: String) -> Effect {
         self.title = title;
-        WindowEffcet::RequestRedraw
+        Effect::RequestRedraw
     }
 
-    pub fn select_item(&mut self) -> WindowEffcet {
+    pub fn select_item(&mut self) -> Effect {
         self.is_selected = true;
-        WindowEffcet::RequestRedraw
+        Effect::RequestRedraw
     }
 
-    pub fn deselect_item(&mut self) -> WindowEffcet {
+    pub fn deselect_item(&mut self) -> Effect {
         self.is_selected = false;
-        WindowEffcet::RequestRedraw
+        Effect::RequestRedraw
     }
 }
 
@@ -100,7 +115,7 @@ impl Widget for TrayItem {
             self.title.clone()
         };
 
-        context.render_single_line_text(
+        context.render_text(
             fg_color,
             Text {
                 content: &title,
@@ -117,18 +132,25 @@ impl Widget for TrayItem {
             },
         );
 
-        unsafe {
-            xlib::XClearArea(context.display(), self.window, 0, 0, 0, 0, xlib::True);
-            xlib::XMapRaised(context.display(), self.window);
-            xlib::XMoveResizeWindow(
-                context.display(),
-                self.window,
-                (position.x + self.config.item_padding) as _,
-                (position.y + self.config.item_padding) as _,
-                self.config.icon_size as _,
-                self.config.icon_size as _,
-            );
+        context.connection().map_window(self.window).ok();
+
+        {
+            let mut values = xproto::ConfigureWindowAux::new();
+            values.x = Some((position.x + self.config.item_padding) as i32);
+            values.y = Some((position.y + self.config.item_padding) as i32);
+            values.width = Some(self.config.icon_size as u32);
+            values.height = Some(self.config.icon_size as u32);
+            values.stack_mode = Some(xproto::StackMode::ABOVE);
+            context
+                .connection()
+                .configure_window(self.window, &values)
+                .ok();
         }
+
+        context
+            .connection()
+            .clear_area(true, self.window, 0, 0, 0, 0)
+            .ok();
     }
 
     fn layout(&self, container_size: Size) -> Layout {
@@ -141,50 +163,53 @@ impl Widget for TrayItem {
         }
     }
 
-    fn on_event(&mut self, event: &X11Event, position: Point, layout: &Layout) -> WindowEffcet {
+    fn on_event(&mut self, event: &protocol::Event, position: Point, layout: &Layout) -> Effect {
+        use protocol::Event::*;
+
         match event {
-            X11Event::ButtonPress(event) => {
+            ButtonPress(event) => {
                 let bounds = Rect::new(position, layout.size);
                 let pointer_position = PhysicalPoint {
-                    x: event.x as _,
-                    y: event.y as _,
+                    x: event.event_x as _,
+                    y: event.event_y as _,
                 };
                 if bounds.snap().contains(pointer_position) {
                     self.is_pressed = true;
                 }
             }
-            X11Event::ButtonRelease(event) => {
+            ButtonRelease(event) => {
                 let bounds = Rect::new(position, layout.size);
                 let pointer_position = PhysicalPoint {
-                    x: event.x as _,
-                    y: event.y as _,
+                    x: event.event_x as _,
+                    y: event.event_y as _,
                 };
                 if self.is_pressed {
                     self.is_pressed = false;
                     if bounds.snap().contains(pointer_position) {
-                        let center = (self.config.icon_size / 2.0) as i32;
+                        let center = (self.config.icon_size / 2.0) as i16;
                         let window = self.window;
-                        let button = event.button;
-                        let button_mask = event.state;
-                        return WindowEffcet::Action(Box::new(move |display, _| unsafe {
+                        let button = event.detail;
+                        let button_mask = event.state.into();
+                        return Effect::Action(Box::new(move |connection, screen_num, _| {
                             utils::emit_click_event(
-                                display,
+                                connection,
+                                screen_num,
                                 window,
-                                button,
+                                button.into(),
                                 button_mask,
                                 center,
                                 center,
-                            );
+                            )
                         }));
                     }
                 }
             }
-            X11Event::LeaveNotify(_) => {
+            LeaveNotify(_) => {
                 self.is_pressed = false;
             }
             _ => {}
         }
 
-        WindowEffcet::None
+        Effect::None
     }
 }

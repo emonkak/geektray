@@ -1,15 +1,14 @@
-use std::os::raw::*;
 use std::rc::Rc;
-use x11::xlib;
+use x11rb::protocol;
+use x11rb::protocol::xproto;
 
 use crate::config::UiConfig;
-use crate::event_loop::X11Event;
 use crate::font::FontDescription;
 use crate::geometrics::{Point, Size};
+use crate::mouse::MouseButton;
 use crate::render_context::RenderContext;
 use crate::tray_item::TrayItem;
-use crate::widget::{Layout, Widget};
-use crate::window::WindowEffcet;
+use crate::widget::{Effect, Layout, Widget};
 
 #[derive(Debug)]
 pub struct TrayContainer {
@@ -29,20 +28,20 @@ impl TrayContainer {
         }
     }
 
-    pub fn contains_window(&self, window: xlib::Window) -> bool {
+    pub fn contains_window(&self, window: xproto::Window) -> bool {
         self.tray_items
             .iter()
             .find(|tray_item| tray_item.window() == window)
             .is_some()
     }
 
-    pub fn add_tray_item(&mut self, window: xlib::Window, title: String) -> WindowEffcet {
+    pub fn add_tray_item(&mut self, window: xproto::Window, title: String) -> Effect {
         let tray_item = TrayItem::new(window, title, self.config.clone(), self.font.clone());
         self.tray_items.push(tray_item);
-        WindowEffcet::RequestLayout
+        Effect::RequestLayout
     }
 
-    pub fn remove_tray_item(&mut self, window: xlib::Window) -> WindowEffcet {
+    pub fn remove_tray_item(&mut self, window: xproto::Window) -> Effect {
         if let Some(index) = self
             .tray_items
             .iter()
@@ -58,13 +57,13 @@ impl TrayContainer {
                 _ => {}
             }
             self.tray_items.remove(index);
-            WindowEffcet::RequestLayout
+            Effect::RequestLayout
         } else {
-            WindowEffcet::None
+            Effect::None
         }
     }
 
-    pub fn change_title(&mut self, window: xlib::Window, title: String) -> WindowEffcet {
+    pub fn change_title(&mut self, window: xproto::Window, title: String) -> Effect {
         if let Some(tray_item) = self
             .tray_items
             .iter_mut()
@@ -72,12 +71,12 @@ impl TrayContainer {
         {
             tray_item.change_title(title)
         } else {
-            WindowEffcet::None
+            Effect::None
         }
     }
 
-    pub fn select_item(&mut self, new_index: Option<usize>) -> WindowEffcet {
-        let mut result = WindowEffcet::None;
+    pub fn select_item(&mut self, new_index: Option<usize>) -> Effect {
+        let mut result = Effect::None;
 
         if let Some(index) = self.selected_index {
             let tray_item = &mut self.tray_items[index];
@@ -98,9 +97,9 @@ impl TrayContainer {
         result
     }
 
-    pub fn select_next_item(&mut self) -> WindowEffcet {
+    pub fn select_next_item(&mut self) -> Effect {
         if self.tray_items.len() == 0 {
-            return WindowEffcet::None;
+            return Effect::None;
         }
 
         let selected_index = match self.selected_index {
@@ -112,9 +111,9 @@ impl TrayContainer {
         self.select_item(selected_index)
     }
 
-    pub fn select_previous_item(&mut self) -> WindowEffcet {
+    pub fn select_previous_item(&mut self) -> Effect {
         if self.tray_items.len() == 0 {
-            return WindowEffcet::None;
+            return Effect::None;
         }
 
         let selected_index = match self.selected_index {
@@ -126,12 +125,12 @@ impl TrayContainer {
         self.select_item(selected_index)
     }
 
-    pub fn click_selected_item(&mut self, button: c_uint, button_mask: c_uint) -> WindowEffcet {
+    pub fn click_selected_item(&mut self, button: MouseButton) -> Effect {
         if let Some(index) = self.selected_index {
             let tray_item = &mut self.tray_items[index];
-            tray_item.click_item(button, button_mask)
+            tray_item.click_item(button)
         } else {
-            WindowEffcet::None
+            Effect::None
         }
     }
 }
@@ -144,7 +143,7 @@ impl Widget for TrayContainer {
         _index: usize,
         context: &mut RenderContext,
     ) {
-        context.clear_viewport(self.config.color.window_background);
+        context.fill_background(self.config.color.window_background);
 
         for (index, (tray_item, (child_position, child_layout))) in self
             .tray_items
@@ -190,8 +189,8 @@ impl Widget for TrayContainer {
         }
     }
 
-    fn on_event(&mut self, event: &X11Event, _position: Point, layout: &Layout) -> WindowEffcet {
-        let mut side_effect = WindowEffcet::None;
+    fn on_event(&mut self, event: &protocol::Event, _position: Point, layout: &Layout) -> Effect {
+        let mut side_effect = Effect::None;
 
         for (tray_item, (position, layout)) in
             self.tray_items.iter_mut().zip(layout.children.iter())

@@ -5,14 +5,15 @@ use nix::sys::epoll;
 use nix::sys::signal;
 use nix::sys::signalfd;
 use nix::unistd;
-use std::error::Error;
 use std::ffi::CStr;
-use std::mem;
 use std::os::raw::*;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::io::RawFd;
+use std::rc::Rc;
 use std::time::Duration;
-use x11::xlib;
+use x11rb::connection::Connection;
+use x11rb::protocol;
+use x11rb::xcb_ffi::XCBConnection;
 
 use crate::dbus::{DBusArguments, DBusConnection, DBusMessage, DBusVariant};
 
@@ -24,14 +25,14 @@ const DBUS_INTERFACE_NAME: &'static [u8] = b"io.github.emonkak.keytray\0";
 
 #[derive(Debug)]
 pub struct EventLoop {
-    display: *mut xlib::Display,
+    connection: Rc<XCBConnection>,
     epoll_fd: RawFd,
     signal_fd: signalfd::SignalFd,
     dbus_connection: DBusConnection,
 }
 
 impl EventLoop {
-    pub fn new(display: *mut xlib::Display) -> Result<Self, Box<dyn Error>> {
+    pub fn new(connection: Rc<XCBConnection>) -> anyhow::Result<Self> {
         let epoll_fd = epoll::epoll_create()?;
         let signal_fd = {
             let mut mask = signalfd::SigSet::empty();
@@ -51,7 +52,7 @@ impl EventLoop {
         );
 
         {
-            let raw_fd = unsafe { xlib::XConnectionNumber(display) as RawFd };
+            let raw_fd = connection.as_raw_fd();
             let mut event = epoll::EpollEvent::new(epoll::EpollFlags::EPOLLIN, EVENT_KIND_X11);
             epoll::epoll_ctl(
                 epoll_fd,
@@ -73,19 +74,18 @@ impl EventLoop {
         }
 
         Ok(Self {
-            display,
+            connection,
             epoll_fd,
             signal_fd,
             dbus_connection,
         })
     }
 
-    pub fn run<F>(&mut self, mut callback: F)
+    pub fn run<F>(&mut self, mut callback: F) -> anyhow::Result<()>
     where
-        F: FnMut(Event, &mut ControlFlow, &mut EventLoop),
+        F: FnMut(Event, &mut ControlFlow, &mut EventLoop) -> anyhow::Result<()>,
     {
         let mut epoll_events = vec![epoll::EpollEvent::empty(); 3];
-        let mut x11_event: xlib::XEvent = unsafe { mem::MaybeUninit::uninit().assume_init() };
         let mut control_flow = ControlFlow::Continue;
 
         'outer: loop {
@@ -94,13 +94,8 @@ impl EventLoop {
 
             for epoll_event in &epoll_events[0..available_fds] {
                 if epoll_event.data() == EVENT_KIND_X11 {
-                    let pending_events = unsafe { xlib::XPending(self.display) };
-                    for _ in 0..pending_events {
-                        unsafe {
-                            xlib::XNextEvent(self.display, &mut x11_event);
-                        }
-
-                        callback(Event::X11Event(x11_event.into()), &mut control_flow, self);
+                    while let Some(event) = self.connection.poll_for_event()? {
+                        callback(Event::X11Event(event), &mut control_flow, self)?;
 
                         if matches!(control_flow, ControlFlow::Break) {
                             break 'outer;
@@ -108,7 +103,7 @@ impl EventLoop {
                     }
                 } else if epoll_event.data() == EVENT_KIND_SIGNAL {
                     if let Ok(Some(signal)) = self.signal_fd.read_signal() {
-                        callback(Event::Signal(signal), &mut control_flow, self);
+                        callback(Event::Signal(signal), &mut control_flow, self)?;
 
                         if matches!(control_flow, ControlFlow::Break) {
                             break 'outer;
@@ -117,7 +112,7 @@ impl EventLoop {
                 } else if epoll_event.data() == EVENT_KIND_DBUS {
                     if self.dbus_connection.read_write(0) {
                         while let Some(message) = self.dbus_connection.pop_message() {
-                            callback(Event::DBusMessage(message), &mut control_flow, self);
+                            callback(Event::DBusMessage(message), &mut control_flow, self)?;
 
                             if matches!(control_flow, ControlFlow::Break) {
                                 break 'outer;
@@ -129,6 +124,8 @@ impl EventLoop {
                 }
             }
         }
+
+        Ok(())
     }
 
     pub fn send_dbus_message(&self, message: &DBusMessage) -> bool {
@@ -177,149 +174,9 @@ impl Drop for EventLoop {
 
 #[derive(Debug)]
 pub enum Event {
-    X11Event(X11Event),
+    X11Event(protocol::Event),
     DBusMessage(DBusMessage),
     Signal(signalfd::siginfo),
-}
-
-#[derive(Debug)]
-pub enum X11Event {
-    // Keyboard events
-    KeyPress(xlib::XKeyPressedEvent),
-    KeyRelease(xlib::XKeyReleasedEvent),
-
-    // Pointer events
-    ButtonPress(xlib::XButtonPressedEvent),
-    ButtonRelease(xlib::XButtonReleasedEvent),
-    MotionNotify(xlib::XPointerMovedEvent),
-
-    // Window crossing events
-    EnterNotify(xlib::XEnterWindowEvent),
-    LeaveNotify(xlib::XLeaveWindowEvent),
-
-    // Input focus events
-    FocusIn(xlib::XFocusInEvent),
-    FocusOut(xlib::XFocusOutEvent),
-
-    // Expose events
-    Expose(xlib::XExposeEvent),
-    GraphicsExpose(xlib::XGraphicsExposeEvent),
-    NoExpose(xlib::XNoExposeEvent),
-
-    // Structure control events
-    CirculateRequest(xlib::XCirculateRequestEvent),
-    ConfigureRequest(xlib::XConfigureRequestEvent),
-    MapRequest(xlib::XMapRequestEvent),
-    ResizeRequest(xlib::XResizeRequestEvent),
-
-    // Window state notification events
-    CirculateNotify(xlib::XCirculateEvent),
-    ConfigureNotify(xlib::XConfigureEvent),
-    CreateNotify(xlib::XCreateWindowEvent),
-    DestroyNotify(xlib::XDestroyWindowEvent),
-    GravityNotify(xlib::XGravityEvent),
-    MapNotify(xlib::XMapEvent),
-    MappingNotify(xlib::XMappingEvent),
-    ReparentNotify(xlib::XReparentEvent),
-    UnmapNotify(xlib::XUnmapEvent),
-    VisibilityNotify(xlib::XVisibilityEvent),
-
-    // Colormap state notification event
-    ColormapNotify(xlib::XColormapEvent),
-
-    // Client communication events
-    ClientMessage(xlib::XClientMessageEvent),
-    PropertyNotify(xlib::XPropertyEvent),
-    SelectionClear(xlib::XSelectionClearEvent),
-    SelectionNotify(xlib::XSelectionEvent),
-    SelectionRequest(xlib::XSelectionRequestEvent),
-
-    // Other event
-    UnknownEvent(xlib::XAnyEvent),
-}
-
-impl X11Event {
-    pub fn window(&self) -> xlib::Window {
-        use X11Event::*;
-
-        match self {
-            KeyPress(event) => event.window,
-            KeyRelease(event) => event.window,
-            ButtonPress(event) => event.window,
-            ButtonRelease(event) => event.window,
-            MotionNotify(event) => event.window,
-            EnterNotify(event) => event.window,
-            LeaveNotify(event) => event.window,
-            FocusIn(event) => event.window,
-            FocusOut(event) => event.window,
-            Expose(event) => event.window,
-            GraphicsExpose(event) => event.drawable,
-            NoExpose(event) => event.drawable,
-            CirculateRequest(event) => event.window,
-            ConfigureRequest(event) => event.window,
-            MapRequest(event) => event.window,
-            ResizeRequest(event) => event.window,
-            CirculateNotify(event) => event.window,
-            ConfigureNotify(event) => event.window,
-            CreateNotify(event) => event.window,
-            DestroyNotify(event) => event.window,
-            GravityNotify(event) => event.window,
-            MapNotify(event) => event.window,
-            MappingNotify(event) => event.event, // BUGS: missing property name
-            ReparentNotify(event) => event.window,
-            UnmapNotify(event) => event.window,
-            VisibilityNotify(event) => event.window,
-            ColormapNotify(event) => event.window,
-            ClientMessage(event) => event.window,
-            PropertyNotify(event) => event.window,
-            SelectionClear(event) => event.window,
-            SelectionNotify(event) => event.requestor,
-            SelectionRequest(event) => event.requestor,
-            UnknownEvent(event) => event.window,
-        }
-    }
-}
-
-impl From<xlib::XEvent> for X11Event {
-    fn from(event: xlib::XEvent) -> Self {
-        use X11Event::*;
-
-        match event.get_type() {
-            xlib::KeyPress => KeyPress(xlib::XKeyPressedEvent::from(event)),
-            xlib::KeyRelease => KeyRelease(xlib::XKeyReleasedEvent::from(event)),
-            xlib::ButtonPress => ButtonPress(xlib::XButtonPressedEvent::from(event)),
-            xlib::ButtonRelease => ButtonRelease(xlib::XButtonReleasedEvent::from(event)),
-            xlib::MotionNotify => MotionNotify(xlib::XPointerMovedEvent::from(event)),
-            xlib::EnterNotify => EnterNotify(xlib::XEnterWindowEvent::from(event)),
-            xlib::LeaveNotify => LeaveNotify(xlib::XLeaveWindowEvent::from(event)),
-            xlib::FocusIn => FocusIn(xlib::XFocusInEvent::from(event)),
-            xlib::FocusOut => FocusOut(xlib::XFocusOutEvent::from(event)),
-            xlib::Expose => Expose(xlib::XExposeEvent::from(event)),
-            xlib::GraphicsExpose => GraphicsExpose(xlib::XGraphicsExposeEvent::from(event)),
-            xlib::NoExpose => NoExpose(xlib::XNoExposeEvent::from(event)),
-            xlib::CirculateRequest => CirculateRequest(xlib::XCirculateRequestEvent::from(event)),
-            xlib::ConfigureRequest => ConfigureRequest(xlib::XConfigureRequestEvent::from(event)),
-            xlib::MapRequest => MapRequest(xlib::XMapRequestEvent::from(event)),
-            xlib::ResizeRequest => ResizeRequest(xlib::XResizeRequestEvent::from(event)),
-            xlib::CirculateNotify => CirculateNotify(xlib::XCirculateEvent::from(event)),
-            xlib::ConfigureNotify => ConfigureNotify(xlib::XConfigureEvent::from(event)),
-            xlib::CreateNotify => CreateNotify(xlib::XCreateWindowEvent::from(event)),
-            xlib::DestroyNotify => DestroyNotify(xlib::XDestroyWindowEvent::from(event)),
-            xlib::GravityNotify => GravityNotify(xlib::XGravityEvent::from(event)),
-            xlib::MapNotify => MapNotify(xlib::XMapEvent::from(event)),
-            xlib::MappingNotify => MappingNotify(xlib::XMappingEvent::from(event)),
-            xlib::ReparentNotify => ReparentNotify(xlib::XReparentEvent::from(event)),
-            xlib::UnmapNotify => UnmapNotify(xlib::XUnmapEvent::from(event)),
-            xlib::VisibilityNotify => VisibilityNotify(xlib::XVisibilityEvent::from(event)),
-            xlib::ColormapNotify => ColormapNotify(xlib::XColormapEvent::from(event)),
-            xlib::ClientMessage => ClientMessage(xlib::XClientMessageEvent::from(event)),
-            xlib::PropertyNotify => PropertyNotify(xlib::XPropertyEvent::from(event)),
-            xlib::SelectionClear => SelectionClear(xlib::XSelectionClearEvent::from(event)),
-            xlib::SelectionNotify => SelectionNotify(xlib::XSelectionEvent::from(event)),
-            xlib::SelectionRequest => SelectionRequest(xlib::XSelectionRequestEvent::from(event)),
-            _ => UnknownEvent(xlib::XAnyEvent::from(event)),
-        }
-    }
 }
 
 #[derive(Debug)]

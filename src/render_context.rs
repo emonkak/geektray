@@ -3,8 +3,13 @@ use gobject_sys as gobject;
 use pango_cairo_sys as pango_cairo;
 use pango_sys as pango;
 use std::os::raw::*;
-use std::ptr;
-use x11::xlib;
+use std::rc::Rc;
+use x11rb::connection::Connection;
+use x11rb::errors::ReplyError;
+use x11rb::protocol::xproto;
+use x11rb::protocol::xproto::ConnectionExt as _;
+use x11rb::x11_utils::Serialize as _;
+use x11rb::xcb_ffi::XCBConnection;
 
 use crate::color::Color;
 use crate::geometrics::{PhysicalSize, Rect, Size};
@@ -12,89 +17,117 @@ use crate::text::{HorizontalAlign, Text, VerticalAlign};
 
 #[derive(Debug)]
 pub struct RenderContext {
-    display: *mut xlib::Display,
-    window: xlib::Window,
-    viewport: PhysicalSize,
-    pixmap: xlib::Pixmap,
-    gc: xlib::GC,
+    connection: Rc<XCBConnection>,
+    window: xproto::Window,
+    bounds: PhysicalSize,
+    pixmap: xproto::Pixmap,
+    gc: xproto::Gcontext,
     cairo: *mut cairo::cairo_t,
+    cairo_surface: *mut cairo::cairo_surface_t,
     pango: *mut pango::PangoContext,
 }
 
 impl RenderContext {
-    pub fn new(display: *mut xlib::Display, window: xlib::Window, viewport: PhysicalSize) -> Self {
-        unsafe {
-            let screen_number = xlib::XDefaultScreen(display);
-            let depth = xlib::XDefaultDepth(display, screen_number);
+    pub fn new(
+        connection: Rc<XCBConnection>,
+        screen_num: usize,
+        window: xproto::Window,
+        bounds: PhysicalSize,
+    ) -> Result<Self, ReplyError> {
+        let screen = &connection.setup().roots[screen_num];
 
-            let pixmap =
-                xlib::XCreatePixmap(display, window, viewport.width, viewport.height, depth as _);
-            let gc = xlib::XCreateGC(display, pixmap, 0, ptr::null_mut());
-
-            xlib::XSetSubwindowMode(display, gc, xlib::IncludeInferiors);
-
-            let visual = xlib::XDefaultVisual(display, screen_number);
-            let cairo_surface = cairo::cairo_xlib_surface_create(
-                display,
+        let pixmap = connection.generate_id().unwrap();
+        connection
+            .create_pixmap(
+                screen.root_depth,
                 pixmap,
-                visual,
-                viewport.width as i32,
-                viewport.height as i32,
-            );
-            let cairo = cairo::cairo_create(cairo_surface);
-            let pango = pango_cairo::pango_cairo_create_context(cairo);
-
-            Self {
-                display,
                 window,
-                viewport,
-                pixmap,
-                gc,
-                cairo,
-                pango,
-            }
+                bounds.width as u16,
+                bounds.height as u16,
+            )?
+            .check()?;
+        let gc = connection.generate_id().unwrap();
+
+        {
+            let mut values = xproto::CreateGCAux::new();
+            values.subwindow_mode = Some(xproto::SubwindowMode::INCLUDE_INFERIORS);
+            connection.create_gc(gc, pixmap, &values)?.check()?;
         }
+
+        let visual = screen
+            .allowed_depths
+            .iter()
+            .filter_map(|depth| {
+                depth
+                    .visuals
+                    .iter()
+                    .find(|depth| depth.visual_id == screen.root_visual)
+            })
+            .next()
+            .expect("The root visual not available")
+            .serialize();
+        let cairo_surface = unsafe {
+            cairo::cairo_xcb_surface_create(
+                connection.get_raw_xcb_connection().cast(),
+                pixmap,
+                visual.as_ptr() as *mut cairo::xcb_visualtype_t,
+                bounds.width as i32,
+                bounds.height as i32,
+            )
+        };
+        let cairo = unsafe { cairo::cairo_create(cairo_surface) };
+        let pango = unsafe { pango_cairo::pango_cairo_create_context(cairo) };
+
+        Ok(Self {
+            connection,
+            window,
+            bounds,
+            pixmap,
+            gc,
+            cairo_surface,
+            cairo,
+            pango,
+        })
     }
 
-    pub fn display(&self) -> *mut xlib::Display {
-        self.display
+    pub fn connection(&self) -> &XCBConnection {
+        self.connection.as_ref()
     }
 
-    pub fn commit(&mut self) {
+    pub fn commit(&mut self) -> Result<(), ReplyError> {
         unsafe {
-            xlib::XCopyArea(
-                self.display,
+            cairo::cairo_surface_flush(self.cairo_surface);
+        }
+        self.connection
+            .copy_area(
                 self.pixmap,
                 self.window,
                 self.gc,
                 0,
                 0,
-                self.viewport.width,
-                self.viewport.height,
                 0,
                 0,
-            );
-            xlib::XFlush(self.display);
-        }
+                self.bounds.width as u16,
+                self.bounds.height as u16,
+            )?
+            .check()?;
+        self.connection.flush()?;
+        Ok(())
     }
 
-    pub fn clear_viewport(&mut self, color: Color) {
-        let [r, g, b, a] = color.into_f64_components();
-
+    pub fn fill_background(&mut self, color: Color) {
         unsafe {
+            let [r, g, b, a] = color.into_f64_components();
             cairo::cairo_save(self.cairo);
-
             cairo::cairo_rectangle(
                 self.cairo,
                 0.0,
                 0.0,
-                self.viewport.width as f64,
-                self.viewport.height as f64,
+                self.bounds.width as f64,
+                self.bounds.height as f64,
             );
-
             cairo::cairo_set_source_rgba(self.cairo, r, g, b, a);
             cairo::cairo_fill(self.cairo);
-
             cairo::cairo_restore(self.cairo);
         }
     }
@@ -177,7 +210,7 @@ impl RenderContext {
         }
     }
 
-    pub fn render_single_line_text(&mut self, color: Color, text: Text, bounds: Rect) {
+    pub fn render_text(&mut self, color: Color, text: Text, bounds: Rect) {
         let mut font_description = text.font_description.clone();
         font_description.set_font_size(text.font_size * pango::PANGO_SCALE as f64);
 
@@ -234,10 +267,11 @@ impl RenderContext {
 impl Drop for RenderContext {
     fn drop(&mut self) {
         unsafe {
-            cairo::cairo_destroy(self.cairo);
             gobject::g_object_unref(self.pango.cast());
-            xlib::XFreeGC(self.display, self.gc);
-            xlib::XFreePixmap(self.display, self.pixmap);
+            cairo::cairo_destroy(self.cairo);
+            cairo::cairo_surface_destroy(self.cairo_surface);
+            self.connection.free_gc(self.gc).ok();
+            self.connection.free_pixmap(self.pixmap).ok();
         }
     }
 }

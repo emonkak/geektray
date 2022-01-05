@@ -1,8 +1,8 @@
-const XEMBED_MAPPED: u64 = 1 << 0;
+const XEMBED_MAPPED: u32 = 1 << 0;
 
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
-#[repr(C)]
+#[repr(u32)]
 pub enum XEmbedMessage {
     EmbeddedNotify = 0,
     WindowActivate = 1,
@@ -21,11 +21,17 @@ pub enum XEmbedMessage {
     ActivateAccelerator = 14,
 }
 
+impl From<XEmbedMessage> for u32 {
+    fn from(value: XEmbedMessage) -> Self {
+        value as u32
+    }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
 pub struct XEmbedInfo {
-    pub version: u64,
-    pub flags: u64,
+    pub version: u32,
+    pub flags: u32,
 }
 
 impl XEmbedInfo {

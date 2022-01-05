@@ -1,57 +1,70 @@
-use x11::xlib;
-
-use crate::utils;
+use x11rb::connection::Connection;
+use x11rb::errors::ReplyError;
+use x11rb::protocol::xproto;
+use x11rb::protocol::xproto::ConnectionExt;
 
 #[allow(non_snake_case)]
 #[derive(Debug)]
 pub struct Atoms {
-    pub MANAGER: xlib::Atom,
-    pub NET_SYSTEM_TRAY_MESSAGE_DATA: xlib::Atom,
-    pub NET_SYSTEM_TRAY_OPCODE: xlib::Atom,
-    pub NET_SYSTEM_TRAY_ORIENTATION: xlib::Atom,
-    pub NET_SYSTEM_TRAY_VISUAL: xlib::Atom,
-    pub NET_WM_NAME: xlib::Atom,
-    pub NET_WM_PID: xlib::Atom,
-    pub NET_WM_PING: xlib::Atom,
-    pub NET_WM_STATE: xlib::Atom,
-    pub NET_WM_STATE_STICKY: xlib::Atom,
-    pub NET_WM_SYNC_REQUEST: xlib::Atom,
-    pub NET_WM_WINDOW_TYPE: xlib::Atom,
-    pub NET_WM_WINDOW_TYPE_DIALOG: xlib::Atom,
-    pub WM_DELETE_WINDOW: xlib::Atom,
-    pub WM_PROTOCOLS: xlib::Atom,
-    pub XEMBED: xlib::Atom,
-    pub XEMBED_INFO: xlib::Atom,
+    pub MANAGER: xproto::Atom,
+    pub UTF8_STRING: xproto::Atom,
+    pub WM_CLASS: xproto::Atom,
+    pub WM_DELETE_WINDOW: xproto::Atom,
+    pub WM_NAME: xproto::Atom,
+    pub WM_PROTOCOLS: xproto::Atom,
+    pub _NET_SYSTEM_TRAY_S: xproto::Atom,
+    pub _NET_SYSTEM_TRAY_MESSAGE_DATA: xproto::Atom,
+    pub _NET_SYSTEM_TRAY_OPCODE: xproto::Atom,
+    pub _NET_SYSTEM_TRAY_ORIENTATION: xproto::Atom,
+    pub _NET_SYSTEM_TRAY_VISUAL: xproto::Atom,
+    pub _NET_WM_NAME: xproto::Atom,
+    pub _NET_WM_PID: xproto::Atom,
+    pub _NET_WM_PING: xproto::Atom,
+    pub _NET_WM_STATE: xproto::Atom,
+    pub _NET_WM_STATE_STICKY: xproto::Atom,
+    pub _NET_WM_SYNC_REQUEST: xproto::Atom,
+    pub _NET_WM_WINDOW_TYPE: xproto::Atom,
+    pub _NET_WM_WINDOW_TYPE_DIALOG: xproto::Atom,
+    pub _XEMBED: xproto::Atom,
+    pub _XEMBED_INFO: xproto::Atom,
 }
 
 impl Atoms {
-    pub fn new(display: *mut xlib::Display) -> Self {
-        unsafe {
-            Self {
-                MANAGER: utils::new_atom(display, "MANAGER\0"),
-                NET_SYSTEM_TRAY_MESSAGE_DATA: utils::new_atom(
-                    display,
-                    "_NET_SYSTEM_TRAY_MESSAGE_DATA\0",
-                ),
-                NET_SYSTEM_TRAY_OPCODE: utils::new_atom(display, "_NET_SYSTEM_TRAY_OPCODE\0"),
-                NET_SYSTEM_TRAY_ORIENTATION: utils::new_atom(
-                    display,
-                    "_NET_SYSTEM_TRAY_ORIENTATION\0",
-                ),
-                NET_SYSTEM_TRAY_VISUAL: utils::new_atom(display, "_NET_SYSTEM_TRAY_VISUAL\0"),
-                NET_WM_NAME: utils::new_atom(display, "_NET_WM_NAME\0"),
-                NET_WM_PID: utils::new_atom(display, "_NET_WM_PID\0"),
-                NET_WM_STATE_STICKY: utils::new_atom(display, "_NET_WM_STATE_STICKY\0"),
-                NET_WM_PING: utils::new_atom(display, "_NET_WM_PING\0"),
-                NET_WM_STATE: utils::new_atom(display, "_NET_WM_STATE\0"),
-                NET_WM_SYNC_REQUEST: utils::new_atom(display, "_NET_WM_SYNC_REQUEST\0"),
-                NET_WM_WINDOW_TYPE: utils::new_atom(display, "_NET_WM_WINDOW_TYPE\0"),
-                NET_WM_WINDOW_TYPE_DIALOG: utils::new_atom(display, "_NET_WM_WINDOW_TYPE_DIALOG\0"),
-                WM_DELETE_WINDOW: utils::new_atom(display, "WM_DELETE_WINDOW\0"),
-                WM_PROTOCOLS: utils::new_atom(display, "WM_PROTOCOLS\0"),
-                XEMBED: utils::new_atom(display, "_XEMBED\0"),
-                XEMBED_INFO: utils::new_atom(display, "_XEMBED_INFO\0"),
-            }
-        }
+    pub fn new<Connection: self::Connection>(
+        connection: &Connection,
+        screen_num: usize,
+    ) -> Result<Self, ReplyError> {
+        Ok(Self {
+            MANAGER: new_atom(connection, "MANAGER")?,
+            UTF8_STRING: new_atom(connection, "UTF8_STRING")?,
+            WM_CLASS: xproto::AtomEnum::WM_CLASS.into(),
+            WM_DELETE_WINDOW: new_atom(connection, "WM_DELETE_WINDOW")?,
+            WM_NAME: xproto::AtomEnum::WM_NAME.into(),
+            WM_PROTOCOLS: new_atom(connection, "WM_PROTOCOLS")?,
+            _NET_SYSTEM_TRAY_S: new_atom(connection, &format!("_NET_SYSTEM_TRAY_S{}", screen_num))?,
+            _NET_SYSTEM_TRAY_MESSAGE_DATA: new_atom(connection, "_NET_SYSTEM_TRAY_MESSAGE_DATA")?,
+            _NET_SYSTEM_TRAY_OPCODE: new_atom(connection, "_NET_SYSTEM_TRAY_OPCODE")?,
+            _NET_SYSTEM_TRAY_ORIENTATION: new_atom(connection, "_NET_SYSTEM_TRAY_ORIENTATION")?,
+            _NET_SYSTEM_TRAY_VISUAL: new_atom(connection, "_NET_SYSTEM_TRAY_VISUAL")?,
+            _NET_WM_NAME: new_atom(connection, "_NET_WM_NAME")?,
+            _NET_WM_PID: new_atom(connection, "_NET_WM_PID")?,
+            _NET_WM_STATE_STICKY: new_atom(connection, "_NET_WM_STATE_STICKY")?,
+            _NET_WM_PING: new_atom(connection, "_NET_WM_PING")?,
+            _NET_WM_STATE: new_atom(connection, "_NET_WM_STATE")?,
+            _NET_WM_SYNC_REQUEST: new_atom(connection, "_NET_WM_SYNC_REQUEST")?,
+            _NET_WM_WINDOW_TYPE: new_atom(connection, "_NET_WM_WINDOW_TYPE")?,
+            _NET_WM_WINDOW_TYPE_DIALOG: new_atom(connection, "_NET_WM_WINDOW_TYPE_DIALOG")?,
+            _XEMBED: new_atom(connection, "_XEMBED")?,
+            _XEMBED_INFO: new_atom(connection, "_XEMBED_INFO")?,
+        })
     }
+}
+
+#[inline]
+fn new_atom<Connection: self::Connection>(
+    connection: &Connection,
+    name: &str,
+) -> Result<xproto::Atom, ReplyError> {
+    let reply = connection.intern_atom(false, name.as_bytes())?.reply()?;
+    Ok(reply.atom)
 }

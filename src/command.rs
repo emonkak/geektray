@@ -2,6 +2,8 @@ use serde::de;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
+use crate::mouse::MouseButton;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(tag = "type", content = "args")]
 pub enum Command {
@@ -21,13 +23,4 @@ impl FromStr for Command {
         use serde::de::IntoDeserializer;
         Self::deserialize(s.into_deserializer())
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
-pub enum MouseButton {
-    Left,
-    Right,
-    Middle,
-    X1,
-    X2,
 }

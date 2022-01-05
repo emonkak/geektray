@@ -1,268 +1,282 @@
 use std::collections::hash_map;
 use std::collections::HashMap;
 use std::ffi::CStr;
-use std::os::raw::*;
 use std::rc::Rc;
 use std::time::Duration;
-use x11::xlib;
+use x11rb::connection::Connection;
+use x11rb::errors::ReplyError;
+use x11rb::protocol;
+use x11rb::protocol::xproto;
+use x11rb::protocol::xproto::ConnectionExt;
 
 use crate::atoms::Atoms;
-use crate::event_loop::X11Event;
 use crate::utils;
 use crate::xembed::{XEmbedInfo, XEmbedMessage};
 
-const SYSTEM_TRAY_REQUEST_DOCK: c_long = 0;
-const SYSTEM_TRAY_BEGIN_MESSAGE: c_long = 1;
-const SYSTEM_TRAY_CANCEL_MESSAGE: c_long = 2;
+const SYSTEM_TRAY_REQUEST_DOCK: u32 = 0;
+const SYSTEM_TRAY_BEGIN_MESSAGE: u32 = 1;
+const SYSTEM_TRAY_CANCEL_MESSAGE: u32 = 2;
 
 #[derive(Debug)]
-pub struct TrayManager {
-    display: *mut xlib::Display,
-    window: xlib::Window,
+pub struct TrayManager<Connection> {
+    connection: Rc<Connection>,
+    screen_num: usize,
+    window: xproto::Window,
     status: TrayStatus,
-    system_tray_atom: xlib::Atom,
     atoms: Rc<Atoms>,
-    embedded_icons: HashMap<xlib::Window, XEmbedInfo>,
-    balloon_messages: HashMap<xlib::Window, BalloonMessage>,
+    embedded_icons: HashMap<xproto::Window, XEmbedInfo>,
+    balloon_messages: HashMap<xproto::Window, BalloonMessage>,
 }
 
-impl TrayManager {
-    pub fn new(display: *mut xlib::Display, window: xlib::Window, atoms: Rc<Atoms>) -> Self {
-        let system_tray_atom = unsafe {
-            let screen_number = xlib::XDefaultScreen(display);
-            utils::new_atom(display, &format!("_NET_SYSTEM_TRAY_S{}\0", screen_number))
-        };
-
-        Self {
-            display,
+impl<Connection: self::Connection> TrayManager<Connection> {
+    pub fn new(
+        connection: Rc<Connection>,
+        screen_num: usize,
+        window: xproto::Window,
+        atoms: Rc<Atoms>,
+    ) -> Result<Self, ReplyError> {
+        Ok(Self {
+            connection,
+            screen_num,
             window,
             status: TrayStatus::Waiting,
-            system_tray_atom,
             atoms,
             embedded_icons: HashMap::new(),
             balloon_messages: HashMap::new(),
-        }
+        })
     }
 
-    pub fn acquire_tray_selection(&mut self) {
+    pub fn acquire_tray_selection(&mut self) -> Result<bool, ReplyError> {
         if matches!(self.status, TrayStatus::Managed | TrayStatus::Pending(_)) {
-            return;
+            return Ok(false);
         }
 
-        unsafe {
-            let previous_selection_owner =
-                xlib::XGetSelectionOwner(self.display, self.system_tray_atom);
-            xlib::XSetSelectionOwner(
-                self.display,
-                self.system_tray_atom,
+        let selection_owner_reply = self
+            .connection
+            .get_selection_owner(self.atoms._NET_SYSTEM_TRAY_S)?
+            .reply()?;
+        let previous_selection_owner = selection_owner_reply.owner;
+
+        self.connection
+            .set_selection_owner(
                 self.window,
-                xlib::CurrentTime,
-            );
-            if previous_selection_owner == 0 {
-                broadcast_manager_message(
-                    self.display,
-                    self.window,
-                    self.system_tray_atom,
-                    &self.atoms,
-                );
-                self.status = TrayStatus::Managed;
-            } else {
-                xlib::XSelectInput(
-                    self.display,
-                    previous_selection_owner,
-                    xlib::StructureNotifyMask,
-                );
-                self.status = TrayStatus::Pending(previous_selection_owner);
-            }
+                self.atoms._NET_SYSTEM_TRAY_S,
+                x11rb::CURRENT_TIME,
+            )?
+            .check()?;
+
+        if previous_selection_owner == x11rb::NONE {
+            broadcast_manager_message(
+                self.connection.as_ref(),
+                self.screen_num,
+                self.window,
+                &self.atoms,
+            )?;
+            self.status = TrayStatus::Managed;
+        } else {
+            let mut values = xproto::ChangeWindowAttributesAux::new();
+            values.event_mask = Some(xproto::EventMask::STRUCTURE_NOTIFY.into());
+
+            self.connection
+                .change_window_attributes(previous_selection_owner, &values)?
+                .check()?;
+
+            self.status = TrayStatus::Pending(previous_selection_owner);
         }
+
+        Ok(true)
     }
 
-    pub fn release_tray_selection(&mut self) {
+    pub fn release_tray_selection(&mut self) -> Result<(), ReplyError> {
         if matches!(self.status, TrayStatus::Managed) {
             for (window, xembed_info) in self.embedded_icons.drain() {
                 if xembed_info.is_mapped() {
-                    unsafe {
-                        release_embedding(self.display, window);
-                    }
+                    release_embedding(self.connection.as_ref(), self.screen_num, window)?;
                 }
             }
 
-            unsafe {
-                xlib::XSetSelectionOwner(self.display, self.system_tray_atom, 0, xlib::CurrentTime);
-            }
+            self.connection
+                .set_selection_owner(
+                    x11rb::NONE,
+                    self.atoms._NET_SYSTEM_TRAY_S,
+                    x11rb::CURRENT_TIME,
+                )?
+                .check()?;
 
             self.status = TrayStatus::Waiting;
         }
+
+        Ok(())
     }
 
-    pub fn process_event<F>(&mut self, event: &X11Event, mut callback: F)
+    pub fn process_event<F>(
+        &mut self,
+        event: &protocol::Event,
+        mut callback: F,
+    ) -> Result<(), ReplyError>
     where
-        F: FnMut(TrayEvent),
+        F: FnMut(TrayEvent) -> Result<(), ReplyError>,
     {
+        use protocol::Event::*;
+
         match event {
-            X11Event::ClientMessage(event)
-                if event.message_type == self.atoms.NET_SYSTEM_TRAY_OPCODE =>
-            {
-                let opcode = event.data.get_long(1);
+            ClientMessage(event) if event.type_ == self.atoms._NET_SYSTEM_TRAY_OPCODE => {
+                let data = event.data.as_data32();
+                let opcode = data[1];
                 if opcode == SYSTEM_TRAY_REQUEST_DOCK {
-                    let icon_window = event.data.get_long(2) as xlib::Window;
+                    let window = data[2];
                     if let Some(xembed_info) =
-                        unsafe { get_xembed_info(self.display, icon_window, &self.atoms) }
+                        get_xembed_info(self.connection.as_ref(), window, &self.atoms)?
                     {
-                        if let Some(event) = self.register_tray_icon(icon_window, xembed_info) {
-                            callback(event);
+                        if let Some(event) = self.register_tray_icon(window, xembed_info)? {
+                            callback(event)?;
                         }
                     }
                 } else if opcode == SYSTEM_TRAY_BEGIN_MESSAGE {
-                    let balloon_message = BalloonMessage::new(&event.data);
+                    let balloon_message = BalloonMessage::new(event.data.as_data32());
                     self.balloon_messages.insert(event.window, balloon_message);
                 } else if opcode == SYSTEM_TRAY_CANCEL_MESSAGE {
                     if let hash_map::Entry::Occupied(entry) =
                         self.balloon_messages.entry(event.window)
                     {
-                        let id = event.data.get_long(2);
+                        let [_, _, id, ..] = event.data.as_data32();
                         if entry.get().id == id {
                             entry.remove();
                         }
                     }
                 }
             }
-            X11Event::ClientMessage(event)
-                if event.message_type == self.atoms.NET_SYSTEM_TRAY_MESSAGE_DATA =>
-            {
+            ClientMessage(event) if event.type_ == self.atoms._NET_SYSTEM_TRAY_MESSAGE_DATA => {
                 if let hash_map::Entry::Occupied(mut entry) =
                     self.balloon_messages.entry(event.window)
                 {
-                    entry.get_mut().write_message(event.data.as_ref());
+                    entry.get_mut().write_message(&event.data.as_data8());
                     if entry.get().remaining_len() == 0 {
                         let balloon_message = entry.remove();
                         callback(TrayEvent::BalloonMessageReceived(
                             event.window,
                             balloon_message,
-                        ));
+                        ))?;
                     }
                 }
             }
-            X11Event::SelectionClear(event) if event.selection == self.system_tray_atom => {
-                if event.window == self.window {
+            SelectionClear(event) if event.selection == self.atoms._NET_SYSTEM_TRAY_S => {
+                if event.owner == self.window {
                     self.embedded_icons.clear();
                     self.status = TrayStatus::Waiting;
-                    callback(TrayEvent::SelectionCleared);
+                    callback(TrayEvent::SelectionCleared)?;
                 }
             }
-            X11Event::PropertyNotify(event) if event.atom == self.atoms.XEMBED_INFO => {
+            PropertyNotify(event) if event.atom == self.atoms._XEMBED_INFO => {
                 if let Some(xembed_info) =
-                    unsafe { get_xembed_info(self.display, event.window, &self.atoms) }
+                    get_xembed_info(self.connection.as_ref(), event.window, &self.atoms)?
                 {
-                    if let Some(event) = self.register_tray_icon(event.window, xembed_info) {
-                        callback(event);
+                    if let Some(event) = self.register_tray_icon(event.window, xembed_info)? {
+                        callback(event)?;
                     }
                 }
             }
-            X11Event::ReparentNotify(event) => {
+            ReparentNotify(event) => {
                 if event.parent != self.window {
-                    let event = self.unregister_tray_icon(event.window);
-                    callback(event);
+                    let event = self.unregister_tray_icon(event.window)?;
+                    callback(event)?;
                 }
             }
-            X11Event::DestroyNotify(event) => match self.status {
-                TrayStatus::Pending(window) if event.window == window => unsafe {
+            DestroyNotify(event) => match self.status {
+                TrayStatus::Pending(window) if event.window == window => {
                     broadcast_manager_message(
-                        self.display,
+                        self.connection.as_ref(),
+                        self.screen_num,
                         self.window,
-                        self.system_tray_atom,
                         &self.atoms,
-                    );
-                },
+                    )?;
+                }
                 _ => {
-                    let event = self.unregister_tray_icon(event.window);
-                    callback(event);
+                    let event = self.unregister_tray_icon(event.window)?;
+                    callback(event)?;
                 }
             },
             _ => {}
         }
+
+        Ok(())
     }
 
     fn register_tray_icon(
         &mut self,
-        icon_window: xlib::Window,
+        icon_window: xproto::Window,
         xembed_info: XEmbedInfo,
-    ) -> Option<TrayEvent> {
+    ) -> Result<Option<TrayEvent>, ReplyError> {
         let old_is_mapped = self
             .embedded_icons
             .insert(icon_window, xembed_info)
             .map(|xembed_info| xembed_info.is_mapped());
 
         match (old_is_mapped, xembed_info.is_mapped()) {
-            (None, false) => unsafe {
+            (None, false) => {
                 send_xembed_message(
-                    self.display,
+                    self.connection.as_ref(),
                     icon_window,
                     self.window,
                     XEmbedMessage::EmbeddedNotify,
                     xembed_info.version,
                     &self.atoms,
-                );
-                wait_for_embedding(self.display, icon_window);
-                None
-            },
+                )?;
+                wait_for_embedding(self.connection.as_ref(), icon_window)?;
+                Ok(None)
+            }
             (None, true) => {
-                unsafe {
-                    send_xembed_message(
-                        self.display,
-                        icon_window,
-                        self.window,
-                        XEmbedMessage::EmbeddedNotify,
-                        xembed_info.version,
-                        &self.atoms,
-                    );
-                    begin_embedding(self.display, icon_window, self.window);
-                }
-                Some(TrayEvent::TrayIconAdded(icon_window))
+                send_xembed_message(
+                    self.connection.as_ref(),
+                    icon_window,
+                    self.window,
+                    XEmbedMessage::EmbeddedNotify,
+                    xembed_info.version,
+                    &self.atoms,
+                )?;
+                begin_embedding(self.connection.as_ref(), icon_window, self.window)?;
+                Ok(Some(TrayEvent::TrayIconAdded(icon_window)))
             }
             (Some(false), true) => {
-                unsafe {
-                    begin_embedding(self.display, icon_window, self.window);
-                }
-                Some(TrayEvent::TrayIconAdded(icon_window))
+                begin_embedding(self.connection.as_ref(), icon_window, self.window)?;
+                Ok(Some(TrayEvent::TrayIconAdded(icon_window)))
             }
             (Some(true), false) => {
-                unsafe {
-                    release_embedding(self.display, icon_window);
-                }
-                Some(TrayEvent::TrayIconRemoved(icon_window))
+                release_embedding(self.connection.as_ref(), self.screen_num, icon_window)?;
+                Ok(Some(TrayEvent::TrayIconRemoved(icon_window)))
             }
-            _ => None,
+            _ => Ok(None),
         }
     }
 
-    fn unregister_tray_icon(&mut self, icon_window: xlib::Window) -> TrayEvent {
+    fn unregister_tray_icon(
+        &mut self,
+        icon_window: xproto::Window,
+    ) -> Result<TrayEvent, ReplyError> {
         if let Some(xembed_info) = self.embedded_icons.remove(&icon_window) {
             if xembed_info.is_mapped() {
-                unsafe {
-                    release_embedding(self.display, icon_window);
-                }
+                release_embedding(self.connection.as_ref(), self.screen_num, icon_window)?;
             }
         }
 
         self.balloon_messages.remove(&icon_window);
 
-        TrayEvent::TrayIconRemoved(icon_window)
+        Ok(TrayEvent::TrayIconRemoved(icon_window))
     }
 }
 
 #[derive(Debug)]
 pub enum TrayEvent {
-    TrayIconAdded(xlib::Window),
-    TrayIconRemoved(xlib::Window),
-    BalloonMessageReceived(xlib::Window, BalloonMessage),
+    TrayIconAdded(xproto::Window),
+    TrayIconRemoved(xproto::Window),
+    BalloonMessageReceived(xproto::Window, BalloonMessage),
     SelectionCleared,
 }
 
 #[derive(Debug)]
 enum TrayStatus {
     Waiting,
-    Pending(xlib::Window),
+    Pending(xproto::Window),
     Managed,
 }
 
@@ -271,17 +285,16 @@ pub struct BalloonMessage {
     buffer: Vec<u8>,
     timeout: Duration,
     length: usize,
-    id: i64,
+    id: u32,
 }
 
 impl BalloonMessage {
-    fn new(data: &xlib::ClientMessageData) -> Self {
-        let timeout = data.get_long(2) as u64;
-        let length = data.get_long(3) as usize;
-        let id = data.get_long(4) as i64;
+    fn new(data: [u32; 5]) -> Self {
+        let [_, _, timeout, length, id] = data;
+        let length = length as usize;
         Self {
             buffer: Vec::with_capacity(length + 1),
-            timeout: Duration::from_millis(timeout),
+            timeout: Duration::from_millis(timeout as u64),
             length,
             id,
         }
@@ -313,78 +326,129 @@ impl BalloonMessage {
     }
 }
 
-unsafe fn broadcast_manager_message(
-    display: *mut xlib::Display,
-    window: xlib::Window,
-    system_tray_atom: xlib::Atom,
+fn broadcast_manager_message<Connection: self::Connection>(
+    connection: &Connection,
+    screen_num: usize,
+    window: xproto::Window,
     atoms: &Atoms,
-) {
-    let root = xlib::XDefaultRootWindow(display);
-
-    let mut data = xlib::ClientMessageData::new();
-    data.set_long(0, xlib::CurrentTime as c_long);
-    data.set_long(1, system_tray_atom as c_long);
-    data.set_long(2, window as c_long);
-
-    utils::send_client_message(display, root, root, atoms.MANAGER, data);
-    xlib::XFlush(display);
-}
-
-unsafe fn begin_embedding(
-    display: *mut xlib::Display,
-    icon_window: xlib::Window,
-    embedder_window: xlib::Window,
-) {
-    xlib::XSelectInput(
-        display,
-        icon_window,
-        xlib::PropertyChangeMask | xlib::StructureNotifyMask,
+) -> Result<(), ReplyError> {
+    let screen = &connection.setup().roots[screen_num];
+    let event = xproto::ClientMessageEvent::new(
+        32,
+        screen.root,
+        atoms.MANAGER,
+        [x11rb::CURRENT_TIME, atoms._NET_SYSTEM_TRAY_S, window, 0, 0],
     );
-    xlib::XReparentWindow(display, icon_window, embedder_window, 0, 0);
-    xlib::XFlush(display);
+
+    connection
+        .send_event(
+            false,
+            screen.root,
+            xproto::EventMask::STRUCTURE_NOTIFY,
+            event,
+        )?
+        .check()
 }
 
-unsafe fn wait_for_embedding(display: *mut xlib::Display, icon_window: xlib::Window) {
-    xlib::XSelectInput(display, icon_window, xlib::PropertyChangeMask);
-    xlib::XFlush(display);
+fn begin_embedding<Connection: self::Connection>(
+    connection: &Connection,
+    icon_window: xproto::Window,
+    embedder_window: xproto::Window,
+) -> Result<(), ReplyError> {
+    {
+        let mut values = xproto::ChangeWindowAttributesAux::new();
+        values.event_mask =
+            Some((xproto::EventMask::PROPERTY_CHANGE | xproto::EventMask::STRUCTURE_NOTIFY).into());
+        connection
+            .change_window_attributes(icon_window, &values)?
+            .check()?;
+    }
+
+    connection
+        .reparent_window(icon_window, embedder_window, 0, 0)?
+        .check()?;
+    connection.flush()?;
+
+    Ok(())
 }
 
-unsafe fn release_embedding(display: *mut xlib::Display, icon_window: xlib::Window) {
-    let screen = xlib::XDefaultScreenOfDisplay(display);
-    let root = xlib::XRootWindowOfScreen(screen);
+fn wait_for_embedding<Connection: self::Connection>(
+    connection: &Connection,
+    icon_window: xproto::Window,
+) -> Result<(), ReplyError> {
+    {
+        let mut values = xproto::ChangeWindowAttributesAux::new();
+        values.event_mask = Some(xproto::EventMask::PROPERTY_CHANGE.into());
+        connection
+            .change_window_attributes(icon_window, &values)?
+            .check()?;
+    }
+    connection.flush()?;
 
-    xlib::XSelectInput(display, icon_window, xlib::NoEventMask);
-    xlib::XReparentWindow(display, icon_window, root, 0, 0);
-    xlib::XUnmapWindow(display, icon_window);
-    xlib::XFlush(display);
+    Ok(())
 }
 
-unsafe fn get_xembed_info(
-    display: *mut xlib::Display,
-    window: xlib::Window,
+fn release_embedding<Connection: self::Connection>(
+    connection: &Connection,
+    screen_num: usize,
+    icon_window: xproto::Window,
+) -> Result<(), ReplyError> {
+    let screen = &connection.setup().roots[screen_num];
+
+    {
+        let mut values = xproto::ChangeWindowAttributesAux::new();
+        values.event_mask = Some(xproto::EventMask::NO_EVENT.into());
+        connection
+            .change_window_attributes(icon_window, &values)?
+            .check()?;
+    }
+
+    connection
+        .reparent_window(icon_window, screen.root, 0, 0)?
+        .check()?;
+    connection.unmap_window(icon_window)?.check()?;
+    connection.flush()?;
+
+    Ok(())
+}
+
+fn get_xembed_info<Connection: self::Connection>(
+    connection: &Connection,
+    window: xproto::Window,
     atoms: &Atoms,
-) -> Option<XEmbedInfo> {
-    utils::get_window_fixed_property::<c_ulong, 2>(display, window, atoms.XEMBED_INFO).map(|prop| {
-        XEmbedInfo {
-            version: (*prop)[0],
-            flags: (*prop)[1],
-        }
-    })
+) -> Result<Option<XEmbedInfo>, ReplyError> {
+    let xembed_info =
+        utils::get_fixed_property::<_, u32, 2>(connection, window, atoms._XEMBED_INFO)?.map(
+            |data| XEmbedInfo {
+                version: data[0],
+                flags: data[1],
+            },
+        );
+    Ok(xembed_info)
 }
 
-unsafe fn send_xembed_message(
-    display: *mut xlib::Display,
-    window: xlib::Window,
-    embedder_window: xlib::Window,
+fn send_xembed_message<Connection: self::Connection>(
+    connection: &Connection,
+    window: xproto::Window,
+    embedder_window: xproto::Window,
     xembed_message: XEmbedMessage,
-    xembed_version: u64,
+    xembed_version: u32,
     atoms: &Atoms,
-) {
-    let mut data = xlib::ClientMessageData::new();
-    data.set_long(0, xlib::CurrentTime as c_long);
-    data.set_long(1, xembed_message as c_long);
-    data.set_long(2, embedder_window as c_long);
-    data.set_long(3, xembed_version as c_long);
+) -> Result<(), ReplyError> {
+    let event = xproto::ClientMessageEvent::new(
+        32,
+        window,
+        atoms._XEMBED,
+        [
+            x11rb::CURRENT_TIME,
+            xembed_message.into(),
+            embedder_window,
+            xembed_version,
+            0,
+        ],
+    );
 
-    utils::send_client_message(display, window, window, atoms.XEMBED, data);
+    connection
+        .send_event(false, window, xproto::EventMask::STRUCTURE_NOTIFY, event)?
+        .check()
 }

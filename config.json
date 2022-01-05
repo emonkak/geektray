@@ -227,6 +227,5 @@
                 }
             ]
         }
-    ],
-    "print_x11_errors": true
+    ]
 }

@@ -1,372 +1,216 @@
 use std::mem;
 use std::ops::{Add, Div, Rem};
-use std::os::raw::*;
 use std::ptr;
-use x11::xlib;
+use x11rb::connection::Connection;
+use x11rb::errors::ReplyError;
+use x11rb::protocol::xproto;
+use x11rb::protocol::xproto::ConnectionExt;
 
 #[inline]
-pub unsafe fn new_atom(display: *mut xlib::Display, null_terminated_name: &str) -> xlib::Atom {
-    assert_eq!(null_terminated_name.bytes().last(), Some(b'\0'));
-    xlib::XInternAtom(
-        display,
-        null_terminated_name.as_ptr() as *const c_char,
-        xlib::False,
-    )
-}
+pub fn emit_click_event<Connection: self::Connection>(
+    connection: &Connection,
+    screen_num: usize,
+    window: xproto::Window,
+    button: xproto::ButtonIndex,
+    button_mask: xproto::ButtonMask,
+    x: i16,
+    y: i16,
+) -> Result<(), ReplyError> {
+    let screen = &connection.setup().roots[screen_num];
+    let previous_pointer = connection.query_pointer(screen.root)?.reply()?;
 
-#[inline]
-pub unsafe fn send_client_message(
-    display: *mut xlib::Display,
-    destination: xlib::Window,
-    window: xlib::Window,
-    message_type: xlib::Atom,
-    data: xlib::ClientMessageData,
-) -> bool {
-    let client_message_event = xlib::XClientMessageEvent {
-        type_: xlib::ClientMessage,
-        serial: 0,
-        send_event: xlib::True,
-        display,
+    let absolute_position = connection
+        .translate_coordinates(window, screen.root, x, y)?
+        .reply()?;
+
+    connection.warp_pointer(
+        x11rb::NONE,                    // src_window
+        screen.root,                    // dst_window
+        0,                              // src_x
+        0,                              // src_y
+        0,                              // src_width
+        0,                              // src_heihgt
+        absolute_position.dst_x as i16, // dst_x
+        absolute_position.dst_y as i16, // dst_y
+    )?;
+
+    send_button_event(
+        connection,
+        screen_num,
         window,
-        message_type,
-        format: 32,
-        data,
-    };
-
-    xlib::XSendEvent(
-        display,
-        destination,
-        xlib::False,
-        xlib::StructureNotifyMask,
-        &mut client_message_event.into(),
-    ) == xlib::True
-}
-
-#[inline]
-pub unsafe fn send_button_event(
-    display: *mut xlib::Display,
-    window: xlib::Window,
-    event_type: c_int,
-    button: c_uint,
-    button_mask: c_uint,
-    x: c_int,
-    y: c_int,
-    x_root: c_int,
-    y_root: c_int,
-) -> bool {
-    let screen = xlib::XDefaultScreen(display);
-    let root = xlib::XRootWindow(display, screen);
-
-    let event = xlib::XButtonEvent {
-        type_: event_type,
-        serial: 0,
-        send_event: xlib::True,
-        display,
-        window,
-        root,
-        subwindow: 0,
-        time: xlib::CurrentTime,
-        x,
-        y,
-        x_root,
-        y_root,
-        state: button_mask,
-        button,
-        same_screen: xlib::True,
-    };
-
-    xlib::XSendEvent(
-        display,
-        window,
-        xlib::True,
-        xlib::NoEventMask,
-        &mut event.into(),
-    ) == xlib::True
-}
-
-#[inline]
-pub unsafe fn emit_click_event(
-    display: *mut xlib::Display,
-    window: xlib::Window,
-    button: c_uint,
-    button_mask: c_uint,
-    x: c_int,
-    y: c_int,
-) -> bool {
-    let screen = xlib::XDefaultScreenOfDisplay(display);
-    let root = xlib::XRootWindowOfScreen(screen);
-    let (cursor_x, cursor_y) = get_pointer_position(display, root);
-
-    let mut x_root = 0;
-    let mut y_root = 0;
-    let mut _subwindow = 0;
-
-    xlib::XTranslateCoordinates(
-        display,
-        window,
-        root,
-        x,
-        y,
-        &mut x_root,
-        &mut y_root,
-        &mut _subwindow,
-    );
-
-    xlib::XWarpPointer(display, 0, root, 0, 0, 0, 0, x_root, y_root);
-
-    let result = send_button_event(
-        display,
-        window,
-        xlib::ButtonPress,
         button,
         button_mask,
+        true,
         x,
         y,
-        x_root,
-        y_root,
-    );
-    if !result {
-        return false;
-    }
+        absolute_position.dst_x,
+        absolute_position.dst_y,
+    )?;
 
-    let result = send_button_event(
-        display,
+    send_button_event(
+        connection,
+        screen_num,
         window,
-        xlib::ButtonRelease,
         button,
         button_mask,
+        false,
         x,
         y,
-        x_root,
-        y_root,
-    );
-    if !result {
-        return false;
-    }
+        absolute_position.dst_x,
+        absolute_position.dst_y,
+    )?;
 
-    xlib::XWarpPointer(display, 0, root, 0, 0, 0, 0, cursor_x, cursor_y);
-    xlib::XFlush(display);
+    connection.warp_pointer(
+        x11rb::NONE,                    // src_window
+        screen.root,                    // dst_window
+        0,                              // src_x
+        0,                              // src_y
+        0,                              // src_width
+        0,                              // src_heihgt
+        previous_pointer.root_x as i16, // dst_x
+        previous_pointer.root_y as i16, // dst_y
+    )?;
 
-    true
+    connection.flush()?;
+
+    Ok(())
 }
 
 #[inline]
-pub unsafe fn get_window_title(
-    display: *mut xlib::Display,
-    window: xlib::Window,
-    net_wm_name_atom: xlib::Atom,
-) -> Option<String> {
-    get_window_variable_property::<u8>(display, window, net_wm_name_atom, xlib::XA_STRING, 256)
-        .or_else(|| {
-            get_window_variable_property::<u8>(
-                display,
-                window,
-                xlib::XA_WM_NAME,
-                xlib::XA_STRING,
-                256,
-            )
-        })
-        .or_else(|| {
-            get_window_variable_property::<u8>(
-                display,
-                window,
-                xlib::XA_WM_CLASS,
-                xlib::XA_STRING,
-                256,
-            )
-        })
-        .and_then(|mut bytes| {
-            if let Some(null_position) = bytes.iter().position(|c| *c == 0) {
-                bytes.resize(null_position, 0);
-            }
-            String::from_utf8(bytes).ok()
-        })
-}
+fn send_button_event<Connection: self::Connection>(
+    connection: &Connection,
+    screen_num: usize,
+    window: xproto::Window,
+    button: xproto::ButtonIndex,
+    button_mask: xproto::ButtonMask,
+    is_pressed: bool,
+    x: i16,
+    y: i16,
+    root_x: i16,
+    root_y: i16,
+) -> Result<(), ReplyError> {
+    let screen = &connection.setup().roots[screen_num];
 
-#[inline]
-pub unsafe fn get_window_fixed_property<T: Sized, const N: usize>(
-    display: *mut xlib::Display,
-    window: xlib::Window,
-    property_atom: xlib::Atom,
-) -> Option<Box<[T; N]>> {
-    let mut actual_type: xlib::Atom = 0;
-    let mut actual_format: i32 = 0;
-    let mut nitems: u64 = 0;
-    let mut bytes_after: u64 = 0;
-    let mut prop: *mut u8 = ptr::null_mut();
-
-    let expected_format = match mem::size_of::<T>() {
-        8 | 4 => 32,
-        2 => 16,
-        1 => 8,
-        _ => unreachable!(),
+    let event = xproto::ButtonPressEvent {
+        response_type: if is_pressed {
+            xproto::BUTTON_PRESS_EVENT
+        } else {
+            xproto::BUTTON_RELEASE_EVENT
+        },
+        detail: button.into(),
+        sequence: 0,
+        time: x11rb::CURRENT_TIME,
+        root: screen.root,
+        event: window,
+        child: x11rb::NONE,
+        event_x: x,
+        event_y: y,
+        root_x,
+        root_y,
+        state: button_mask.into(),
+        same_screen: true,
     };
 
-    let result = xlib::XGetWindowProperty(
-        display,
-        window,
-        property_atom,
-        0,
-        ceiling_div(expected_format * N, 4) as i64,
-        xlib::False,
-        xlib::AnyPropertyType as u64,
-        &mut actual_type,
-        &mut actual_format,
-        &mut nitems,
-        &mut bytes_after,
-        &mut prop,
-    );
+    connection
+        .send_event(true, window, xproto::EventMask::NO_EVENT, event)?
+        .check()?;
 
-    if result != xlib::Success as c_int
-        || actual_format != expected_format as c_int
-        || nitems != N as c_ulong
-        || bytes_after != 0
-        || prop.is_null()
-    {
-        return None;
-    }
-
-    Some(Box::from_raw(prop.cast()))
+    Ok(())
 }
 
 #[inline]
-pub unsafe fn get_window_variable_property<T: Sized>(
-    display: *mut xlib::Display,
-    window: xlib::Window,
-    property_atom: xlib::Atom,
-    property_type: xlib::Atom,
-    property_capacity: u64,
-) -> Option<Vec<T>> {
-    let mut actual_type: xlib::Atom = 0;
-    let mut actual_format: i32 = 0;
-    let mut nitems: u64 = 0;
-    let mut bytes_after: u64 = 0;
-    let mut prop: *mut u8 = ptr::null_mut();
-
+pub fn get_fixed_property<Connection: self::Connection, T: Sized, const N: usize>(
+    connection: &Connection,
+    window: xproto::Window,
+    property_atom: xproto::Atom,
+) -> Result<Option<[T; N]>, ReplyError> {
     let format = match mem::size_of::<T>() {
-        8 | 4 => 32,
+        4 => 32,
         2 => 16,
         1 => 8,
         _ => unreachable!(),
     };
 
-    let result = xlib::XGetWindowProperty(
-        display,
-        window,
-        property_atom,
-        0,
-        ceiling_div(property_capacity, 4) as c_long,
-        xlib::False,
-        property_type,
-        &mut actual_type,
-        &mut actual_format,
-        &mut nitems,
-        &mut bytes_after,
-        &mut prop,
-    );
-
-    if result != xlib::Success as c_int
-        || actual_type != property_type
-        || actual_format != format
-        || nitems == 0
-        || prop.is_null()
-    {
-        return None;
-    }
-
-    let mut data = Vec::from_raw_parts(
-        prop.cast(),
-        nitems as usize,
-        (nitems + bytes_after) as usize,
-    );
-    let mut offset = nitems;
-
-    while bytes_after > 0 {
-        let result = xlib::XGetWindowProperty(
-            display,
+    let mut reply = connection
+        .get_property(
+            false,
             window,
             property_atom,
-            ceiling_div(offset, 4) as i64,
-            ceiling_div(bytes_after, 4) as i64,
-            xlib::False,
-            property_type,
-            &mut actual_type,
-            &mut actual_format,
-            &mut nitems,
-            &mut bytes_after,
-            &mut prop,
-        );
+            xproto::AtomEnum::ANY,
+            0,
+            ceiling_div(mem::size_of::<T>() * N, 4) as u32,
+        )?
+        .reply()?;
 
-        if result != xlib::Success as c_int
-            || actual_type != property_type
-            || actual_format != format
-            || prop.is_null()
-        {
-            return None;
-        }
-
-        let additional_data = Vec::from_raw_parts(prop.cast(), nitems as usize, nitems as usize);
-        data.extend(additional_data);
-
-        offset += nitems;
+    if reply.format != format as u8
+        || reply.bytes_after != 0
+        || reply.value_len != N as u32
+        || reply.value.len() != mem::size_of::<T>() * N
+    {
+        return Ok(None);
     }
 
-    Some(data)
+    unsafe {
+        let value_ptr = reply.value.as_ptr() as *const [T; N];
+        reply.value.set_len(0); // leak value
+        Ok(Some(ptr::read_unaligned(value_ptr)))
+    }
 }
 
 #[inline]
-pub unsafe fn set_window_property<T: Sized>(
-    display: *mut xlib::Display,
-    window: xlib::Window,
-    property_atom: xlib::Atom,
-    property_type: xlib::Atom,
-    property_value: &[T],
-) {
-    let format = match mem::size_of::<T>() {
-        8 | 4 => 32,
-        2 => 16,
-        1 => 8,
-        _ => unreachable!(),
-    };
+pub fn get_variable_property<Connection: self::Connection>(
+    connection: &Connection,
+    window: xproto::Window,
+    property_atom: xproto::Atom,
+    property_type: xproto::AtomEnum,
+    property_buffer: u64,
+) -> Result<Option<Vec<u8>>, ReplyError> {
+    let reply = connection
+        .get_property(
+            false,
+            window,
+            property_atom,
+            property_type,
+            0,
+            ceiling_div(property_buffer, 4) as u32,
+        )?
+        .reply()?;
 
-    xlib::XChangeProperty(
-        display,
-        window,
-        property_atom,
-        property_type,
-        format,
-        xlib::PropModeReplace,
-        property_value as *const _ as *const u8,
-        property_value.len() as i32,
-    );
-}
+    if reply.type_ != u32::from(property_type)
+        || reply.format != 8
+        || reply.value_len == 0
+        || reply.value.len() == 0
+    {
+        return Ok(None);
+    }
 
-#[inline]
-pub unsafe fn get_pointer_position(
-    display: *mut xlib::Display,
-    window: xlib::Window,
-) -> (c_int, c_int) {
-    let mut root = 0;
-    let mut child = 0;
-    let mut root_x = 0;
-    let mut root_y = 0;
-    let mut x = 0;
-    let mut y = 0;
-    let mut state = 0;
+    let mut data = reply.value;
+    data.reserve(reply.bytes_after as usize);
 
-    xlib::XQueryPointer(
-        display,
-        window,
-        &mut root,
-        &mut child,
-        &mut root_x,
-        &mut root_y,
-        &mut x,
-        &mut y,
-        &mut state,
-    );
+    if reply.bytes_after > 0 {
+        let reply = connection
+            .get_property(
+                false,
+                window,
+                property_atom,
+                property_type,
+                ceiling_div(reply.value_len, 4) as u32,
+                ceiling_div(reply.bytes_after, 4) as u32,
+            )?
+            .reply()?;
 
-    (x, y)
+        if reply.type_ != u32::from(property_type)
+            || reply.format != 8
+            || reply.value_len == 0
+            || reply.value.len() == 0
+        {
+            return Ok(None);
+        }
+
+        data.extend(reply.value);
+    }
+
+    Ok(Some(data))
 }
 
 #[inline]

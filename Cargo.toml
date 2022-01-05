@@ -9,7 +9,8 @@ default = ["xlib"]
 xlib = []
 
 [dependencies]
-cairo-sys-rs = { version = "0.14.9", features = ["xlib"] }
+anyhow = "1.0.52"
+cairo-sys-rs = { version = "0.14.9", features = ["xcb"] }
 gobject-sys = "0.14"
 libdbus-sys = "0.2.2"
 nix = "0.23.1"
@@ -17,6 +18,13 @@ pango-sys = "0.14"
 pangocairo-sys = "0.14"
 serde = { version = "1.0.133", features = ["derive"] }
 serde_json = "1.0.74"
+x11rb = { version = "0.9", features = ["allow-unsafe-code"] }
+
+[build-dependencies]
+bindgen = "0.59.2"
+pkg-config = "0.3"
+
+[dev-dependencies]
 x11 = { version = "2.18.2", features = ["xlib"] }
 
 [[example]]
@@ -24,3 +32,6 @@ name = "tray_icon_test"
 
 [[example]]
 name = "list_keysyms"
+
+[[example]]
+name = "xcb_cairo_test"

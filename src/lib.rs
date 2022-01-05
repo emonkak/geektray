@@ -3,7 +3,7 @@ extern crate libdbus_sys;
 extern crate nix;
 extern crate serde;
 extern crate serde_json;
-extern crate x11;
+extern crate x11rb;
 
 pub mod app;
 pub mod config;
@@ -11,11 +11,12 @@ pub mod config;
 mod atoms;
 mod color;
 mod command;
-mod error_handler;
 mod event_loop;
 mod font;
 mod geometrics;
-mod key_mapping;
+mod hotkey;
+mod keyboard;
+mod mouse;
 mod render_context;
 mod text;
 mod tray_container;
@@ -25,6 +26,7 @@ mod utils;
 mod widget;
 mod window;
 mod xembed;
+mod xkbcommon_sys;
 
 #[allow(dead_code)]
 mod dbus;
