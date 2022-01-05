@@ -10,11 +10,14 @@ xlib = []
 
 [dependencies]
 cairo-sys-rs = { version = "0.14.9", features = ["xlib"] }
+gobject-sys = "0.14"
 libdbus-sys = "0.2.2"
 nix = "0.23.1"
+pango-sys = "0.14"
+pangocairo-sys = "0.14"
 serde = { version = "1.0.133", features = ["derive"] }
 serde_json = "1.0.74"
-x11 = { version = "2.18.2", features = ["xft", "xinerama", "xlib"] }
+x11 = { version = "2.18.2", features = ["xlib"] }
 
 [[example]]
 name = "tray_icon_test"

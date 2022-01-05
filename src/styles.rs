@@ -1,8 +1,6 @@
-use x11::xlib;
-
 use crate::color::Color;
 use crate::config::UiConfig;
-use crate::font::{FontDescriptor, FontSet};
+use crate::font::{FontDescription};
 
 #[derive(Debug)]
 pub struct Styles {
@@ -12,8 +10,8 @@ pub struct Styles {
     pub item_gap: f64,
     pub item_corner_radius: f64,
     pub show_index: bool,
+    pub font_description: FontDescription,
     pub font_size: f64,
-    pub font_set: FontSet,
     pub window_background: Color,
     pub normal_item_background: Color,
     pub normal_item_foreground: Color,
@@ -22,55 +20,26 @@ pub struct Styles {
 }
 
 impl Styles {
-    pub fn new(display: *mut xlib::Display, config: &UiConfig) -> Result<Self, String> {
-        Ok(Self {
+    pub fn new(config: &UiConfig) -> Self {
+        Self {
             icon_size: config.icon_size,
             window_padding: config.window_padding,
             item_padding: config.item_padding,
             item_gap: config.item_gap,
             item_corner_radius: config.item_corner_radius,
             show_index: config.show_index,
+            font_description: FontDescription::new(
+                config.font.family.clone(),
+                config.font.style,
+                config.font.weight.into(),
+                config.font.stretch,
+            ),
             font_size: config.font.size,
-            font_set: FontSet::new(FontDescriptor {
-                family: config.font.family.clone(),
-                style: config.font.style,
-                weight: config.font.weight.into(),
-                stretch: config.font.stretch,
-            })
-            .ok_or(format!(
-                "Failed to initialize `font_set`: {:?}",
-                config.font.family
-            ))?,
-            window_background: Color::parse(display, &config.color.window_background).ok_or(
-                format!(
-                    "Failed to parse `window_background`: {:?}",
-                    config.color.window_background
-                ),
-            )?,
-            normal_item_background: Color::parse(display, &config.color.normal_item_background)
-                .ok_or(format!(
-                    "Failed to parse `normal_item_background`: {:?}",
-                    config.color.normal_item_background
-                ))?,
-            normal_item_foreground: Color::parse(display, &config.color.normal_item_foreground)
-                .ok_or(format!(
-                    "Failed to parse `normal_item_foreground`: {:?}",
-                    config.color.normal_item_foreground
-                ))?,
-            selected_item_background: Color::parse(display, &config.color.selected_item_background)
-                .ok_or(format!(
-                    "Failed to parse `selected_item_background`: {:?}",
-                    config.color.selected_item_background
-                ))?,
-            selected_item_foreground: Color::parse(display, &config.color.selected_item_foreground)
-                .ok_or(format!(
-                    "Failed to parse `selected_item_foreground`: {:?}",
-                    config.color.selected_item_foreground
-                ))?,
-        })
-    }
-
-    pub fn item_height(&self) -> f64 {
-        self.icon_size + self.item_padding * 2.0
+            window_background: config.color.window_background,
+            normal_item_background: config.color.normal_item_background,
+            normal_item_foreground: config.color.normal_item_foreground,
+            selected_item_background: config.color.selected_item_background,
+            selected_item_foreground: config.color.selected_item_foreground,
+        }
     }
 }

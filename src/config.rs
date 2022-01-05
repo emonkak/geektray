@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use x11::keysym;
 use x11::xlib;
 
+use crate::color::Color;
 use crate::command::{Command, MouseButton};
 use crate::font::{FontFamily, FontStretch, FontStyle, FontWeight};
 use crate::key_mapping::{KeyMapping, Keysym, Modifiers};
@@ -152,6 +153,12 @@ pub struct UiConfig {
     pub show_index: bool,
 }
 
+impl UiConfig {
+    pub fn item_height(&self) -> f64 {
+        self.icon_size + self.item_padding * 2.0
+    }
+}
+
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
@@ -194,21 +201,21 @@ impl Default for FontConfig {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ColorConfig {
-    pub window_background: String,
-    pub normal_item_background: String,
-    pub normal_item_foreground: String,
-    pub selected_item_background: String,
-    pub selected_item_foreground: String,
+    pub window_background: Color,
+    pub normal_item_background: Color,
+    pub normal_item_foreground: Color,
+    pub selected_item_background: Color,
+    pub selected_item_foreground: Color,
 }
 
 impl Default for ColorConfig {
     fn default() -> Self {
         Self {
-            window_background: "#21272b".to_owned(),
-            normal_item_background: "#21272b".to_owned(),
-            normal_item_foreground: "#e8eaeb".to_owned(),
-            selected_item_background: "#1c95e6".to_owned(),
-            selected_item_foreground: "#e8eaeb".to_owned(),
+            window_background: Color::from_rgb(0x21272b),
+            normal_item_background: Color::from_rgb(0x363f45),
+            normal_item_foreground: Color::from_rgb(0xe8eaeb),
+            selected_item_background: Color::from_rgb(0x1c95e6),
+            selected_item_foreground: Color::from_rgb(0xe8eaeb),
         }
     }
 }

@@ -9,7 +9,6 @@ use crate::config::UiConfig;
 use crate::event_loop::{ControlFlow, X11Event};
 use crate::geometrics::{PhysicalPoint, PhysicalSize, Point, Size};
 use crate::render_context::RenderContext;
-use crate::text::TextRenderer;
 use crate::utils;
 use crate::widget::{Layout, Widget};
 
@@ -21,7 +20,6 @@ pub struct Window<Widget> {
     position: PhysicalPoint,
     size: PhysicalSize,
     layout: Layout,
-    text_renderer: TextRenderer,
     is_mapped: bool,
 }
 
@@ -151,7 +149,6 @@ impl<Widget: self::Widget> Window<Widget> {
             size,
             layout,
             is_mapped: false,
-            text_renderer: TextRenderer::new(),
         })
     }
 
@@ -313,12 +310,7 @@ impl<Widget: self::Widget> Window<Widget> {
     }
 
     fn redraw(&mut self) {
-        let mut context = RenderContext::new(
-            self.display,
-            self.window,
-            self.size,
-            &mut self.text_renderer,
-        );
+        let mut context = RenderContext::new(self.display, self.window, self.size);
 
         self.widget
             .render(Point::ZERO, &self.layout, 0, &mut context);
@@ -329,8 +321,6 @@ impl<Widget: self::Widget> Window<Widget> {
 
 impl<Widget> Drop for Window<Widget> {
     fn drop(&mut self) {
-        self.text_renderer.clear_caches(self.display);
-
         unsafe {
             xlib::XDestroyWindow(self.display, self.window);
         }

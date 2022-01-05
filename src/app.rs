@@ -13,8 +13,8 @@ use crate::command::{Command, MouseButton};
 use crate::config::{Config, UiConfig};
 use crate::error_handler;
 use crate::event_loop::{ControlFlow, Event, EventLoop, X11Event};
+use crate::font::FontDescription;
 use crate::key_mapping::{KeyInterpreter, Keysym, Modifiers};
-use crate::styles::Styles;
 use crate::tray_container::TrayContainer;
 use crate::tray_manager::{TrayEvent, TrayManager};
 use crate::utils;
@@ -23,7 +23,7 @@ use crate::window::Window;
 #[derive(Debug)]
 pub struct App {
     display: *mut xlib::Display,
-    config: UiConfig,
+    config: Rc<UiConfig>,
     atoms: Rc<Atoms>,
     key_interpreter: KeyInterpreter,
     old_error_handler:
@@ -50,7 +50,7 @@ impl App {
 
         Ok(Self {
             display,
-            config: config.ui,
+            config: Rc::new(config.ui),
             atoms: Rc::new(Atoms::new(display)),
             key_interpreter: KeyInterpreter::new(config.keys),
             old_error_handler,
@@ -58,8 +58,13 @@ impl App {
     }
 
     pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
-        let styles = Rc::new(Styles::new(self.display, &self.config)?);
-        let tray_container = TrayContainer::new(styles);
+        let font = FontDescription::new(
+            self.config.font.family.clone(),
+            self.config.font.style,
+            self.config.font.weight.into(),
+            self.config.font.stretch,
+        );
+        let tray_container = TrayContainer::new(self.config.clone(), Rc::new(font));
 
         let mut window = Window::new(tray_container, self.display, &self.atoms, &self.config)?;
         let mut tray_manager = TrayManager::new(self.display, window.window(), self.atoms.clone());

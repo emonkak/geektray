@@ -2,10 +2,11 @@ use std::os::raw::*;
 use std::rc::Rc;
 use x11::xlib;
 
+use crate::config::UiConfig;
 use crate::event_loop::X11Event;
+use crate::font::FontDescription;
 use crate::geometrics::{Point, Size};
 use crate::render_context::RenderContext;
-use crate::styles::Styles;
 use crate::tray_item::TrayItem;
 use crate::widget::{Layout, Widget};
 use crate::window::WindowEffcet;
@@ -14,15 +15,17 @@ use crate::window::WindowEffcet;
 pub struct TrayContainer {
     tray_items: Vec<TrayItem>,
     selected_index: Option<usize>,
-    styles: Rc<Styles>,
+    config: Rc<UiConfig>,
+    font: Rc<FontDescription>,
 }
 
 impl TrayContainer {
-    pub fn new(styles: Rc<Styles>) -> TrayContainer {
+    pub fn new(config: Rc<UiConfig>, font: Rc<FontDescription>) -> TrayContainer {
         Self {
             tray_items: Vec::new(),
             selected_index: None,
-            styles,
+            config,
+            font,
         }
     }
 
@@ -34,7 +37,7 @@ impl TrayContainer {
     }
 
     pub fn add_tray_item(&mut self, window: xlib::Window, title: String) -> WindowEffcet {
-        let tray_item = TrayItem::new(window, title, self.styles.clone());
+        let tray_item = TrayItem::new(window, title, self.config.clone(), self.font.clone());
         self.tray_items.push(tray_item);
         WindowEffcet::RequestLayout
     }
@@ -141,7 +144,7 @@ impl Widget for TrayContainer {
         _index: usize,
         context: &mut RenderContext,
     ) {
-        context.clear_viewport(self.styles.window_background);
+        context.clear_viewport(self.config.color.window_background);
 
         for (index, (tray_item, (child_position, child_layout))) in self
             .tray_items
@@ -154,25 +157,25 @@ impl Widget for TrayContainer {
     }
 
     fn layout(&self, container_size: Size) -> Layout {
-        let mut total_height = self.styles.window_padding * 2.0;
+        let mut total_height = self.config.window_padding * 2.0;
         let mut child_position = Point {
-            x: self.styles.window_padding,
-            y: self.styles.window_padding,
+            x: self.config.window_padding,
+            y: self.config.window_padding,
         };
         let mut children = Vec::with_capacity(self.tray_items.len());
 
         let container_inset = Size {
-            width: container_size.width - self.styles.window_padding * 2.0,
-            height: container_size.height - self.styles.window_padding * 2.0,
+            width: container_size.width - self.config.window_padding * 2.0,
+            height: container_size.height - self.config.window_padding * 2.0,
         };
 
         for (index, tray_item) in self.tray_items.iter().enumerate() {
             let child_layout = tray_item.layout(container_inset);
             let child_size = child_layout.size;
             children.push((child_position, child_layout));
-            child_position.y += child_size.height + self.styles.item_gap;
+            child_position.y += child_size.height + self.config.item_gap;
             if index > 0 {
-                total_height += child_size.height + self.styles.item_gap;
+                total_height += child_size.height + self.config.item_gap;
             } else {
                 total_height += child_size.height;
             }
@@ -181,7 +184,7 @@ impl Widget for TrayContainer {
         Layout {
             size: Size {
                 width: container_size.width as f64,
-                height: total_height.max(self.styles.item_height()),
+                height: total_height.max(self.config.item_height()),
             },
             children,
         }

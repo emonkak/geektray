@@ -68,7 +68,7 @@ fn main() {
         xlib::XStoreName(
             display,
             window,
-            "Tray Icon Test\0".as_ptr() as *const c_char,
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua\0".as_ptr() as *const c_char,
         );
 
         set_xembed_info(display, window);

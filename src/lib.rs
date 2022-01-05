@@ -17,7 +17,6 @@ mod font;
 mod geometrics;
 mod key_mapping;
 mod render_context;
-mod styles;
 mod text;
 mod tray_container;
 mod tray_item;
@@ -29,6 +28,3 @@ mod xembed;
 
 #[allow(dead_code)]
 mod dbus;
-
-#[allow(dead_code)]
-mod fontconfig;
