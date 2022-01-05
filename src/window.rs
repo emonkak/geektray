@@ -320,7 +320,8 @@ impl<Widget: self::Widget> Window<Widget> {
             &mut self.text_renderer,
         );
 
-        self.widget.render(Point::ZERO, &self.layout, &mut context);
+        self.widget
+            .render(Point::ZERO, &self.layout, 0, &mut context);
 
         context.commit();
     }

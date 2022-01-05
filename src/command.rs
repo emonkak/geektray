@@ -3,17 +3,15 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(tag = "type", content = "args")]
 pub enum Command {
     HideWindow,
     ShowWindow,
     ToggleWindow,
+    SelectItem(usize),
     SelectNextItem,
     SelectPreviousItem,
-    ClickLeftButton,
-    ClickRightButton,
-    ClickMiddleButton,
-    ClickX1Button,
-    ClickX2Button,
+    ClickMouseButton(MouseButton),
 }
 
 impl FromStr for Command {
@@ -23,4 +21,13 @@ impl FromStr for Command {
         use serde::de::IntoDeserializer;
         Self::deserialize(s.into_deserializer())
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
+pub enum MouseButton {
+    Left,
+    Right,
+    Middle,
+    X1,
+    X2,
 }

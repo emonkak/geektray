@@ -60,7 +60,7 @@ impl TrayItem {
 }
 
 impl Widget for TrayItem {
-    fn render(&self, position: Point, layout: &Layout, context: &mut RenderContext) {
+    fn render(&self, position: Point, layout: &Layout, index: usize, context: &mut RenderContext) {
         let (bg_color, fg_color) = if self.is_selected {
             (
                 self.styles.selected_item_background,
@@ -75,10 +75,16 @@ impl Widget for TrayItem {
 
         context.fill_rectange(bg_color, Rect::new(position, layout.size));
 
+        let title = if self.styles.show_index {
+            format!("{}. {}", index + 1, self.title)
+        } else {
+            self.title.clone()
+        };
+
         context.render_single_line_text(
             fg_color,
             Text {
-                content: &self.title,
+                content: &title,
                 font_size: self.styles.font_size,
                 font_set: &self.styles.font_set,
                 horizontal_align: HorizontalAlign::Left,

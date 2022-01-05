@@ -4,7 +4,7 @@ use crate::render_context::RenderContext;
 use crate::window::WindowEffcet;
 
 pub trait Widget {
-    fn render(&self, position: Point, layout: &Layout, context: &mut RenderContext);
+    fn render(&self, position: Point, layout: &Layout, index: usize, context: &mut RenderContext);
 
     fn layout(&self, container_size: Size) -> Layout;
 

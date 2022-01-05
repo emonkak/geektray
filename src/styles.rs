@@ -10,6 +10,7 @@ pub struct Styles {
     pub icon_size: f32,
     pub item_padding: f32,
     pub item_gap: f32,
+    pub show_index: bool,
     pub font_size: f32,
     pub font_set: FontSet,
     pub window_background: Color,
@@ -26,6 +27,7 @@ impl Styles {
             window_padding: config.window_padding,
             item_padding: config.item_padding,
             item_gap: config.item_gap,
+            show_index: config.show_index,
             font_size: config.font.size,
             font_set: FontSet::new(FontDescriptor {
                 family: config.font.family.clone(),

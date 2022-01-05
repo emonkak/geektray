@@ -9,7 +9,7 @@ use std::str::FromStr;
 use x11::xlib;
 
 use crate::atoms::Atoms;
-use crate::command::Command;
+use crate::command::{Command, MouseButton};
 use crate::config::{Config, UiConfig};
 use crate::error_handler;
 use crate::event_loop::{ControlFlow, Event, EventLoop, X11Event};
@@ -219,7 +219,7 @@ fn run_command(command: Command, window: &mut Window<TrayContainer>) -> bool {
     match command {
         Command::HideWindow => {
             window.hide();
-            let effect = window.widget_mut().deselect_item();
+            let effect = window.widget_mut().select_item(None);
             window.apply_effect(effect);
             true
         }
@@ -232,6 +232,10 @@ fn run_command(command: Command, window: &mut Window<TrayContainer>) -> bool {
             window.toggle();
             true
         }
+        Command::SelectItem(index) => {
+            let effect = window.widget_mut().select_item(Some(index));
+            window.apply_effect(effect)
+        }
         Command::SelectNextItem => {
             let effect = window.widget_mut().select_next_item();
             window.apply_effect(effect)
@@ -240,34 +244,15 @@ fn run_command(command: Command, window: &mut Window<TrayContainer>) -> bool {
             let effect = window.widget_mut().select_previous_item();
             window.apply_effect(effect)
         }
-        Command::ClickLeftButton => {
-            let effect = window
-                .widget_mut()
-                .click_selected_item(xlib::Button1, xlib::Button1Mask);
-            window.apply_effect(effect)
-        }
-        Command::ClickRightButton => {
-            let effect = window
-                .widget_mut()
-                .click_selected_item(xlib::Button3, xlib::Button3Mask);
-            window.apply_effect(effect)
-        }
-        Command::ClickMiddleButton => {
-            let effect = window
-                .widget_mut()
-                .click_selected_item(xlib::Button2, xlib::Button2Mask);
-            window.apply_effect(effect)
-        }
-        Command::ClickX1Button => {
-            let effect = window
-                .widget_mut()
-                .click_selected_item(xlib::Button4, xlib::Button4Mask);
-            window.apply_effect(effect)
-        }
-        Command::ClickX2Button => {
-            let effect = window
-                .widget_mut()
-                .click_selected_item(xlib::Button5, xlib::Button5Mask);
+        Command::ClickMouseButton(button) => {
+            let (button, button_mask) = match button {
+                MouseButton::Left => (xlib::Button1, xlib::Button1Mask),
+                MouseButton::Right => (xlib::Button3, xlib::Button3Mask),
+                MouseButton::Middle => (xlib::Button2, xlib::Button2Mask),
+                MouseButton::X1 => (xlib::Button4, xlib::Button4Mask),
+                MouseButton::X2 => (xlib::Button5, xlib::Button5Mask),
+            };
+            let effect = window.widget_mut().click_selected_item(button, button_mask);
             window.apply_effect(effect)
         }
     }

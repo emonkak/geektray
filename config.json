@@ -7,6 +7,7 @@
         "item_gap": 0,
         "item_padding": 8.0,
         "icon_size": 24.0,
+        "show_index": true,
         "font": {
             "size": 12.0,
             "family": "Sans",
@@ -24,61 +25,206 @@
     },
     "keys": [
         {
+            "key": "1",
+            "commands": [
+                {
+                    "type": "SelectItem",
+                    "args": 0
+                }
+            ]
+        },
+        {
+            "key": "2",
+            "commands": [
+                {
+                    "type": "SelectItem",
+                    "args": 1
+                }
+            ]
+        },
+        {
+            "key": "3",
+            "commands": [
+                {
+                    "type": "SelectItem",
+                    "args": 2
+                }
+            ]
+        },
+        {
+            "key": "4",
+            "commands": [
+                {
+                    "type": "SelectItem",
+                    "args": 3
+                }
+            ]
+        },
+        {
+            "key": "5",
+            "commands": [
+                {
+                    "type": "SelectItem",
+                    "args": 4
+                }
+            ]
+        },
+        {
+            "key": "6",
+            "commands": [
+                {
+                    "type": "SelectItem",
+                    "args": 5
+                }
+            ]
+        },
+        {
+            "key": "7",
+            "commands": [
+                {
+                    "type": "SelectItem",
+                    "args": 6
+                }
+            ]
+        },
+        {
+            "key": "8",
+            "commands": [
+                {
+                    "type": "SelectItem",
+                    "args": 7
+                }
+            ]
+        },
+        {
+            "key": "9",
+            "commands": [
+                {
+                    "type": "SelectItem",
+                    "args": 8
+                }
+            ]
+        },
+        {
             "key": "j",
-            "commands": ["SelectNextItem"]
+            "commands": [
+                {
+                    "type": "SelectNextItem"
+                }
+            ]
         },
         {
             "key": "Down",
-            "commands": ["SelectNextItem"]
+            "commands": [
+                {
+                    "type": "SelectNextItem"
+                }
+            ]
         },
         {
             "key": "n",
             "modifiers": {
                 "control": true
             },
-            "commands": ["SelectNextItem"]
+            "commands": [
+                {
+                    "type": "SelectNextItem"
+                }
+            ]
         },
         {
             "key": "k",
-            "commands": ["SelectPreviousItem"]
+            "commands": [
+                {
+                    "type": "SelectPreviousItem"
+                }
+            ]
         },
         {
             "key": "Down",
-            "commands": ["SelectPreviousItem"]
+            "commands": [
+                {
+                    "type": "SelectPreviousItem"
+                }
+            ]
         },
         {
             "key": "p",
             "modifiers": {
                 "control": true
             },
-            "commands": ["SelectPreviousItem"]
+            "commands": [
+                {
+                    "type": "SelectPreviousItem"
+                }
+            ]
         },
         {
             "key": "l",
-            "commands": ["ClickLeftButton", "HideWindow"]
+            "commands": [
+                {
+                    "type": "ClickMouseButton",
+                    "args": "Left"
+                },
+                {
+                    "type": "HideWindow"
+                }
+            ]
         },
         {
             "key": "Return",
-            "commands": ["ClickLeftButton", "HideWindow"]
+            "commands": [
+                {
+                    "type": "ClickMouseButton",
+                    "args": "Left"
+                },
+                {
+                    "type": "HideWindow"
+                }
+            ]
         },
         {
             "key": "h",
-            "commands": ["ClickRightButton", "HideWindow"]
+            "commands": [
+                {
+                    "type": "ClickMouseButton",
+                    "args": "Left"
+                },
+                {
+                    "type": "HideWindow"
+                }
+            ]
         },
         {
             "key": "Return",
             "modifiers": {
                 "shift": true
             },
-            "commands": ["ClickRightButton", "HideWindow"]
+            "commands": [
+                {
+                    "type": "ClickMouseButton",
+                    "args": "Right"
+                },
+                {
+                    "type": "HideWindow"
+                }
+            ]
         },
         {
             "key": "q",
-            "commands": ["HideWindow"]
+            "commands": [
+                {
+                    "type": "HideWindow"
+                }
+            ]
         },
         {
             "key": "Escape",
-            "commands": ["HideWindow"]
+            "commands": [
+                {
+                    "type": "HideWindow"
+                }
+            ]
         }
     ],
     "print_x11_errors": true

@@ -73,17 +73,26 @@ impl TrayContainer {
         }
     }
 
-    pub fn deselect_item(&mut self) -> WindowEffcet {
-        if self.tray_items.len() == 0 {
-            return WindowEffcet::None;
+    pub fn select_item(&mut self, new_index: Option<usize>) -> WindowEffcet {
+        let mut result = WindowEffcet::None;
+
+        if let Some(index) = self.selected_index {
+            let tray_item = &mut self.tray_items[index];
+            result = result + tray_item.deselect_item();
         }
 
-        if let Some(selected_index) = self.selected_index {
-            let tray_item = &mut self.tray_items[selected_index];
-            tray_item.deselect_item()
+        if let Some(index) = new_index {
+            if let Some(tray_item) = self.tray_items.get_mut(index) {
+                result = result + tray_item.select_item();
+                self.selected_index = Some(index);
+            } else {
+                self.selected_index = None;
+            }
         } else {
-            return WindowEffcet::None;
+            self.selected_index = None;
         }
+
+        result
     }
 
     pub fn select_next_item(&mut self) -> WindowEffcet {
@@ -97,7 +106,7 @@ impl TrayContainer {
             _ => Some(0),
         };
 
-        self.update_selected_index(selected_index)
+        self.select_item(selected_index)
     }
 
     pub fn select_previous_item(&mut self) -> WindowEffcet {
@@ -111,25 +120,7 @@ impl TrayContainer {
             _ => Some(self.tray_items.len() - 1),
         };
 
-        self.update_selected_index(selected_index)
-    }
-
-    fn update_selected_index(&mut self, new_index: Option<usize>) -> WindowEffcet {
-        let mut result = WindowEffcet::None;
-
-        if let Some(index) = self.selected_index {
-            let tray_item = &mut self.tray_items[index];
-            result = result + tray_item.deselect_item();
-        }
-
-        if let Some(index) = new_index {
-            let tray_item = &mut self.tray_items[index];
-            result = result + tray_item.select_item();
-        }
-
-        self.selected_index = new_index;
-
-        result
+        self.select_item(selected_index)
     }
 
     pub fn click_selected_item(&mut self, button: c_uint, button_mask: c_uint) -> WindowEffcet {
@@ -143,13 +134,22 @@ impl TrayContainer {
 }
 
 impl Widget for TrayContainer {
-    fn render(&self, _position: Point, layout: &Layout, context: &mut RenderContext) {
+    fn render(
+        &self,
+        _position: Point,
+        layout: &Layout,
+        _index: usize,
+        context: &mut RenderContext,
+    ) {
         context.clear_viewport(self.styles.window_background);
 
-        for (tray_item, (child_position, child_layout)) in
-            self.tray_items.iter().zip(layout.children.iter())
+        for (index, (tray_item, (child_position, child_layout))) in self
+            .tray_items
+            .iter()
+            .zip(layout.children.iter())
+            .enumerate()
         {
-            tray_item.render(*child_position, child_layout, context);
+            tray_item.render(*child_position, child_layout, index, context);
         }
     }
 

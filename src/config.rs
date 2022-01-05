@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use x11::keysym;
 use x11::xlib;
 
-use crate::command::Command;
+use crate::command::{Command, MouseButton};
 use crate::font::{FontFamily, FontStretch, FontStyle, FontWeight};
 use crate::key_mapping::{KeyMapping, Keysym, Modifiers};
 
@@ -20,6 +20,51 @@ impl Default for Config {
         Self {
             ui: UiConfig::default(),
             keys: vec![
+                KeyMapping::new(
+                    Keysym(keysym::XK_1 as xlib::KeySym),
+                    Modifiers::none(),
+                    vec![Command::SelectItem(0)],
+                ),
+                KeyMapping::new(
+                    Keysym(keysym::XK_2 as xlib::KeySym),
+                    Modifiers::none(),
+                    vec![Command::SelectItem(1)],
+                ),
+                KeyMapping::new(
+                    Keysym(keysym::XK_3 as xlib::KeySym),
+                    Modifiers::none(),
+                    vec![Command::SelectItem(2)],
+                ),
+                KeyMapping::new(
+                    Keysym(keysym::XK_4 as xlib::KeySym),
+                    Modifiers::none(),
+                    vec![Command::SelectItem(3)],
+                ),
+                KeyMapping::new(
+                    Keysym(keysym::XK_5 as xlib::KeySym),
+                    Modifiers::none(),
+                    vec![Command::SelectItem(4)],
+                ),
+                KeyMapping::new(
+                    Keysym(keysym::XK_6 as xlib::KeySym),
+                    Modifiers::none(),
+                    vec![Command::SelectItem(5)],
+                ),
+                KeyMapping::new(
+                    Keysym(keysym::XK_7 as xlib::KeySym),
+                    Modifiers::none(),
+                    vec![Command::SelectItem(6)],
+                ),
+                KeyMapping::new(
+                    Keysym(keysym::XK_8 as xlib::KeySym),
+                    Modifiers::none(),
+                    vec![Command::SelectItem(7)],
+                ),
+                KeyMapping::new(
+                    Keysym(keysym::XK_9 as xlib::KeySym),
+                    Modifiers::none(),
+                    vec![Command::SelectItem(8)],
+                ),
                 KeyMapping::new(
                     Keysym(keysym::XK_j as xlib::KeySym),
                     Modifiers::none(),
@@ -53,27 +98,27 @@ impl Default for Config {
                 KeyMapping::new(
                     Keysym(keysym::XK_l as xlib::KeySym),
                     Modifiers::control(),
-                    vec![Command::ClickLeftButton],
+                    vec![Command::ClickMouseButton(MouseButton::Left)],
                 ),
                 KeyMapping::new(
                     Keysym(keysym::XK_Return as xlib::KeySym),
                     Modifiers::none(),
-                    vec![Command::ClickLeftButton],
+                    vec![Command::ClickMouseButton(MouseButton::Left)],
                 ),
                 KeyMapping::new(
                     Keysym(keysym::XK_Return as xlib::KeySym),
                     Modifiers::none(),
-                    vec![Command::ClickLeftButton],
+                    vec![Command::ClickMouseButton(MouseButton::Left)],
                 ),
                 KeyMapping::new(
                     Keysym(keysym::XK_h as xlib::KeySym),
                     Modifiers::none(),
-                    vec![Command::ClickRightButton],
+                    vec![Command::ClickMouseButton(MouseButton::Right)],
                 ),
                 KeyMapping::new(
                     Keysym(keysym::XK_Return as xlib::KeySym),
                     Modifiers::shift(),
-                    vec![Command::ClickRightButton],
+                    vec![Command::ClickMouseButton(MouseButton::Right)],
                 ),
                 KeyMapping::new(
                     Keysym(keysym::XK_q as xlib::KeySym),
@@ -103,6 +148,7 @@ pub struct UiConfig {
     pub icon_size: f32,
     pub font: FontConfig,
     pub color: ColorConfig,
+    pub show_index: bool,
 }
 
 impl Default for UiConfig {
@@ -117,6 +163,7 @@ impl Default for UiConfig {
             icon_size: 24.0,
             font: FontConfig::default(),
             color: ColorConfig::default(),
+            show_index: true,
         }
     }
 }
