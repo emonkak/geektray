@@ -121,15 +121,10 @@ impl<Connection: self::Connection> TrayManager<Connection> {
                 let opcode = data[1];
                 if opcode == SYSTEM_TRAY_REQUEST_DOCK {
                     let window = data[2];
-                    if self.register_tray_icon(embedder_window, window)? {
-                        Some(TrayEvent::TrayIconAdded(window))
-                    } else {
-                        None
-                    }
+                    self.register_tray_icon(embedder_window, window)?;
                 } else if opcode == SYSTEM_TRAY_BEGIN_MESSAGE {
                     let balloon_message = BalloonMessage::new(event.data.as_data32());
                     self.balloon_messages.insert(event.window, balloon_message);
-                    None
                 } else if opcode == SYSTEM_TRAY_CANCEL_MESSAGE {
                     if let hash_map::Entry::Occupied(entry) =
                         self.balloon_messages.entry(event.window)
@@ -139,10 +134,8 @@ impl<Connection: self::Connection> TrayManager<Connection> {
                             entry.remove();
                         }
                     }
-                    None
-                } else {
-                    None
                 }
+                None
             }
             ClientMessage(event) if event.type_ == self.atoms._NET_SYSTEM_TRAY_MESSAGE_DATA => {
                 if let hash_map::Entry::Occupied(mut entry) =
@@ -171,15 +164,16 @@ impl<Connection: self::Connection> TrayManager<Connection> {
                 Some(TrayEvent::SelectionCleared)
             }
             PropertyNotify(event) if event.atom == self.atoms._XEMBED_INFO => {
-                if self.register_tray_icon(embedder_window, event.window)? {
+                self.register_tray_icon(embedder_window, event.window)?;
+                None
+            }
+            ReparentNotify(event) => {
+                if event.parent == embedder_window {
                     Some(TrayEvent::TrayIconAdded(event.window))
                 } else {
-                    None
+                    self.unregister_tray_icon(event.window)?;
+                    Some(TrayEvent::TrayIconRemoved(event.window))
                 }
-            }
-            ReparentNotify(event) if event.parent != embedder_window => {
-                self.unregister_tray_icon(event.window)?;
-                Some(TrayEvent::TrayIconRemoved(event.window))
             }
             DestroyNotify(event) => match self.status {
                 TrayStatus::Pending(window) if event.window == window => {
@@ -224,8 +218,8 @@ impl<Connection: self::Connection> TrayManager<Connection> {
         Ok(())
     }
 
-    fn register_tray_icon(&mut self, embedder_window: xproto::Window, icon_window: xproto::Window) -> Result<bool, ReplyError> {
-        let is_embedded = if let Some(xembed_info) =
+    fn register_tray_icon(&mut self, embedder_window: xproto::Window, icon_window: xproto::Window) -> Result<(), ReplyError> {
+        if let Some(xembed_info) =
             get_xembed_info(self.connection.as_ref(), icon_window, &self.atoms)?
         {
             let old_state = self
@@ -244,7 +238,6 @@ impl<Connection: self::Connection> TrayManager<Connection> {
                         &self.atoms,
                     )?;
                     wait_for_embedding(self.connection.as_ref(), icon_window)?;
-                    false
                 }
                 (None, true) => {
                     send_xembed_message(
@@ -256,23 +249,18 @@ impl<Connection: self::Connection> TrayManager<Connection> {
                         &self.atoms,
                     )?;
                     begin_embedding(self.connection.as_ref(), icon_window, embedder_window)?;
-                    true
                 }
                 (Some(false), true) => {
                     begin_embedding(self.connection.as_ref(), icon_window, embedder_window)?;
-                    true
                 }
                 (Some(true), false) => {
                     release_embedding(self.connection.as_ref(), self.screen_num, icon_window)?;
-                    false
                 }
-                _ => false,
+                _ => {},
             }
-        } else {
-            false
-        };
+        }
 
-        Ok(is_embedded)
+        Ok(())
     }
 
     fn unregister_tray_icon(&mut self, icon_window: xproto::Window) -> Result<(), ReplyError> {
