@@ -60,7 +60,7 @@ impl<Connection: self::Connection> TrayManager<Connection> {
             connection,
             screen_num,
             manager_window,
-            status: TrayStatus::Waiting,
+            status: TrayStatus::Unmanaged,
             atoms,
             embedded_icons: HashMap::new(),
             balloon_messages: HashMap::new(),
@@ -159,8 +159,12 @@ impl<Connection: self::Connection> TrayManager<Connection> {
                 if event.selection == self.atoms._NET_SYSTEM_TRAY_S
                     && event.owner == self.manager_window =>
             {
-                self.embedded_icons.clear();
-                self.status = TrayStatus::Waiting;
+                for (window, xembed_info) in self.embedded_icons.drain() {
+                    if xembed_info.is_mapped() {
+                        release_embedding(self.connection.as_ref(), self.screen_num, window)?;
+                    }
+                }
+                self.status = TrayStatus::Unmanaged;
                 Some(TrayEvent::SelectionCleared)
             }
             PropertyNotify(event) if event.atom == self.atoms._XEMBED_INFO => {
@@ -218,7 +222,7 @@ impl<Connection: self::Connection> TrayManager<Connection> {
                 )?
                 .check()?;
 
-            self.status = TrayStatus::Waiting;
+            self.status = TrayStatus::Unmanaged;
         }
 
         Ok(())
@@ -292,7 +296,7 @@ pub enum TrayEvent {
 
 #[derive(Debug)]
 enum TrayStatus {
-    Waiting,
+    Unmanaged,
     Pending(xproto::Window),
     Managed,
 }
