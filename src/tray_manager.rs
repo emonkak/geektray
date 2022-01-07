@@ -171,8 +171,11 @@ impl<Connection: self::Connection> TrayManager<Connection> {
                 if event.parent == embedder_window {
                     Some(TrayEvent::TrayIconAdded(event.window))
                 } else {
-                    self.unregister_tray_icon(event.window)?;
-                    Some(TrayEvent::TrayIconRemoved(event.window))
+                    if self.unregister_tray_icon(event.window) {
+                        Some(TrayEvent::TrayIconRemoved(event.window))
+                    } else {
+                        None
+                    }
                 }
             }
             DestroyNotify(event) => match self.status {
@@ -186,8 +189,11 @@ impl<Connection: self::Connection> TrayManager<Connection> {
                     None
                 }
                 _ => {
-                    self.unregister_tray_icon(event.window)?;
-                    Some(TrayEvent::TrayIconRemoved(event.window))
+                    if self.unregister_tray_icon(event.window) {
+                        Some(TrayEvent::TrayIconRemoved(event.window))
+                    } else {
+                        None
+                    }
                 }
             },
             _ => None,
@@ -263,16 +269,9 @@ impl<Connection: self::Connection> TrayManager<Connection> {
         Ok(())
     }
 
-    fn unregister_tray_icon(&mut self, icon_window: xproto::Window) -> Result<(), ReplyError> {
-        if let Some(xembed_info) = self.embedded_icons.remove(&icon_window) {
-            if xembed_info.is_mapped() {
-                release_embedding(self.connection.as_ref(), self.screen_num, icon_window)?;
-            }
-        }
-
+    fn unregister_tray_icon(&mut self, icon_window: xproto::Window) -> bool {
         self.balloon_messages.remove(&icon_window);
-
-        Ok(())
+        self.embedded_icons.remove(&icon_window).is_some()
     }
 }
 

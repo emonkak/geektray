@@ -142,9 +142,10 @@ impl Widget for TrayItem {
                 .stack_mode(xproto::StackMode::ABOVE);
 
             context.schedule_action(move |connection, _, _| {
-                connection.configure_window(window, &values)?.check()?;
-                connection.map_window(window)?.check()?;
-                connection.clear_area(true, window, 0, 0, 0, 0)?.check()?;
+                // without check() calling, because window maybe already destoryed.
+                connection.configure_window(window, &values)?;
+                connection.map_window(window)?;
+                connection.clear_area(true, window, 0, 0, 0, 0)?;
                 Ok(())
             });
         }

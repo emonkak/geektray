@@ -83,7 +83,7 @@ impl App {
 
         event_loop.run(|event, control_flow, context| match event {
             Event::X11Event(event) => {
-                if let Some(event) = self.tray_manager.process_event(self.main_window.id(), &event)? {
+                if let Ok(Some(event)) = self.tray_manager.process_event(self.main_window.id(), &event) {
                     self.on_tray_event(&event, context, control_flow)?;
                 }
                 if get_window_from_event(&event) == Some(self.main_window.id()) {
