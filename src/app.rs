@@ -58,9 +58,8 @@ impl App {
         let tray_manager = TrayManager::new(
             connection.clone(),
             screen_num,
-            main_window.id(),
             atoms.clone(),
-        );
+        )?;
 
         let keyboard_mapping = KeyboardMapping::from_connection(connection.as_ref())?;
         let key_mapping_manager = KeyMappingManager::new(config.keys);
@@ -80,12 +79,11 @@ impl App {
         let mut event_loop = EventLoop::new(self.connection.clone())?;
 
         self.tray_manager.acquire_tray_selection()?;
-
         self.main_window.show()?;
 
         event_loop.run(|event, control_flow, context| match event {
             Event::X11Event(event) => {
-                if let Some(event) = self.tray_manager.process_event(&event)? {
+                if let Some(event) = self.tray_manager.process_event(self.main_window.id(), &event)? {
                     self.on_tray_event(&event, context, control_flow)?;
                 }
                 if get_window_from_event(&event) == Some(self.main_window.id()) {

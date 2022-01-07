@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::rc::Rc;
 use x11rb::connection::Connection;
-use x11rb::errors::{ConnectionError, ReplyError};
+use x11rb::errors::{ConnectionError, ReplyError, ReplyOrIdError};
 use x11rb::properties;
 use x11rb::protocol;
 use x11rb::protocol::xproto;
@@ -34,7 +34,7 @@ impl<Widget: self::Widget> MainWindow<Widget> {
         screen_num: usize,
         atoms: &Atoms,
         config: &WindowConfig,
-    ) -> Result<Self, ReplyError> {
+    ) -> Result<Self, ReplyOrIdError> {
         let layout = widget.layout(Size {
             width: config.initial_width,
             height: 0.0,
@@ -43,7 +43,7 @@ impl<Widget: self::Widget> MainWindow<Widget> {
         let position = get_window_position(connection.as_ref(), screen_num, size);
 
         let window = {
-            let window_id = connection.generate_id().unwrap();
+            let window = connection.generate_id()?;
             let screen = &connection.setup().roots[screen_num];
 
             let event_mask = xproto::EventMask::EXPOSURE
@@ -62,7 +62,7 @@ impl<Widget: self::Widget> MainWindow<Widget> {
 
             connection.create_window(
                 screen.root_depth,
-                window_id,
+                window,
                 screen.root,
                 position.x as i16,
                 position.y as i16,
@@ -72,9 +72,9 @@ impl<Widget: self::Widget> MainWindow<Widget> {
                 xproto::WindowClass::INPUT_OUTPUT,
                 x11rb::COPY_FROM_PARENT,
                 &values,
-            )?;
+            )?.check()?;
 
-            window_id
+            window
         };
 
         connection
@@ -200,9 +200,9 @@ impl<Widget: self::Widget> MainWindow<Widget> {
 
     pub fn adjust_position(&self) -> Result<(), ConnectionError> {
         let position = get_window_position(self.connection.as_ref(), self.screen_num, self.size);
-        let mut values = xproto::ConfigureWindowAux::new();
-        values.x = Some(position.x as i32);
-        values.y = Some(position.y as i32);
+        let values = xproto::ConfigureWindowAux::new()
+            .x(position.x as i32)
+            .y(position.y as i32);
         self.connection.configure_window(self.window, &values)?;
         Ok(())
     }
@@ -305,7 +305,7 @@ impl<Widget: self::Widget> MainWindow<Widget> {
         &mut self,
         event: &protocol::Event,
         control_flow: &mut ControlFlow,
-    ) -> Result<(), ReplyError> {
+    ) -> Result<(), ReplyOrIdError> {
         use protocol::Event::*;
 
         let effect = self.widget.on_event(event, Point::ZERO, &self.layout);
@@ -344,7 +344,7 @@ impl<Widget: self::Widget> MainWindow<Widget> {
         Ok(())
     }
 
-    fn redraw(&mut self) -> Result<(), ReplyError> {
+    fn redraw(&mut self) -> Result<(), ReplyOrIdError> {
         let mut context = RenderContext::new(
             self.connection.clone(),
             self.screen_num,

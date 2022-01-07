@@ -5,7 +5,7 @@ use pango_sys as pango;
 use std::os::raw::*;
 use std::rc::Rc;
 use x11rb::connection::Connection;
-use x11rb::errors::ReplyError;
+use x11rb::errors::{ReplyOrIdError, ReplyError};
 use x11rb::protocol::xproto;
 use x11rb::protocol::xproto::ConnectionExt as _;
 use x11rb::x11_utils::Serialize as _;
@@ -35,10 +35,10 @@ impl RenderContext {
         screen_num: usize,
         window: xproto::Window,
         bounds: PhysicalSize,
-    ) -> Result<Self, ReplyError> {
+    ) -> Result<Self, ReplyOrIdError> {
         let screen = &connection.setup().roots[screen_num];
 
-        let pixmap = connection.generate_id().unwrap();
+        let pixmap = connection.generate_id()?;
         connection
             .create_pixmap(
                 screen.root_depth,
@@ -48,11 +48,11 @@ impl RenderContext {
                 bounds.height as u16,
             )?
             .check()?;
-        let gc = connection.generate_id().unwrap();
+        let gc = connection.generate_id()?;
 
         {
-            let mut values = xproto::CreateGCAux::new();
-            values.subwindow_mode = Some(xproto::SubwindowMode::INCLUDE_INFERIORS);
+            let values = xproto::CreateGCAux::new()
+                .subwindow_mode(xproto::SubwindowMode::INCLUDE_INFERIORS);
             connection.create_gc(gc, pixmap, &values)?.check()?;
         }
 

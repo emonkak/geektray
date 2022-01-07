@@ -4,7 +4,7 @@ use std::ffi::CStr;
 use std::rc::Rc;
 use std::time::Duration;
 use x11rb::connection::Connection;
-use x11rb::errors::ReplyError;
+use x11rb::errors::{ReplyError, ReplyOrIdError};
 use x11rb::protocol;
 use x11rb::protocol::xproto;
 use x11rb::protocol::xproto::ConnectionExt;
@@ -21,7 +21,7 @@ const SYSTEM_TRAY_CANCEL_MESSAGE: u32 = 2;
 pub struct TrayManager<Connection: self::Connection> {
     connection: Rc<Connection>,
     screen_num: usize,
-    window: xproto::Window,
+    manager_window: xproto::Window,
     status: TrayStatus,
     atoms: Rc<Atoms>,
     embedded_icons: HashMap<xproto::Window, XEmbedInfo>,
@@ -32,18 +32,39 @@ impl<Connection: self::Connection> TrayManager<Connection> {
     pub fn new(
         connection: Rc<Connection>,
         screen_num: usize,
-        window: xproto::Window,
         atoms: Rc<Atoms>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, ReplyOrIdError> {
+        let manager_window = connection.generate_id()?;
+
+        {
+            let screen = &connection.setup().roots[screen_num];
+            let values = xproto::CreateWindowAux::new()
+                .event_mask(xproto::EventMask::PROPERTY_CHANGE);
+
+            connection.create_window(
+                0,
+                manager_window,
+                screen.root,
+                0, // x
+                0, // y
+                1, // width
+                1, // height
+                0, // border_width
+                xproto::WindowClass::INPUT_ONLY,
+                x11rb::COPY_FROM_PARENT,
+                &values,
+            )?.check()?;
+        }
+
+        Ok(Self {
             connection,
             screen_num,
-            window,
+            manager_window,
             status: TrayStatus::Waiting,
             atoms,
             embedded_icons: HashMap::new(),
             balloon_messages: HashMap::new(),
-        }
+        })
     }
 
     pub fn acquire_tray_selection(&mut self) -> Result<bool, ReplyError> {
@@ -59,7 +80,7 @@ impl<Connection: self::Connection> TrayManager<Connection> {
 
         self.connection
             .set_selection_owner(
-                self.window,
+                self.manager_window,
                 self.atoms._NET_SYSTEM_TRAY_S,
                 x11rb::CURRENT_TIME,
             )?
@@ -69,13 +90,13 @@ impl<Connection: self::Connection> TrayManager<Connection> {
             broadcast_manager_message(
                 self.connection.as_ref(),
                 self.screen_num,
-                self.window,
+                self.manager_window,
                 &self.atoms,
             )?;
             self.status = TrayStatus::Managed;
         } else {
-            let mut values = xproto::ChangeWindowAttributesAux::new();
-            values.event_mask = Some(xproto::EventMask::STRUCTURE_NOTIFY.into());
+            let values = xproto::ChangeWindowAttributesAux::new()
+                .event_mask(Some(xproto::EventMask::STRUCTURE_NOTIFY.into()));
 
             self.connection
                 .change_window_attributes(previous_selection_owner, &values)?
@@ -89,6 +110,7 @@ impl<Connection: self::Connection> TrayManager<Connection> {
 
     pub fn process_event(
         &mut self,
+        embedder_window: xproto::Window,
         event: &protocol::Event,
     ) -> Result<Option<TrayEvent>, ReplyError> {
         use protocol::Event::*;
@@ -99,7 +121,7 @@ impl<Connection: self::Connection> TrayManager<Connection> {
                 let opcode = data[1];
                 if opcode == SYSTEM_TRAY_REQUEST_DOCK {
                     let window = data[2];
-                    if self.register_tray_icon(window)? {
+                    if self.register_tray_icon(embedder_window, window)? {
                         Some(TrayEvent::TrayIconAdded(window))
                     } else {
                         None
@@ -142,20 +164,20 @@ impl<Connection: self::Connection> TrayManager<Connection> {
             }
             SelectionClear(event)
                 if event.selection == self.atoms._NET_SYSTEM_TRAY_S
-                    && event.owner == self.window =>
+                    && event.owner == self.manager_window =>
             {
                 self.embedded_icons.clear();
                 self.status = TrayStatus::Waiting;
                 Some(TrayEvent::SelectionCleared)
             }
             PropertyNotify(event) if event.atom == self.atoms._XEMBED_INFO => {
-                if self.register_tray_icon(event.window)? {
+                if self.register_tray_icon(embedder_window, event.window)? {
                     Some(TrayEvent::TrayIconAdded(event.window))
                 } else {
                     None
                 }
             }
-            ReparentNotify(event) if event.parent != self.window => {
+            ReparentNotify(event) if event.parent != embedder_window => {
                 self.unregister_tray_icon(event.window)?;
                 Some(TrayEvent::TrayIconRemoved(event.window))
             }
@@ -164,7 +186,7 @@ impl<Connection: self::Connection> TrayManager<Connection> {
                     broadcast_manager_message(
                         self.connection.as_ref(),
                         self.screen_num,
-                        self.window,
+                        self.manager_window,
                         &self.atoms,
                     )?;
                     None
@@ -202,7 +224,7 @@ impl<Connection: self::Connection> TrayManager<Connection> {
         Ok(())
     }
 
-    fn register_tray_icon(&mut self, icon_window: xproto::Window) -> Result<bool, ReplyError> {
+    fn register_tray_icon(&mut self, embedder_window: xproto::Window, icon_window: xproto::Window) -> Result<bool, ReplyError> {
         let is_embedded = if let Some(xembed_info) =
             get_xembed_info(self.connection.as_ref(), icon_window, &self.atoms)?
         {
@@ -216,7 +238,7 @@ impl<Connection: self::Connection> TrayManager<Connection> {
                     send_xembed_message(
                         self.connection.as_ref(),
                         icon_window,
-                        self.window,
+                        embedder_window,
                         XEmbedMessage::EmbeddedNotify,
                         xembed_info.version,
                         &self.atoms,
@@ -228,16 +250,16 @@ impl<Connection: self::Connection> TrayManager<Connection> {
                     send_xembed_message(
                         self.connection.as_ref(),
                         icon_window,
-                        self.window,
+                        embedder_window,
                         XEmbedMessage::EmbeddedNotify,
                         xembed_info.version,
                         &self.atoms,
                     )?;
-                    begin_embedding(self.connection.as_ref(), icon_window, self.window)?;
+                    begin_embedding(self.connection.as_ref(), icon_window, embedder_window)?;
                     true
                 }
                 (Some(false), true) => {
-                    begin_embedding(self.connection.as_ref(), icon_window, self.window)?;
+                    begin_embedding(self.connection.as_ref(), icon_window, embedder_window)?;
                     true
                 }
                 (Some(true), false) => {
@@ -269,6 +291,7 @@ impl<Connection: self::Connection> TrayManager<Connection> {
 impl<Connection: self::Connection> Drop for TrayManager<Connection> {
     fn drop(&mut self) {
         self.release_tray_selection().ok();
+        self.connection.destroy_window(self.manager_window).ok();
     }
 }
 
@@ -363,9 +386,8 @@ fn begin_embedding<Connection: self::Connection>(
     embedder_window: xproto::Window,
 ) -> Result<(), ReplyError> {
     {
-        let mut values = xproto::ChangeWindowAttributesAux::new();
-        values.event_mask =
-            Some((xproto::EventMask::PROPERTY_CHANGE | xproto::EventMask::STRUCTURE_NOTIFY).into());
+        let values = xproto::ChangeWindowAttributesAux::new()
+            .event_mask(Some((xproto::EventMask::PROPERTY_CHANGE | xproto::EventMask::STRUCTURE_NOTIFY).into()));
         connection
             .change_window_attributes(icon_window, &values)?
             .check()?;
@@ -384,8 +406,8 @@ fn wait_for_embedding<Connection: self::Connection>(
     icon_window: xproto::Window,
 ) -> Result<(), ReplyError> {
     {
-        let mut values = xproto::ChangeWindowAttributesAux::new();
-        values.event_mask = Some(xproto::EventMask::PROPERTY_CHANGE.into());
+        let values = xproto::ChangeWindowAttributesAux::new()
+            .event_mask(xproto::EventMask::PROPERTY_CHANGE);
         connection
             .change_window_attributes(icon_window, &values)?
             .check()?;
@@ -403,8 +425,8 @@ fn release_embedding<Connection: self::Connection>(
     let screen = &connection.setup().roots[screen_num];
 
     {
-        let mut values = xproto::ChangeWindowAttributesAux::new();
-        values.event_mask = Some(xproto::EventMask::NO_EVENT.into());
+        let values = xproto::ChangeWindowAttributesAux::new()
+            .event_mask(Some(xproto::EventMask::NO_EVENT.into()));
         connection
             .change_window_attributes(icon_window, &values)?
             .check()?;

@@ -80,8 +80,6 @@ fn redraw(
     width: u16,
     height: u16,
 ) -> Result<(), ReplyError> {
-    println!("REDRAW");
-
     let cairo_surface = unsafe {
         let screen = &connection.setup().roots[screen_num];
 

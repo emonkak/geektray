@@ -134,13 +134,12 @@ impl Widget for TrayItem {
 
         {
             let window = self.window;
-
-            let mut values = xproto::ConfigureWindowAux::new();
-            values.x = Some((position.x + self.config.item_padding) as i32);
-            values.y = Some((position.y + self.config.item_padding) as i32);
-            values.width = Some(self.config.icon_size as u32);
-            values.height = Some(self.config.icon_size as u32);
-            values.stack_mode = Some(xproto::StackMode::ABOVE);
+            let values = xproto::ConfigureWindowAux::new()
+                .x((position.x + self.config.item_padding) as i32)
+                .y((position.y + self.config.item_padding) as i32)
+                .width(self.config.icon_size as u32)
+                .height(self.config.icon_size as u32)
+                .stack_mode(xproto::StackMode::ABOVE);
 
             context.schedule_action(move |connection, _, _| {
                 connection.configure_window(window, &values)?.check()?;
