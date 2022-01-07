@@ -1,4 +1,4 @@
-use crate::font::FontDescription;
+use super::font::FontDescription;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Text<'a> {

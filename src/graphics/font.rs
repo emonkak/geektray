@@ -1,6 +1,7 @@
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::borrow::Cow;
+use std::convert::TryFrom;
 use std::error;
 use std::ffi::CString;
 use std::fmt;
@@ -125,8 +126,8 @@ impl Default for FontStyle {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Deserialize, Serialize)]
-pub struct FontWeight(#[serde(deserialize_with = "deserialize_font_weight")] pub u16);
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize)]
+pub struct FontWeight(u16);
 
 impl FontWeight {
     pub const THIN: Self = Self(100);
@@ -138,8 +139,12 @@ impl FontWeight {
     pub const BOLD: Self = Self(700);
     pub const EXTRA_BOLD: Self = Self(800);
     pub const BLACK: Self = Self(900);
+}
 
-    pub fn new(weight: u16) -> Result<Self, InvalidWeight> {
+impl TryFrom<u16> for FontWeight {
+    type Error = InvalidWeight;
+
+    fn try_from(weight: u16) -> Result<Self, Self::Error> {
         if 1 <= weight && weight <= 1000 {
             Ok(Self(weight))
         } else {
@@ -154,63 +159,58 @@ impl Default for FontWeight {
     }
 }
 
-fn deserialize_font_weight<'de, D>(deserializer: D) -> Result<u16, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    struct Visitor;
+impl<'de> Deserialize<'de> for FontWeight {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct Visitor;
 
-    impl<'de> serde::de::Visitor<'de> for Visitor {
-        type Value = u16;
+        impl<'de> serde::de::Visitor<'de> for Visitor {
+            type Value = FontWeight;
 
-        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-            write!(
-                formatter,
-                "an integer value from 1 to 1000 or string representing a font weight."
-            )
-        }
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                write!(
+                    formatter,
+                    "an integer value from 1 to 1000 or string representing a font weight."
+                )
+            }
 
-        fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<u16, E> {
-            match s {
-                "Thin" => Ok(FontWeight::THIN.0),
-                "ExtraLight" => Ok(FontWeight::EXTRA_LIGHT.0),
-                "Light" => Ok(FontWeight::LIGHT.0),
-                "Normal" => Ok(FontWeight::NORMAL.0),
-                "Medium" => Ok(FontWeight::MEDIUM.0),
-                "SemiBold" => Ok(FontWeight::SEMI_BOLD.0),
-                "Bold" => Ok(FontWeight::BOLD.0),
-                "ExtraBold" => Ok(FontWeight::EXTRA_BOLD.0),
-                "Black" => Ok(FontWeight::BLACK.0),
-                other => Err(de::Error::unknown_variant(
-                    other,
-                    &[
-                        "Thin",
-                        "ExtraLight",
-                        "Light",
-                        "Normal",
-                        "Medium",
-                        "SemiBold",
-                        "Bold",
-                        "ExtraBold",
-                        "Black",
-                    ],
-                )),
+            fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Self::Value, E> {
+                match s {
+                    "Thin" => Ok(FontWeight::THIN),
+                    "ExtraLight" => Ok(FontWeight::EXTRA_LIGHT),
+                    "Light" => Ok(FontWeight::LIGHT),
+                    "Normal" => Ok(FontWeight::NORMAL),
+                    "Medium" => Ok(FontWeight::MEDIUM),
+                    "SemiBold" => Ok(FontWeight::SEMI_BOLD),
+                    "Bold" => Ok(FontWeight::BOLD),
+                    "ExtraBold" => Ok(FontWeight::EXTRA_BOLD),
+                    "Black" => Ok(FontWeight::BLACK),
+                    other => Err(de::Error::unknown_variant(
+                        other,
+                        &[
+                            "Thin",
+                            "ExtraLight",
+                            "Light",
+                            "Normal",
+                            "Medium",
+                            "SemiBold",
+                            "Bold",
+                            "ExtraBold",
+                            "Black",
+                        ],
+                    )),
+                }
+            }
+
+            fn visit_u16<E: serde::de::Error>(self, n: u16) -> Result<Self::Value, E> {
+                FontWeight::try_from(n).map_err(de::Error::custom)
             }
         }
 
-        fn visit_u16<E: serde::de::Error>(self, n: u16) -> Result<u16, E> {
-            if 1 <= n && n <= 1000 {
-                Ok(n)
-            } else {
-                Err(de::Error::invalid_value(
-                    de::Unexpected::Unsigned(n as u64),
-                    &"The value must be in the range 1 to 1000.",
-                ))
-            }
-        }
+        deserializer.deserialize_any(Visitor)
     }
-
-    deserializer.deserialize_any(Visitor)
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -218,7 +218,7 @@ pub struct InvalidWeight;
 
 impl fmt::Display for InvalidWeight {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("InvalidWeight: The weight value must be in the range 1 to 1000.")
+        f.write_str("the weight value is invalid, it must be in the range 1 to 1000")
     }
 }
 

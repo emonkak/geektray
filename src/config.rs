@@ -1,128 +1,127 @@
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 
-use crate::color::Color;
 use crate::command::Command;
-use crate::font::{FontFamily, FontStretch, FontStyle, FontWeight};
-use crate::hotkey::Hotkey;
-use crate::keyboard::Modifiers;
-use crate::mouse::MouseButton;
-use crate::xkbcommon_sys as xkb;
+use crate::graphics::{Color, FontFamily, FontStretch, FontStyle, FontWeight};
+use crate::ui::xkbcommon_sys as xkb;
+use crate::ui::{KeyMapping, Modifiers, MouseButton};
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Config {
+    pub window: WindowConfig,
     pub ui: UiConfig,
-    pub keys: Vec<Hotkey>,
+    pub keys: Vec<KeyMapping>,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
+            window: WindowConfig::default(),
             ui: UiConfig::default(),
             keys: vec![
-                Hotkey::new(
+                KeyMapping::new(
                     xkb::XKB_KEY_1,
                     Modifiers::none(),
                     vec![Command::SelectItem(0)],
                 ),
-                Hotkey::new(
+                KeyMapping::new(
                     xkb::XKB_KEY_2,
                     Modifiers::none(),
                     vec![Command::SelectItem(1)],
                 ),
-                Hotkey::new(
+                KeyMapping::new(
                     xkb::XKB_KEY_3,
                     Modifiers::none(),
                     vec![Command::SelectItem(2)],
                 ),
-                Hotkey::new(
+                KeyMapping::new(
                     xkb::XKB_KEY_4,
                     Modifiers::none(),
                     vec![Command::SelectItem(3)],
                 ),
-                Hotkey::new(
+                KeyMapping::new(
                     xkb::XKB_KEY_5,
                     Modifiers::none(),
                     vec![Command::SelectItem(4)],
                 ),
-                Hotkey::new(
+                KeyMapping::new(
                     xkb::XKB_KEY_6,
                     Modifiers::none(),
                     vec![Command::SelectItem(5)],
                 ),
-                Hotkey::new(
+                KeyMapping::new(
                     xkb::XKB_KEY_7,
                     Modifiers::none(),
                     vec![Command::SelectItem(6)],
                 ),
-                Hotkey::new(
+                KeyMapping::new(
                     xkb::XKB_KEY_8,
                     Modifiers::none(),
                     vec![Command::SelectItem(7)],
                 ),
-                Hotkey::new(
+                KeyMapping::new(
                     xkb::XKB_KEY_9,
                     Modifiers::none(),
                     vec![Command::SelectItem(8)],
                 ),
-                Hotkey::new(
+                KeyMapping::new(
                     xkb::XKB_KEY_j,
                     Modifiers::none(),
                     vec![Command::SelectNextItem],
                 ),
-                Hotkey::new(
+                KeyMapping::new(
                     xkb::XKB_KEY_Down,
                     Modifiers::none(),
                     vec![Command::SelectNextItem],
                 ),
-                Hotkey::new(
+                KeyMapping::new(
                     xkb::XKB_KEY_n,
                     Modifiers::control(),
                     vec![Command::SelectNextItem],
                 ),
-                Hotkey::new(
+                KeyMapping::new(
                     xkb::XKB_KEY_k,
                     Modifiers::none(),
                     vec![Command::SelectPreviousItem],
                 ),
-                Hotkey::new(
+                KeyMapping::new(
                     xkb::XKB_KEY_Down,
                     Modifiers::none(),
                     vec![Command::SelectPreviousItem],
                 ),
-                Hotkey::new(
+                KeyMapping::new(
                     xkb::XKB_KEY_p,
                     Modifiers::control(),
                     vec![Command::SelectPreviousItem],
                 ),
-                Hotkey::new(
+                KeyMapping::new(
                     xkb::XKB_KEY_l,
                     Modifiers::control(),
                     vec![Command::ClickMouseButton(MouseButton::Left)],
                 ),
-                Hotkey::new(
+                KeyMapping::new(
                     xkb::XKB_KEY_Return,
                     Modifiers::none(),
                     vec![Command::ClickMouseButton(MouseButton::Left)],
                 ),
-                Hotkey::new(
+                KeyMapping::new(
                     xkb::XKB_KEY_Return,
                     Modifiers::none(),
                     vec![Command::ClickMouseButton(MouseButton::Left)],
                 ),
-                Hotkey::new(
+                KeyMapping::new(
                     xkb::XKB_KEY_h,
                     Modifiers::none(),
                     vec![Command::ClickMouseButton(MouseButton::Right)],
                 ),
-                Hotkey::new(
+                KeyMapping::new(
                     xkb::XKB_KEY_Return,
                     Modifiers::shift(),
                     vec![Command::ClickMouseButton(MouseButton::Right)],
                 ),
-                Hotkey::new(xkb::XKB_KEY_q, Modifiers::none(), vec![Command::HideWindow]),
-                Hotkey::new(
+                KeyMapping::new(xkb::XKB_KEY_q, Modifiers::none(), vec![Command::HideWindow]),
+                KeyMapping::new(
                     xkb::XKB_KEY_Escape,
                     Modifiers::none(),
                     vec![Command::HideWindow],
@@ -134,11 +133,29 @@ impl Default for Config {
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(default)]
+pub struct WindowConfig {
+    pub name: Cow<'static, str>,
+    pub class: Cow<'static, str>,
+    pub initial_width: f64,
+}
+
+impl Default for WindowConfig {
+    fn default() -> Self {
+        Self {
+            name: Cow::Borrowed("KeyTray"),
+            class: Cow::Borrowed("KeyTray"),
+            initial_width: 480.0,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(default)]
 pub struct UiConfig {
     pub window_name: Cow<'static, str>,
     pub window_class: Cow<'static, str>,
-    pub window_padding: f64,
     pub window_width: f64,
+    pub container_padding: f64,
     pub item_padding: f64,
     pub item_gap: f64,
     pub icon_size: f64,
@@ -159,8 +176,8 @@ impl Default for UiConfig {
         Self {
             window_name: Cow::Borrowed("KeyTray"),
             window_class: Cow::Borrowed("KeyTray"),
-            window_padding: 8.0,
             window_width: 480.0,
+            container_padding: 8.0,
             item_padding: 0.0,
             item_gap: 8.0,
             item_corner_radius: 4.0,

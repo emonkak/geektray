@@ -66,7 +66,7 @@ mod keysym_serde {
     use std::str;
     use x11rb::protocol::xproto;
 
-    use crate::xkbcommon_sys as xkb;
+    use super::super::xkbcommon_sys as xkb;
 
     pub fn serialize<S>(value: &xproto::Keysym, serializer: S) -> Result<S::Ok, S::Error>
     where

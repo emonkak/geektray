@@ -1,14 +1,14 @@
 use std::rc::Rc;
 use x11rb::protocol;
 use x11rb::protocol::xproto;
-use x11rb::protocol::xproto::ConnectionExt;
+use x11rb::protocol::xproto::ConnectionExt as _;
 
 use crate::config::UiConfig;
-use crate::font::FontDescription;
-use crate::geometrics::{PhysicalPoint, Point, Rect, Size};
-use crate::mouse::MouseButton;
-use crate::render_context::RenderContext;
-use crate::text::{HorizontalAlign, Text, VerticalAlign};
+use crate::graphics::{
+    FontDescription, HorizontalAlign, PhysicalPoint, Point, Rect, RenderContext, Size, Text,
+    VerticalAlign,
+};
+use crate::ui::MouseButton;
 use crate::utils;
 use crate::widget::{Effect, Layout, Widget};
 
@@ -132,25 +132,23 @@ impl Widget for TrayItem {
             },
         );
 
-        context.connection().map_window(self.window).ok();
-
         {
+            let window = self.window;
+
             let mut values = xproto::ConfigureWindowAux::new();
             values.x = Some((position.x + self.config.item_padding) as i32);
             values.y = Some((position.y + self.config.item_padding) as i32);
             values.width = Some(self.config.icon_size as u32);
             values.height = Some(self.config.icon_size as u32);
             values.stack_mode = Some(xproto::StackMode::ABOVE);
-            context
-                .connection()
-                .configure_window(self.window, &values)
-                .ok();
-        }
 
-        context
-            .connection()
-            .clear_area(true, self.window, 0, 0, 0, 0)
-            .ok();
+            context.schedule_action(move |connection, _, _| {
+                connection.configure_window(window, &values)?.check()?;
+                connection.map_window(window)?.check()?;
+                connection.clear_area(true, window, 0, 0, 0, 0)?.check()?;
+                Ok(())
+            });
+        }
     }
 
     fn layout(&self, container_size: Size) -> Layout {

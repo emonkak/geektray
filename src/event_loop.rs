@@ -7,13 +7,11 @@ use nix::sys::signalfd;
 use nix::unistd;
 use std::ffi::CStr;
 use std::os::raw::*;
-use std::os::unix::io::AsRawFd;
-use std::os::unix::io::RawFd;
+use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
 use std::time::Duration;
 use x11rb::connection::Connection;
 use x11rb::protocol;
-use x11rb::xcb_ffi::XCBConnection;
 
 use crate::dbus::{DBusArguments, DBusConnection, DBusMessage, DBusVariant};
 
@@ -24,15 +22,15 @@ const EVENT_KIND_DBUS: u64 = 3;
 const DBUS_INTERFACE_NAME: &'static [u8] = b"io.github.emonkak.keytray\0";
 
 #[derive(Debug)]
-pub struct EventLoop {
-    connection: Rc<XCBConnection>,
+pub struct EventLoop<Connection> {
+    connection: Rc<Connection>,
     epoll_fd: RawFd,
     signal_fd: signalfd::SignalFd,
     dbus_connection: DBusConnection,
 }
 
-impl EventLoop {
-    pub fn new(connection: Rc<XCBConnection>) -> anyhow::Result<Self> {
+impl<Connection: self::Connection + AsRawFd> EventLoop<Connection> {
+    pub fn new(connection: Rc<Connection>) -> anyhow::Result<Self> {
         let epoll_fd = epoll::epoll_create()?;
         let signal_fd = {
             let mut mask = signalfd::SigSet::empty();
@@ -83,7 +81,7 @@ impl EventLoop {
 
     pub fn run<F>(&mut self, mut callback: F) -> anyhow::Result<()>
     where
-        F: FnMut(Event, &mut ControlFlow, &mut EventLoop) -> anyhow::Result<()>,
+        F: FnMut(Event, &mut ControlFlow, &mut EventLoop<Connection>) -> anyhow::Result<()>,
     {
         let mut epoll_events = vec![epoll::EpollEvent::empty(); 3];
         let mut control_flow = ControlFlow::Continue;
@@ -102,7 +100,7 @@ impl EventLoop {
                         }
                     }
                 } else if epoll_event.data() == EVENT_KIND_SIGNAL {
-                    if let Ok(Some(signal)) = self.signal_fd.read_signal() {
+                    if let Some(signal) = self.signal_fd.read_signal()? {
                         callback(Event::Signal(signal), &mut control_flow, self)?;
 
                         if matches!(control_flow, ControlFlow::Break) {
@@ -166,7 +164,7 @@ impl EventLoop {
     }
 }
 
-impl Drop for EventLoop {
+impl<Connection> Drop for EventLoop<Connection> {
     fn drop(&mut self) {
         unistd::close(self.epoll_fd).ok();
     }

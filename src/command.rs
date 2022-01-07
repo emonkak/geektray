@@ -2,7 +2,7 @@ use serde::de;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 
-use crate::mouse::MouseButton;
+use crate::ui::MouseButton;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
 #[serde(tag = "type", content = "args")]

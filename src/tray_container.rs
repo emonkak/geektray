@@ -3,11 +3,9 @@ use x11rb::protocol;
 use x11rb::protocol::xproto;
 
 use crate::config::UiConfig;
-use crate::font::FontDescription;
-use crate::geometrics::{Point, Size};
-use crate::mouse::MouseButton;
-use crate::render_context::RenderContext;
+use crate::graphics::{FontDescription, Point, RenderContext, Size};
 use crate::tray_item::TrayItem;
+use crate::ui::MouseButton;
 use crate::widget::{Effect, Layout, Widget};
 
 #[derive(Debug)]
@@ -143,7 +141,7 @@ impl Widget for TrayContainer {
         _index: usize,
         context: &mut RenderContext,
     ) {
-        context.fill_background(self.config.color.window_background);
+        context.clear(self.config.color.window_background);
 
         for (index, (tray_item, (child_position, child_layout))) in self
             .tray_items
@@ -156,16 +154,16 @@ impl Widget for TrayContainer {
     }
 
     fn layout(&self, container_size: Size) -> Layout {
-        let mut total_height = self.config.window_padding * 2.0;
+        let mut total_height = self.config.container_padding * 2.0;
         let mut child_position = Point {
-            x: self.config.window_padding,
-            y: self.config.window_padding,
+            x: self.config.container_padding,
+            y: self.config.container_padding,
         };
         let mut children = Vec::with_capacity(self.tray_items.len());
 
         let container_inset = Size {
-            width: container_size.width - self.config.window_padding * 2.0,
-            height: container_size.height - self.config.window_padding * 2.0,
+            width: container_size.width - self.config.container_padding * 2.0,
+            height: container_size.height - self.config.container_padding * 2.0,
         };
 
         for (index, tray_item) in self.tray_items.iter().enumerate() {

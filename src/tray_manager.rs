@@ -10,15 +10,15 @@ use x11rb::protocol::xproto;
 use x11rb::protocol::xproto::ConnectionExt;
 
 use crate::atoms::Atoms;
+use crate::ui::{XEmbedInfo, XEmbedMessage};
 use crate::utils;
-use crate::xembed::{XEmbedInfo, XEmbedMessage};
 
 const SYSTEM_TRAY_REQUEST_DOCK: u32 = 0;
 const SYSTEM_TRAY_BEGIN_MESSAGE: u32 = 1;
 const SYSTEM_TRAY_CANCEL_MESSAGE: u32 = 2;
 
 #[derive(Debug)]
-pub struct TrayManager<Connection> {
+pub struct TrayManager<Connection: self::Connection> {
     connection: Rc<Connection>,
     screen_num: usize,
     window: xproto::Window,
@@ -34,8 +34,8 @@ impl<Connection: self::Connection> TrayManager<Connection> {
         screen_num: usize,
         window: xproto::Window,
         atoms: Rc<Atoms>,
-    ) -> Result<Self, ReplyError> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             connection,
             screen_num,
             window,
@@ -43,7 +43,7 @@ impl<Connection: self::Connection> TrayManager<Connection> {
             atoms,
             embedded_icons: HashMap::new(),
             balloon_messages: HashMap::new(),
-        })
+        }
     }
 
     pub fn acquire_tray_selection(&mut self) -> Result<bool, ReplyError> {
@@ -87,7 +87,100 @@ impl<Connection: self::Connection> TrayManager<Connection> {
         Ok(true)
     }
 
-    pub fn release_tray_selection(&mut self) -> Result<(), ReplyError> {
+    pub fn process_event(
+        &mut self,
+        event: &protocol::Event,
+    ) -> Result<Option<TrayEvent>, ReplyError> {
+        use protocol::Event::*;
+
+        let response = match event {
+            ClientMessage(event) if event.type_ == self.atoms._NET_SYSTEM_TRAY_OPCODE => {
+                let data = event.data.as_data32();
+                let opcode = data[1];
+                if opcode == SYSTEM_TRAY_REQUEST_DOCK {
+                    let window = data[2];
+                    if self.register_tray_icon(window)? {
+                        Some(TrayEvent::TrayIconAdded(window))
+                    } else {
+                        None
+                    }
+                } else if opcode == SYSTEM_TRAY_BEGIN_MESSAGE {
+                    let balloon_message = BalloonMessage::new(event.data.as_data32());
+                    self.balloon_messages.insert(event.window, balloon_message);
+                    None
+                } else if opcode == SYSTEM_TRAY_CANCEL_MESSAGE {
+                    if let hash_map::Entry::Occupied(entry) =
+                        self.balloon_messages.entry(event.window)
+                    {
+                        let [_, _, id, ..] = event.data.as_data32();
+                        if entry.get().id == id {
+                            entry.remove();
+                        }
+                    }
+                    None
+                } else {
+                    None
+                }
+            }
+            ClientMessage(event) if event.type_ == self.atoms._NET_SYSTEM_TRAY_MESSAGE_DATA => {
+                if let hash_map::Entry::Occupied(mut entry) =
+                    self.balloon_messages.entry(event.window)
+                {
+                    entry.get_mut().write_message(&event.data.as_data8());
+                    if entry.get().remaining_len() == 0 {
+                        let balloon_message = entry.remove();
+                        Some(TrayEvent::BalloonMessageReceived(
+                            event.window,
+                            balloon_message,
+                        ))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            SelectionClear(event)
+                if event.selection == self.atoms._NET_SYSTEM_TRAY_S
+                    && event.owner == self.window =>
+            {
+                self.embedded_icons.clear();
+                self.status = TrayStatus::Waiting;
+                Some(TrayEvent::SelectionCleared)
+            }
+            PropertyNotify(event) if event.atom == self.atoms._XEMBED_INFO => {
+                if self.register_tray_icon(event.window)? {
+                    Some(TrayEvent::TrayIconAdded(event.window))
+                } else {
+                    None
+                }
+            }
+            ReparentNotify(event) if event.parent != self.window => {
+                self.unregister_tray_icon(event.window)?;
+                Some(TrayEvent::TrayIconRemoved(event.window))
+            }
+            DestroyNotify(event) => match self.status {
+                TrayStatus::Pending(window) if event.window == window => {
+                    broadcast_manager_message(
+                        self.connection.as_ref(),
+                        self.screen_num,
+                        self.window,
+                        &self.atoms,
+                    )?;
+                    None
+                }
+                _ => {
+                    self.unregister_tray_icon(event.window)?;
+                    Some(TrayEvent::TrayIconRemoved(event.window))
+                }
+            },
+            _ => None,
+        };
+
+        Ok(response)
+    }
+
+    fn release_tray_selection(&mut self) -> Result<(), ReplyError> {
         if matches!(self.status, TrayStatus::Managed) {
             for (window, xembed_info) in self.embedded_icons.drain() {
                 if xembed_info.is_mapped() {
@@ -109,150 +202,58 @@ impl<Connection: self::Connection> TrayManager<Connection> {
         Ok(())
     }
 
-    pub fn process_event<F>(
-        &mut self,
-        event: &protocol::Event,
-        mut callback: F,
-    ) -> Result<(), ReplyError>
-    where
-        F: FnMut(TrayEvent) -> Result<(), ReplyError>,
-    {
-        use protocol::Event::*;
+    fn register_tray_icon(&mut self, icon_window: xproto::Window) -> Result<bool, ReplyError> {
+        let is_embedded = if let Some(xembed_info) =
+            get_xembed_info(self.connection.as_ref(), icon_window, &self.atoms)?
+        {
+            let old_state = self
+                .embedded_icons
+                .insert(icon_window, xembed_info)
+                .map(|xembed_info| xembed_info.is_mapped());
 
-        match event {
-            ClientMessage(event) if event.type_ == self.atoms._NET_SYSTEM_TRAY_OPCODE => {
-                let data = event.data.as_data32();
-                let opcode = data[1];
-                if opcode == SYSTEM_TRAY_REQUEST_DOCK {
-                    let window = data[2];
-                    if let Some(xembed_info) =
-                        get_xembed_info(self.connection.as_ref(), window, &self.atoms)?
-                    {
-                        if let Some(event) = self.register_tray_icon(window, xembed_info)? {
-                            callback(event)?;
-                        }
-                    }
-                } else if opcode == SYSTEM_TRAY_BEGIN_MESSAGE {
-                    let balloon_message = BalloonMessage::new(event.data.as_data32());
-                    self.balloon_messages.insert(event.window, balloon_message);
-                } else if opcode == SYSTEM_TRAY_CANCEL_MESSAGE {
-                    if let hash_map::Entry::Occupied(entry) =
-                        self.balloon_messages.entry(event.window)
-                    {
-                        let [_, _, id, ..] = event.data.as_data32();
-                        if entry.get().id == id {
-                            entry.remove();
-                        }
-                    }
-                }
-            }
-            ClientMessage(event) if event.type_ == self.atoms._NET_SYSTEM_TRAY_MESSAGE_DATA => {
-                if let hash_map::Entry::Occupied(mut entry) =
-                    self.balloon_messages.entry(event.window)
-                {
-                    entry.get_mut().write_message(&event.data.as_data8());
-                    if entry.get().remaining_len() == 0 {
-                        let balloon_message = entry.remove();
-                        callback(TrayEvent::BalloonMessageReceived(
-                            event.window,
-                            balloon_message,
-                        ))?;
-                    }
-                }
-            }
-            SelectionClear(event) if event.selection == self.atoms._NET_SYSTEM_TRAY_S => {
-                if event.owner == self.window {
-                    self.embedded_icons.clear();
-                    self.status = TrayStatus::Waiting;
-                    callback(TrayEvent::SelectionCleared)?;
-                }
-            }
-            PropertyNotify(event) if event.atom == self.atoms._XEMBED_INFO => {
-                if let Some(xembed_info) =
-                    get_xembed_info(self.connection.as_ref(), event.window, &self.atoms)?
-                {
-                    if let Some(event) = self.register_tray_icon(event.window, xembed_info)? {
-                        callback(event)?;
-                    }
-                }
-            }
-            ReparentNotify(event) => {
-                if event.parent != self.window {
-                    let event = self.unregister_tray_icon(event.window)?;
-                    callback(event)?;
-                }
-            }
-            DestroyNotify(event) => match self.status {
-                TrayStatus::Pending(window) if event.window == window => {
-                    broadcast_manager_message(
+            match (old_state, xembed_info.is_mapped()) {
+                (None, false) => {
+                    send_xembed_message(
                         self.connection.as_ref(),
-                        self.screen_num,
+                        icon_window,
                         self.window,
+                        XEmbedMessage::EmbeddedNotify,
+                        xembed_info.version,
                         &self.atoms,
                     )?;
+                    wait_for_embedding(self.connection.as_ref(), icon_window)?;
+                    false
                 }
-                _ => {
-                    let event = self.unregister_tray_icon(event.window)?;
-                    callback(event)?;
+                (None, true) => {
+                    send_xembed_message(
+                        self.connection.as_ref(),
+                        icon_window,
+                        self.window,
+                        XEmbedMessage::EmbeddedNotify,
+                        xembed_info.version,
+                        &self.atoms,
+                    )?;
+                    begin_embedding(self.connection.as_ref(), icon_window, self.window)?;
+                    true
                 }
-            },
-            _ => {}
-        }
+                (Some(false), true) => {
+                    begin_embedding(self.connection.as_ref(), icon_window, self.window)?;
+                    true
+                }
+                (Some(true), false) => {
+                    release_embedding(self.connection.as_ref(), self.screen_num, icon_window)?;
+                    false
+                }
+                _ => false,
+            }
+        } else {
+            false
+        };
 
-        Ok(())
+        Ok(is_embedded)
     }
 
-    fn register_tray_icon(
-        &mut self,
-        icon_window: xproto::Window,
-        xembed_info: XEmbedInfo,
-    ) -> Result<Option<TrayEvent>, ReplyError> {
-        let old_is_mapped = self
-            .embedded_icons
-            .insert(icon_window, xembed_info)
-            .map(|xembed_info| xembed_info.is_mapped());
-
-        match (old_is_mapped, xembed_info.is_mapped()) {
-            (None, false) => {
-                send_xembed_message(
-                    self.connection.as_ref(),
-                    icon_window,
-                    self.window,
-                    XEmbedMessage::EmbeddedNotify,
-                    xembed_info.version,
-                    &self.atoms,
-                )?;
-                wait_for_embedding(self.connection.as_ref(), icon_window)?;
-                Ok(None)
-            }
-            (None, true) => {
-                send_xembed_message(
-                    self.connection.as_ref(),
-                    icon_window,
-                    self.window,
-                    XEmbedMessage::EmbeddedNotify,
-                    xembed_info.version,
-                    &self.atoms,
-                )?;
-                begin_embedding(self.connection.as_ref(), icon_window, self.window)?;
-                Ok(Some(TrayEvent::TrayIconAdded(icon_window)))
-            }
-            (Some(false), true) => {
-                begin_embedding(self.connection.as_ref(), icon_window, self.window)?;
-                Ok(Some(TrayEvent::TrayIconAdded(icon_window)))
-            }
-            (Some(true), false) => {
-                release_embedding(self.connection.as_ref(), self.screen_num, icon_window)?;
-                Ok(Some(TrayEvent::TrayIconRemoved(icon_window)))
-            }
-            _ => Ok(None),
-        }
-    }
-
-    fn unregister_tray_icon(
-        &mut self,
-        icon_window: xproto::Window,
-    ) -> Result<TrayEvent, ReplyError> {
+    fn unregister_tray_icon(&mut self, icon_window: xproto::Window) -> Result<(), ReplyError> {
         if let Some(xembed_info) = self.embedded_icons.remove(&icon_window) {
             if xembed_info.is_mapped() {
                 release_embedding(self.connection.as_ref(), self.screen_num, icon_window)?;
@@ -261,7 +262,13 @@ impl<Connection: self::Connection> TrayManager<Connection> {
 
         self.balloon_messages.remove(&icon_window);
 
-        Ok(TrayEvent::TrayIconRemoved(icon_window))
+        Ok(())
+    }
+}
+
+impl<Connection: self::Connection> Drop for TrayManager<Connection> {
+    fn drop(&mut self) {
+        self.release_tray_selection().ok();
     }
 }
 

@@ -1,11 +1,10 @@
 use std::ops::Add;
 use x11rb::errors::ReplyError;
-use x11rb::protocol::xproto;
 use x11rb::protocol;
+use x11rb::protocol::xproto;
 use x11rb::xcb_ffi::XCBConnection;
 
-use crate::geometrics::{Point, Size};
-use crate::render_context::RenderContext;
+use crate::graphics::{Point, RenderContext, Size};
 
 pub trait Widget {
     fn render(&self, position: Point, layout: &Layout, index: usize, context: &mut RenderContext);

@@ -10,14 +10,13 @@ use x11rb::wrapper::ConnectionExt as _;
 use x11rb::xcb_ffi::XCBConnection;
 
 use crate::atoms::Atoms;
-use crate::config::UiConfig;
+use crate::config::WindowConfig;
 use crate::event_loop::ControlFlow;
-use crate::geometrics::{PhysicalPoint, PhysicalSize, Point, Size};
-use crate::render_context::RenderContext;
+use crate::graphics::{PhysicalPoint, PhysicalSize, Point, RenderContext, Size};
 use crate::widget::{Effect, Layout, Widget};
 
 #[derive(Debug)]
-pub struct Window<Widget> {
+pub struct MainWindow<Widget> {
     widget: Widget,
     connection: Rc<XCBConnection>,
     screen_num: usize,
@@ -28,20 +27,20 @@ pub struct Window<Widget> {
     is_mapped: bool,
 }
 
-impl<Widget: self::Widget> Window<Widget> {
+impl<Widget: self::Widget> MainWindow<Widget> {
     pub fn new(
         widget: Widget,
         connection: Rc<XCBConnection>,
         screen_num: usize,
         atoms: &Atoms,
-        config: &UiConfig,
+        config: &WindowConfig,
     ) -> Result<Self, ReplyError> {
         let layout = widget.layout(Size {
-            width: config.window_width,
+            width: config.initial_width,
             height: 0.0,
         });
         let size = layout.size.snap();
-        let position = get_window_position(&connection, screen_num, size);
+        let position = get_window_position(connection.as_ref(), screen_num, size);
 
         let window = {
             let window_id = connection.generate_id().unwrap();
@@ -97,9 +96,9 @@ impl<Widget: self::Widget> Window<Widget> {
                 .change_property8(
                     xproto::PropMode::REPLACE,
                     window,
-                    atoms.WM_NAME,
+                    xproto::AtomEnum::WM_NAME,
                     xproto::AtomEnum::STRING,
-                    config.window_name.as_bytes(),
+                    config.name.as_bytes(),
                 )?
                 .check()?;
             connection
@@ -108,22 +107,18 @@ impl<Widget: self::Widget> Window<Widget> {
                     window,
                     atoms._NET_WM_NAME,
                     atoms.UTF8_STRING,
-                    config.window_name.as_bytes(),
+                    config.name.as_bytes(),
                 )?
                 .check()?;
         }
 
         {
-            let class_string = format!(
-                "{}\0{}",
-                config.window_class.as_ref(),
-                config.window_class.as_ref()
-            );
+            let class_string = format!("{}\0{}", config.class.as_ref(), config.class.as_ref());
             connection
                 .change_property8(
                     xproto::PropMode::REPLACE,
                     window,
-                    atoms.WM_CLASS,
+                    xproto::AtomEnum::WM_CLASS,
                     xproto::AtomEnum::STRING,
                     class_string.as_bytes(),
                 )?
@@ -185,7 +180,7 @@ impl<Widget: self::Widget> Window<Widget> {
         })
     }
 
-    pub fn window(&self) -> xproto::Window {
+    pub fn id(&self) -> xproto::Window {
         self.window
     }
 
@@ -203,8 +198,8 @@ impl<Widget: self::Widget> Window<Widget> {
         Ok(())
     }
 
-    pub fn move_at_center(&self) -> Result<(), ConnectionError> {
-        let position = get_window_position(&self.connection, self.screen_num, self.size);
+    pub fn adjust_position(&self) -> Result<(), ConnectionError> {
+        let position = get_window_position(self.connection.as_ref(), self.screen_num, self.size);
         let mut values = xproto::ConfigureWindowAux::new();
         values.x = Some(position.x as i32);
         values.y = Some(position.y as i32);
@@ -278,7 +273,7 @@ impl<Widget: self::Widget> Window<Widget> {
                     pending_effects.extend(effects);
                 }
                 Effect::Action(action) => {
-                    action(&self.connection, self.screen_num, self.window)?;
+                    action(self.connection.as_ref(), self.screen_num, self.window)?;
                     result = true;
                 }
                 Effect::RequestRedraw => {
@@ -366,7 +361,7 @@ impl<Widget: self::Widget> Window<Widget> {
     }
 }
 
-impl<Widget> Drop for Window<Widget> {
+impl<Widget> Drop for MainWindow<Widget> {
     fn drop(&mut self) {
         self.connection.destroy_window(self.window).ok();
     }

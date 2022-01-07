@@ -162,7 +162,7 @@ pub fn get_variable_property<Connection: self::Connection>(
     connection: &Connection,
     window: xproto::Window,
     property_atom: xproto::Atom,
-    property_type: xproto::AtomEnum,
+    property_type: xproto::Atom,
     property_buffer: u64,
 ) -> Result<Option<Vec<u8>>, ReplyError> {
     let reply = connection
@@ -176,7 +176,7 @@ pub fn get_variable_property<Connection: self::Connection>(
         )?
         .reply()?;
 
-    if reply.type_ != u32::from(property_type)
+    if reply.type_ != property_type
         || reply.format != 8
         || reply.value_len == 0
         || reply.value.len() == 0
@@ -199,7 +199,7 @@ pub fn get_variable_property<Connection: self::Connection>(
             )?
             .reply()?;
 
-        if reply.type_ != u32::from(property_type)
+        if reply.type_ != property_type
             || reply.format != 8
             || reply.value_len == 0
             || reply.value.len() == 0

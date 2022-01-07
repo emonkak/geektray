@@ -1,5 +1,6 @@
 use libdbus_sys as dbus;
 use std::ffi::CString;
+use std::mem::ManuallyDrop;
 use std::rc::Rc;
 use std::str::FromStr;
 use x11rb::connection::Connection;
@@ -11,78 +12,86 @@ use x11rb::xcb_ffi::XCBConnection;
 
 use crate::atoms::Atoms;
 use crate::command::Command;
-use crate::config::{Config, UiConfig};
+use crate::config::Config;
 use crate::event_loop::{ControlFlow, Event, EventLoop};
-use crate::font::FontDescription;
-use crate::hotkey::HotkeyInterpreter;
-use crate::keyboard::{KeyboardMapping, Modifiers};
+use crate::graphics::FontDescription;
+use crate::main_window::MainWindow;
 use crate::tray_container::TrayContainer;
 use crate::tray_manager::{TrayEvent, TrayManager};
+use crate::ui::{KeyMappingManager, KeyboardMapping, Modifiers};
 use crate::utils;
-use crate::window::Window;
 
 #[derive(Debug)]
 pub struct App {
     connection: Rc<XCBConnection>,
     screen_num: usize,
-    config: Rc<UiConfig>,
     atoms: Rc<Atoms>,
+    main_window: ManuallyDrop<MainWindow<TrayContainer>>,
+    tray_manager: ManuallyDrop<TrayManager<XCBConnection>>,
     keyboard_mapping: KeyboardMapping,
-    hotkey_interpreter: HotkeyInterpreter,
+    key_mapping_manager: KeyMappingManager,
 }
 
 impl App {
     pub fn new(config: Config) -> anyhow::Result<Self> {
         let (connection, screen_num) = XCBConnection::connect(None)?;
-        let atoms = Atoms::new(&connection, screen_num)?;
-        let keyboard_mapping = KeyboardMapping::from_connection(&connection)?;
-        Ok(Self {
-            connection: Rc::new(connection),
+        let connection = Rc::new(connection);
+
+        let atoms = Rc::new(Atoms::new(connection.as_ref(), screen_num)?);
+
+        let font = FontDescription::new(
+            config.ui.font.family.clone(),
+            config.ui.font.style,
+            config.ui.font.weight.into(),
+            config.ui.font.stretch,
+        );
+        let tray_container = TrayContainer::new(Rc::new(config.ui), Rc::new(font));
+
+        let main_window = MainWindow::new(
+            tray_container,
+            connection.clone(),
             screen_num,
-            config: Rc::new(config.ui),
-            atoms: Rc::new(atoms),
-            hotkey_interpreter: HotkeyInterpreter::new(config.keys),
+            atoms.as_ref(),
+            &config.window,
+        )?;
+
+        let tray_manager = TrayManager::new(
+            connection.clone(),
+            screen_num,
+            main_window.id(),
+            atoms.clone(),
+        );
+
+        let keyboard_mapping = KeyboardMapping::from_connection(connection.as_ref())?;
+        let key_mapping_manager = KeyMappingManager::new(config.keys);
+
+        Ok(Self {
+            connection,
+            screen_num,
+            atoms,
+            main_window: ManuallyDrop::new(main_window),
+            tray_manager: ManuallyDrop::new(tray_manager),
             keyboard_mapping,
+            key_mapping_manager,
         })
     }
 
     pub fn run(&mut self) -> anyhow::Result<()> {
-        let font = FontDescription::new(
-            self.config.font.family.clone(),
-            self.config.font.style,
-            self.config.font.weight.into(),
-            self.config.font.stretch,
-        );
-        let tray_container = TrayContainer::new(self.config.clone(), Rc::new(font));
-
-        let mut window = Window::new(
-            tray_container,
-            self.connection.clone(),
-            self.screen_num,
-            &self.atoms,
-            &self.config,
-        )?;
-        let mut tray_manager = TrayManager::new(
-            self.connection.clone(),
-            self.screen_num,
-            window.window(),
-            self.atoms.clone(),
-        )?;
         let mut event_loop = EventLoop::new(self.connection.clone())?;
 
-        tray_manager.acquire_tray_selection()?;
+        self.tray_manager.acquire_tray_selection()?;
 
-        window.show()?;
+        self.main_window.show()?;
 
         event_loop.run(|event, control_flow, context| match event {
             Event::X11Event(event) => {
-                self.on_x11_event(&event, &mut window, control_flow)?;
-                tray_manager.process_event(&event, |event| {
-                    self.on_tray_event(&event, &mut window, context, control_flow)
-                })?;
-                if get_window_from_event(&event) == Some(window.window()) {
-                    window.on_event(&event, control_flow)?;
+                if let Some(event) = self.tray_manager.process_event(&event)? {
+                    self.on_tray_event(&event, context, control_flow)?;
                 }
+                if get_window_from_event(&event) == Some(self.main_window.id()) {
+                    self.main_window.on_event(&event, control_flow)?;
+                }
+                self.on_x11_event(&event, control_flow)?;
                 Ok(())
             }
             Event::DBusMessage(message) => {
@@ -95,7 +104,7 @@ impl App {
                 ) {
                     (MethodCall, "/", command_str) => {
                         if let Ok(command) = Command::from_str(command_str) {
-                            run_command(command, &mut window)?;
+                            run_command(command, &mut self.main_window)?;
                         }
                         context.send_dbus_message(&message.new_method_return());
                     }
@@ -109,17 +118,14 @@ impl App {
             }
         })?;
 
-        tray_manager.release_tray_selection()?;
-
         Ok(())
     }
 
     fn on_x11_event(
         &mut self,
         event: &protocol::Event,
-        window: &mut Window<TrayContainer>,
         _control_flow: &mut ControlFlow,
-    ) -> Result<(), ReplyError> {
+    ) -> anyhow::Result<()> {
         use protocol::Event::*;
 
         match event {
@@ -132,23 +138,28 @@ impl App {
                 };
                 if let Some(key) = self.keyboard_mapping.get_key(event.detail, level) {
                     let modifiers = Modifiers::from_keymask(event.state);
-                    let commands = self.hotkey_interpreter.eval(key, modifiers);
+                    let commands = self.key_mapping_manager.eval(key, modifiers);
                     for command in commands {
-                        if !run_command(*command, window)? {
+                        if !run_command(*command, &mut self.main_window)? {
                             break;
                         }
                     }
                 }
             }
             PropertyNotify(event)
-                if event.atom == self.atoms.WM_NAME || event.atom == self.atoms._NET_WM_NAME =>
+                if event.atom == u32::from(xproto::AtomEnum::WM_NAME)
+                    || event.atom == u32::from(xproto::AtomEnum::WM_CLASS)
+                    || event.atom == self.atoms._NET_WM_NAME =>
             {
-                if window.widget().contains_window(event.window) {
+                if self.main_window.widget().contains_window(event.window) {
                     let title =
                         get_window_title(self.connection.as_ref(), event.window, &self.atoms)?
                             .unwrap_or_default();
-                    let effect = window.widget_mut().change_title(event.window, title);
-                    window.apply_effect(effect)?;
+                    let effect = self
+                        .main_window
+                        .widget_mut()
+                        .change_title(event.window, title);
+                    self.main_window.apply_effect(effect)?;
                 }
             }
             ClientMessage(event)
@@ -167,9 +178,9 @@ impl App {
                         reply_event,
                     )?;
                 } else if protocol == self.atoms._NET_WM_SYNC_REQUEST {
-                    window.request_redraw()?;
+                    self.main_window.request_redraw()?;
                 } else if protocol == self.atoms.WM_DELETE_WINDOW {
-                    window.hide()?;
+                    self.main_window.hide()?;
                 }
             }
             _ => {}
@@ -181,16 +192,13 @@ impl App {
     fn on_tray_event(
         &mut self,
         event: &TrayEvent,
-        window: &mut Window<TrayContainer>,
-        context: &mut EventLoop,
+        context: &mut EventLoop<XCBConnection>,
         control_flow: &mut ControlFlow,
-    ) -> Result<(), ReplyError> {
+    ) -> anyhow::Result<()> {
         match event {
             TrayEvent::BalloonMessageReceived(icon_window, balloon_message) => {
                 let summary =
-                    get_window_title(self.connection.as_ref(), *icon_window, &self.atoms)
-                        .ok()
-                        .flatten()
+                    get_window_title(self.connection.as_ref(), *icon_window, &self.atoms)?
                         .and_then(|title| CString::new(title).ok())
                         .unwrap_or_default();
                 context.send_notification(
@@ -201,16 +209,17 @@ impl App {
                 );
             }
             TrayEvent::TrayIconAdded(icon_window) => {
-                let title = get_window_title(self.connection.as_ref(), *icon_window, &self.atoms)
-                    .ok()
-                    .flatten()
+                let title = get_window_title(self.connection.as_ref(), *icon_window, &self.atoms)?
                     .unwrap_or_default();
-                let effect = window.widget_mut().add_tray_item(*icon_window, title);
-                window.apply_effect(effect)?;
+                let effect = self
+                    .main_window
+                    .widget_mut()
+                    .add_tray_item(*icon_window, title);
+                self.main_window.apply_effect(effect)?;
             }
             TrayEvent::TrayIconRemoved(icon_window) => {
-                let effect = window.widget_mut().remove_tray_item(*icon_window);
-                window.apply_effect(effect)?;
+                let effect = self.main_window.widget_mut().remove_tray_item(*icon_window);
+                self.main_window.apply_effect(effect)?;
             }
             TrayEvent::SelectionCleared => {
                 *control_flow = ControlFlow::Break;
@@ -221,37 +230,49 @@ impl App {
     }
 }
 
-fn run_command(command: Command, window: &mut Window<TrayContainer>) -> Result<bool, ReplyError> {
+impl Drop for App {
+    fn drop(&mut self) {
+        unsafe {
+            ManuallyDrop::drop(&mut self.tray_manager);
+            ManuallyDrop::drop(&mut self.main_window);
+        }
+    }
+}
+
+fn run_command(
+    command: Command,
+    main_window: &mut MainWindow<TrayContainer>,
+) -> Result<bool, ReplyError> {
     match command {
         Command::HideWindow => {
-            window.hide()?;
-            let effect = window.widget_mut().select_item(None);
-            window.apply_effect(effect).map(|_| true)
+            main_window.hide()?;
+            let effect = main_window.widget_mut().select_item(None);
+            main_window.apply_effect(effect).map(|_| true)
         }
         Command::ShowWindow => {
-            window.move_at_center()?;
-            window.show()?;
+            main_window.adjust_position()?;
+            main_window.show()?;
             Ok(true)
         }
         Command::ToggleWindow => {
-            window.toggle()?;
+            main_window.toggle()?;
             Ok(true)
         }
         Command::SelectItem(index) => {
-            let effect = window.widget_mut().select_item(Some(index));
-            window.apply_effect(effect)
+            let effect = main_window.widget_mut().select_item(Some(index));
+            main_window.apply_effect(effect)
         }
         Command::SelectNextItem => {
-            let effect = window.widget_mut().select_next_item();
-            window.apply_effect(effect)
+            let effect = main_window.widget_mut().select_next_item();
+            main_window.apply_effect(effect)
         }
         Command::SelectPreviousItem => {
-            let effect = window.widget_mut().select_previous_item();
-            window.apply_effect(effect)
+            let effect = main_window.widget_mut().select_previous_item();
+            main_window.apply_effect(effect)
         }
         Command::ClickMouseButton(button) => {
-            let effect = window.widget_mut().click_selected_item(button);
-            window.apply_effect(effect)
+            let effect = main_window.widget_mut().click_selected_item(button);
+            main_window.apply_effect(effect)
         }
     }
 }
@@ -302,10 +323,10 @@ fn get_window_title<Connection: self::Connection>(
         connection,
         window,
         atoms._NET_WM_NAME,
-        xproto::AtomEnum::STRING,
+        atoms.UTF8_STRING,
         256,
     )?
-    .and_then(null_terminated_bytes_to_string)
+    .and_then(|bytes| String::from_utf8(bytes).ok())
     {
         return Ok(Some(title));
     }
@@ -313,11 +334,11 @@ fn get_window_title<Connection: self::Connection>(
     if let Some(title) = utils::get_variable_property(
         connection,
         window,
-        atoms.WM_NAME,
-        xproto::AtomEnum::STRING,
+        xproto::AtomEnum::WM_NAME.into(),
+        xproto::AtomEnum::STRING.into(),
         256,
     )?
-    .and_then(null_terminated_bytes_to_string)
+    .and_then(|bytes| String::from_utf8(bytes).ok())
     {
         return Ok(Some(title));
     }
@@ -325,8 +346,8 @@ fn get_window_title<Connection: self::Connection>(
     if let Some(class_name) = utils::get_variable_property(
         connection,
         window,
-        atoms.WM_CLASS,
-        xproto::AtomEnum::STRING,
+        xproto::AtomEnum::WM_CLASS.into(),
+        xproto::AtomEnum::STRING.into(),
         256,
     )?
     .and_then(null_terminated_bytes_to_string)

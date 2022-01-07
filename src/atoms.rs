@@ -8,9 +8,7 @@ use x11rb::protocol::xproto::ConnectionExt;
 pub struct Atoms {
     pub MANAGER: xproto::Atom,
     pub UTF8_STRING: xproto::Atom,
-    pub WM_CLASS: xproto::Atom,
     pub WM_DELETE_WINDOW: xproto::Atom,
-    pub WM_NAME: xproto::Atom,
     pub WM_PROTOCOLS: xproto::Atom,
     pub _NET_SYSTEM_TRAY_S: xproto::Atom,
     pub _NET_SYSTEM_TRAY_MESSAGE_DATA: xproto::Atom,
@@ -37,9 +35,7 @@ impl Atoms {
         Ok(Self {
             MANAGER: new_atom(connection, "MANAGER")?,
             UTF8_STRING: new_atom(connection, "UTF8_STRING")?,
-            WM_CLASS: xproto::AtomEnum::WM_CLASS.into(),
             WM_DELETE_WINDOW: new_atom(connection, "WM_DELETE_WINDOW")?,
-            WM_NAME: xproto::AtomEnum::WM_NAME.into(),
             WM_PROTOCOLS: new_atom(connection, "WM_PROTOCOLS")?,
             _NET_SYSTEM_TRAY_S: new_atom(connection, &format!("_NET_SYSTEM_TRAY_S{}", screen_num))?,
             _NET_SYSTEM_TRAY_MESSAGE_DATA: new_atom(connection, "_NET_SYSTEM_TRAY_MESSAGE_DATA")?,

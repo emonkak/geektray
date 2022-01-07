@@ -9,24 +9,16 @@ pub mod app;
 pub mod config;
 
 mod atoms;
-mod color;
 mod command;
 mod event_loop;
-mod font;
-mod geometrics;
-mod hotkey;
-mod keyboard;
-mod mouse;
-mod render_context;
-mod text;
+mod graphics;
+mod main_window;
 mod tray_container;
 mod tray_item;
 mod tray_manager;
+mod ui;
 mod utils;
 mod widget;
-mod window;
-mod xembed;
-mod xkbcommon_sys;
 
 #[allow(dead_code)]
 mod dbus;
