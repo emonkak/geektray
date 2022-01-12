@@ -14,6 +14,7 @@ use x11rb::connection::Connection;
 use x11rb::protocol;
 
 use crate::dbus::{DBusArguments, DBusConnection, DBusMessage, DBusVariant};
+use crate::ui::ControlFlow;
 
 const EVENT_KIND_X11: u64 = 1;
 const EVENT_KIND_SIGNAL: u64 = 2;
@@ -175,12 +176,6 @@ pub enum Event {
     X11Event(protocol::Event),
     DBusMessage(DBusMessage),
     Signal(signalfd::siginfo),
-}
-
-#[derive(Debug)]
-pub enum ControlFlow {
-    Continue,
-    Break,
 }
 
 extern "C" fn handle_dbus_add_watch(watch: *mut dbus::DBusWatch, user_data: *mut c_void) -> u32 {

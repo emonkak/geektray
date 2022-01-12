@@ -12,13 +12,11 @@ mod atoms;
 mod command;
 mod event_loop;
 mod graphics;
-mod main_window;
 mod tray_container;
 mod tray_item;
 mod tray_manager;
 mod ui;
 mod utils;
-mod widget;
 
 #[allow(dead_code)]
 mod dbus;

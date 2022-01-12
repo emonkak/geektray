@@ -8,17 +8,17 @@ use x11rb::errors::ReplyError;
 use x11rb::protocol;
 use x11rb::protocol::xproto;
 use x11rb::protocol::xproto::ConnectionExt;
+use x11rb::wrapper::ConnectionExt as _;
 use x11rb::xcb_ffi::XCBConnection;
 
 use crate::atoms::Atoms;
 use crate::command::Command;
 use crate::config::Config;
-use crate::event_loop::{ControlFlow, Event, EventLoop};
-use crate::graphics::FontDescription;
-use crate::main_window::MainWindow;
+use crate::event_loop::{Event, EventLoop};
+use crate::graphics::{FontDescription, PhysicalPoint, PhysicalSize, Size};
 use crate::tray_container::TrayContainer;
 use crate::tray_manager::{TrayEvent, TrayManager};
-use crate::ui::{KeyMappingManager, KeyboardMapping, Modifiers};
+use crate::ui::{ControlFlow, KeyMappingInterInterpreter, KeyboardMapping, Modifiers, Window};
 use crate::utils;
 
 #[derive(Debug)]
@@ -26,10 +26,10 @@ pub struct App {
     connection: Rc<XCBConnection>,
     screen_num: usize,
     atoms: Rc<Atoms>,
-    main_window: ManuallyDrop<MainWindow<TrayContainer>>,
+    window: ManuallyDrop<Window<TrayContainer>>,
     tray_manager: ManuallyDrop<TrayManager<XCBConnection>>,
     keyboard_mapping: KeyboardMapping,
-    key_mapping_manager: KeyMappingManager,
+    key_mapping_interpreter: KeyMappingInterInterpreter,
 }
 
 impl App {
@@ -47,31 +47,124 @@ impl App {
         );
         let tray_container = TrayContainer::new(Rc::new(config.ui), Rc::new(font));
 
-        let main_window = MainWindow::new(
+        let window = Window::new(
             tray_container,
             connection.clone(),
             screen_num,
-            atoms.as_ref(),
-            &config.window,
+            Size {
+                width: config.window.initial_width,
+                height: 0.0,
+            },
+            get_window_position,
         )?;
 
-        let tray_manager = TrayManager::new(
-            connection.clone(),
-            screen_num,
-            atoms.clone(),
-        )?;
+        connection
+            .change_property32(
+                xproto::PropMode::REPLACE,
+                window.id(),
+                atoms.WM_PROTOCOLS,
+                xproto::AtomEnum::ATOM,
+                &[
+                    atoms._NET_WM_PING,
+                    atoms._NET_WM_SYNC_REQUEST,
+                    atoms.WM_DELETE_WINDOW,
+                ],
+            )?
+            .check()?;
 
+        {
+            connection
+                .change_property8(
+                    xproto::PropMode::REPLACE,
+                    window.id(),
+                    xproto::AtomEnum::WM_NAME,
+                    xproto::AtomEnum::STRING,
+                    config.window.name.as_bytes(),
+                )?
+                .check()?;
+            connection
+                .change_property8(
+                    xproto::PropMode::REPLACE,
+                    window.id(),
+                    atoms._NET_WM_NAME,
+                    atoms.UTF8_STRING,
+                    config.window.name.as_bytes(),
+                )?
+                .check()?;
+        }
+
+        {
+            let class_string = format!(
+                "{}\0{}",
+                config.window.class.as_ref(),
+                config.window.class.as_ref()
+            );
+            connection
+                .change_property8(
+                    xproto::PropMode::REPLACE,
+                    window.id(),
+                    xproto::AtomEnum::WM_CLASS,
+                    xproto::AtomEnum::STRING,
+                    class_string.as_bytes(),
+                )?
+                .check()?;
+        }
+
+        connection
+            .change_property32(
+                xproto::PropMode::REPLACE,
+                window.id(),
+                atoms._NET_WM_WINDOW_TYPE,
+                xproto::AtomEnum::ATOM,
+                &[atoms._NET_WM_WINDOW_TYPE_DIALOG],
+            )?
+            .check()?;
+
+        connection
+            .change_property32(
+                xproto::PropMode::REPLACE,
+                window.id(),
+                atoms._NET_WM_STATE,
+                xproto::AtomEnum::ATOM,
+                &[atoms._NET_WM_STATE_STICKY],
+            )?
+            .check()?;
+
+        connection
+            .change_property32(
+                xproto::PropMode::REPLACE,
+                window.id(),
+                atoms._NET_SYSTEM_TRAY_ORIENTATION,
+                xproto::AtomEnum::CARDINAL,
+                &[1], // _NET_SYSTEM_TRAY_ORIENTATION_VERT
+            )?
+            .check()?;
+
+        {
+            let screen = &connection.setup().roots[screen_num];
+            connection
+                .change_property32(
+                    xproto::PropMode::REPLACE,
+                    window.id(),
+                    atoms._NET_SYSTEM_TRAY_VISUAL,
+                    xproto::AtomEnum::VISUALID,
+                    &[screen.root_visual],
+                )?
+                .check()?;
+        }
+
+        let tray_manager = TrayManager::new(connection.clone(), screen_num, atoms.clone())?;
         let keyboard_mapping = KeyboardMapping::from_connection(connection.as_ref())?;
-        let key_mapping_manager = KeyMappingManager::new(config.keys);
+        let key_mapping_interpreter = KeyMappingInterInterpreter::new(config.keys);
 
         Ok(Self {
             connection,
             screen_num,
             atoms,
-            main_window: ManuallyDrop::new(main_window),
+            window: ManuallyDrop::new(window),
             tray_manager: ManuallyDrop::new(tray_manager),
             keyboard_mapping,
-            key_mapping_manager,
+            key_mapping_interpreter,
         })
     }
 
@@ -79,16 +172,14 @@ impl App {
         let mut event_loop = EventLoop::new(self.connection.clone())?;
 
         self.tray_manager.acquire_tray_selection()?;
-        self.main_window.show()?;
+        self.window.show()?;
 
         event_loop.run(|event, control_flow, context| match event {
             Event::X11Event(event) => {
-                if let Ok(Some(event)) = self.tray_manager.process_event(self.main_window.id(), &event) {
+                if let Ok(Some(event)) = self.tray_manager.process_event(self.window.id(), &event) {
                     self.on_tray_event(&event, context, control_flow)?;
                 }
-                if get_window_from_event(&event) == Some(self.main_window.id()) {
-                    self.main_window.on_event(&event, control_flow)?;
-                }
+                self.window.on_event(&event, control_flow)?;
                 self.on_x11_event(&event, control_flow)?;
                 Ok(())
             }
@@ -102,7 +193,12 @@ impl App {
                 ) {
                     (MethodCall, "/", command_str) => {
                         if let Ok(command) = Command::from_str(command_str) {
-                            run_command(command, &mut self.main_window)?;
+                            run_command(
+                                &self.connection,
+                                self.screen_num,
+                                &mut self.window,
+                                command,
+                            )?;
                         }
                         context.send_dbus_message(&message.new_method_return());
                     }
@@ -136,9 +232,14 @@ impl App {
                 };
                 if let Some(key) = self.keyboard_mapping.get_key(event.detail, level) {
                     let modifiers = Modifiers::from_keymask(event.state);
-                    let commands = self.key_mapping_manager.eval(key, modifiers);
+                    let commands = self.key_mapping_interpreter.eval(key, modifiers);
                     for command in commands {
-                        if !run_command(*command, &mut self.main_window)? {
+                        if !run_command(
+                            &self.connection,
+                            self.screen_num,
+                            &mut self.window,
+                            *command,
+                        )? {
                             break;
                         }
                     }
@@ -149,15 +250,12 @@ impl App {
                     || event.atom == u32::from(xproto::AtomEnum::WM_CLASS)
                     || event.atom == self.atoms._NET_WM_NAME =>
             {
-                if self.main_window.widget().contains_window(event.window) {
+                if self.window.widget().contains_window(event.window) {
                     let title =
                         get_window_title(self.connection.as_ref(), event.window, &self.atoms)?
                             .unwrap_or_default();
-                    let effect = self
-                        .main_window
-                        .widget_mut()
-                        .change_title(event.window, title);
-                    self.main_window.apply_effect(effect)?;
+                    let effect = self.window.widget_mut().change_title(event.window, title);
+                    self.window.apply_effect(effect)?;
                 }
             }
             ClientMessage(event)
@@ -176,9 +274,9 @@ impl App {
                         reply_event,
                     )?;
                 } else if protocol == self.atoms._NET_WM_SYNC_REQUEST {
-                    self.main_window.request_redraw()?;
+                    self.window.request_redraw()?;
                 } else if protocol == self.atoms.WM_DELETE_WINDOW {
-                    self.main_window.hide()?;
+                    self.window.hide()?;
                 }
             }
             _ => {}
@@ -209,15 +307,12 @@ impl App {
             TrayEvent::TrayIconAdded(icon_window) => {
                 let title = get_window_title(self.connection.as_ref(), *icon_window, &self.atoms)?
                     .unwrap_or_default();
-                let effect = self
-                    .main_window
-                    .widget_mut()
-                    .add_tray_item(*icon_window, title);
-                self.main_window.apply_effect(effect)?;
+                let effect = self.window.widget_mut().add_tray_item(*icon_window, title);
+                self.window.apply_effect(effect)?;
             }
             TrayEvent::TrayIconRemoved(icon_window) => {
-                let effect = self.main_window.widget_mut().remove_tray_item(*icon_window);
-                self.main_window.apply_effect(effect)?;
+                let effect = self.window.widget_mut().remove_tray_item(*icon_window);
+                self.window.apply_effect(effect)?;
             }
             TrayEvent::SelectionCleared => {
                 *control_flow = ControlFlow::Break;
@@ -232,83 +327,49 @@ impl Drop for App {
     fn drop(&mut self) {
         unsafe {
             ManuallyDrop::drop(&mut self.tray_manager);
-            ManuallyDrop::drop(&mut self.main_window);
+            ManuallyDrop::drop(&mut self.window);
         }
     }
 }
 
 fn run_command(
+    connection: &XCBConnection,
+    screen_num: usize,
+    window: &mut Window<TrayContainer>,
     command: Command,
-    main_window: &mut MainWindow<TrayContainer>,
 ) -> Result<bool, ReplyError> {
     match command {
         Command::HideWindow => {
-            main_window.hide()?;
-            let effect = main_window.widget_mut().select_item(None);
-            main_window.apply_effect(effect).map(|_| true)
+            window.hide()?;
+            let effect = window.widget_mut().select_item(None);
+            window.apply_effect(effect).map(|_| true)
         }
         Command::ShowWindow => {
-            main_window.adjust_position()?;
-            main_window.show()?;
+            let position = get_window_position(connection, screen_num, window.size());
+            window.move_position(position)?;
+            window.show()?;
             Ok(true)
         }
         Command::ToggleWindow => {
-            main_window.toggle()?;
+            window.toggle()?;
             Ok(true)
         }
         Command::SelectItem(index) => {
-            let effect = main_window.widget_mut().select_item(Some(index));
-            main_window.apply_effect(effect)
+            let effect = window.widget_mut().select_item(Some(index));
+            window.apply_effect(effect)
         }
         Command::SelectNextItem => {
-            let effect = main_window.widget_mut().select_next_item();
-            main_window.apply_effect(effect)
+            let effect = window.widget_mut().select_next_item();
+            window.apply_effect(effect)
         }
         Command::SelectPreviousItem => {
-            let effect = main_window.widget_mut().select_previous_item();
-            main_window.apply_effect(effect)
+            let effect = window.widget_mut().select_previous_item();
+            window.apply_effect(effect)
         }
         Command::ClickMouseButton(button) => {
-            let effect = main_window.widget_mut().click_selected_item(button);
-            main_window.apply_effect(effect)
+            let effect = window.widget_mut().click_selected_item(button);
+            window.apply_effect(effect)
         }
-    }
-}
-
-fn get_window_from_event(event: &protocol::Event) -> Option<xproto::Window> {
-    use protocol::Event::*;
-
-    match event {
-        ButtonPress(event) => Some(event.event),
-        ButtonRelease(event) => Some(event.event),
-        CirculateNotify(event) => Some(event.event),
-        CirculateRequest(event) => Some(event.event),
-        ClientMessage(event) => Some(event.window),
-        ColormapNotify(event) => Some(event.window),
-        ConfigureNotify(event) => Some(event.event),
-        ConfigureRequest(event) => Some(event.window),
-        CreateNotify(event) => Some(event.window),
-        DestroyNotify(event) => Some(event.event),
-        EnterNotify(event) => Some(event.event),
-        Expose(event) => Some(event.window),
-        FocusIn(event) => Some(event.event),
-        FocusOut(event) => Some(event.event),
-        GravityNotify(event) => Some(event.event),
-        KeyPress(event) => Some(event.event),
-        KeyRelease(event) => Some(event.event),
-        LeaveNotify(event) => Some(event.event),
-        MapNotify(event) => Some(event.event),
-        MapRequest(event) => Some(event.window),
-        MotionNotify(event) => Some(event.event),
-        PropertyNotify(event) => Some(event.window),
-        ReparentNotify(event) => Some(event.event),
-        ResizeRequest(event) => Some(event.window),
-        SelectionClear(event) => Some(event.owner),
-        SelectionNotify(event) => Some(event.requestor),
-        SelectionRequest(event) => Some(event.owner),
-        UnmapNotify(event) => Some(event.event),
-        VisibilityNotify(event) => Some(event.window),
-        _ => None,
     }
 }
 
@@ -354,6 +415,18 @@ fn get_window_title<Connection: self::Connection>(
     }
 
     Ok(None)
+}
+
+fn get_window_position(
+    connection: &XCBConnection,
+    screen_num: usize,
+    size: PhysicalSize,
+) -> PhysicalPoint {
+    let screen = &connection.setup().roots[screen_num];
+    PhysicalPoint {
+        x: (screen.width_in_pixels as f64 / 2.0 - size.width as f64 / 2.0) as i32,
+        y: (screen.height_in_pixels as f64 / 2.0 - size.height as f64 / 2.0) as i32,
+    }
 }
 
 fn null_terminated_bytes_to_string(mut bytes: Vec<u8>) -> Option<String> {

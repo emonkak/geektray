@@ -1,9 +1,15 @@
-use serde::{Deserialize, Serialize};
+use serde::de;
+use serde::ser;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::ffi::CString;
 use std::ops::BitOr;
+use std::str;
 use x11rb::connection::Connection;
 use x11rb::errors::ReplyError;
-use x11rb::protocol::xproto;
 use x11rb::protocol::xproto::ConnectionExt;
+use x11rb::protocol::xproto;
+
+use super::xkbcommon_sys as xkb;
 
 #[derive(Debug)]
 pub struct KeyboardMapping {
@@ -49,8 +55,8 @@ impl KeyboardMapping {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Deserialize, Serialize)]
-pub struct Key(#[serde(with = "keysym_serde")] pub xproto::Keysym);
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Key(pub xproto::Keysym);
 
 impl From<xproto::Keysym> for Key {
     fn from(value: xproto::Keysym) -> Self {
@@ -58,28 +64,19 @@ impl From<xproto::Keysym> for Key {
     }
 }
 
-mod keysym_serde {
-    use serde::de;
-    use serde::ser;
-    use serde::{self, Deserialize, Deserializer, Serializer};
-    use std::ffi::CString;
-    use std::str;
-    use x11rb::protocol::xproto;
-
-    use super::super::xkbcommon_sys as xkb;
-
-    pub fn serialize<S>(value: &xproto::Keysym, serializer: S) -> Result<S::Ok, S::Error>
+impl Serialize for Key {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         let mut buffer = [0u8; 256];
         let length = unsafe {
-            xkb::xkb_keysym_get_name((*value).into(), buffer.as_mut_ptr().cast(), buffer.len())
+            xkb::xkb_keysym_get_name((self.0).into(), buffer.as_mut_ptr().cast(), buffer.len())
         };
         if length < 0 {
             return Err(ser::Error::custom(format!(
                 "The specified Keysym `{}` is not defined",
-                value
+                self.0
             )));
         }
         match str::from_utf8(&buffer[0..length as usize]) {
@@ -87,8 +84,10 @@ mod keysym_serde {
             Err(error) => Err(ser::Error::custom(error)),
         }
     }
+}
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<xproto::Keysym, D::Error>
+impl<'de> Deserialize<'de> for Key {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -101,7 +100,7 @@ mod keysym_serde {
                 c_str.to_string_lossy()
             )));
         }
-        Ok(keysym)
+        Ok(Key(keysym))
     }
 }
 

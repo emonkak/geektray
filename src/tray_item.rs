@@ -8,9 +8,8 @@ use crate::graphics::{
     FontDescription, HorizontalAlign, PhysicalPoint, Point, Rect, RenderContext, Size, Text,
     VerticalAlign,
 };
-use crate::ui::MouseButton;
+use crate::ui::{Effect, Layout, MouseButton, Widget};
 use crate::utils;
-use crate::widget::{Effect, Layout, Widget};
 
 #[derive(Debug)]
 pub struct TrayItem {

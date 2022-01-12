@@ -1,26 +1,7 @@
 use std::ops::Add;
 use x11rb::errors::ReplyError;
-use x11rb::protocol;
 use x11rb::protocol::xproto;
 use x11rb::xcb_ffi::XCBConnection;
-
-use crate::graphics::{Point, RenderContext, Size};
-
-pub trait Widget {
-    fn render(&self, position: Point, layout: &Layout, index: usize, context: &mut RenderContext);
-
-    fn layout(&self, container_size: Size) -> Layout;
-
-    fn on_event(&mut self, _event: &protocol::Event, _position: Point, _layout: &Layout) -> Effect {
-        Effect::None
-    }
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct Layout {
-    pub size: Size,
-    pub children: Vec<(Point, Layout)>,
-}
 
 #[must_use]
 pub enum Effect {

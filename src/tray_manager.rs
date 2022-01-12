@@ -38,22 +38,24 @@ impl<Connection: self::Connection> TrayManager<Connection> {
 
         {
             let screen = &connection.setup().roots[screen_num];
-            let values = xproto::CreateWindowAux::new()
-                .event_mask(xproto::EventMask::PROPERTY_CHANGE);
+            let values =
+                xproto::CreateWindowAux::new().event_mask(xproto::EventMask::PROPERTY_CHANGE);
 
-            connection.create_window(
-                0,
-                manager_window,
-                screen.root,
-                0, // x
-                0, // y
-                1, // width
-                1, // height
-                0, // border_width
-                xproto::WindowClass::INPUT_ONLY,
-                x11rb::COPY_FROM_PARENT,
-                &values,
-            )?.check()?;
+            connection
+                .create_window(
+                    0,
+                    manager_window,
+                    screen.root,
+                    0, // x
+                    0, // y
+                    1, // width
+                    1, // height
+                    0, // border_width
+                    xproto::WindowClass::INPUT_ONLY,
+                    x11rb::COPY_FROM_PARENT,
+                    &values,
+                )?
+                .check()?;
         }
 
         Ok(Self {
@@ -228,7 +230,11 @@ impl<Connection: self::Connection> TrayManager<Connection> {
         Ok(())
     }
 
-    fn register_tray_icon(&mut self, embedder_window: xproto::Window, icon_window: xproto::Window) -> Result<(), ReplyError> {
+    fn register_tray_icon(
+        &mut self,
+        embedder_window: xproto::Window,
+        icon_window: xproto::Window,
+    ) -> Result<(), ReplyError> {
         if let Some(xembed_info) =
             get_xembed_info(self.connection.as_ref(), icon_window, &self.atoms)?
         {
@@ -266,7 +272,7 @@ impl<Connection: self::Connection> TrayManager<Connection> {
                 (Some(true), false) => {
                     release_embedding(self.connection.as_ref(), self.screen_num, icon_window)?;
                 }
-                _ => {},
+                _ => {}
             }
         }
 
@@ -377,8 +383,9 @@ fn begin_embedding<Connection: self::Connection>(
     embedder_window: xproto::Window,
 ) -> Result<(), ReplyError> {
     {
-        let values = xproto::ChangeWindowAttributesAux::new()
-            .event_mask(Some((xproto::EventMask::PROPERTY_CHANGE | xproto::EventMask::STRUCTURE_NOTIFY).into()));
+        let values = xproto::ChangeWindowAttributesAux::new().event_mask(Some(
+            (xproto::EventMask::PROPERTY_CHANGE | xproto::EventMask::STRUCTURE_NOTIFY).into(),
+        ));
         connection
             .change_window_attributes(icon_window, &values)?
             .check()?;
@@ -397,8 +404,8 @@ fn wait_for_embedding<Connection: self::Connection>(
     icon_window: xproto::Window,
 ) -> Result<(), ReplyError> {
     {
-        let values = xproto::ChangeWindowAttributesAux::new()
-            .event_mask(xproto::EventMask::PROPERTY_CHANGE);
+        let values =
+            xproto::ChangeWindowAttributesAux::new().event_mask(xproto::EventMask::PROPERTY_CHANGE);
         connection
             .change_window_attributes(icon_window, &values)?
             .check()?;

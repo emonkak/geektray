@@ -1,12 +1,13 @@
 use std::rc::Rc;
+use x11rb::properties;
 use x11rb::protocol;
 use x11rb::protocol::xproto;
+use x11rb::protocol::xproto::ConnectionExt as _;
 
 use crate::config::UiConfig;
-use crate::graphics::{FontDescription, Point, RenderContext, Size};
+use crate::graphics::{FontDescription, PhysicalPoint, PhysicalSize, Point, RenderContext, Size};
 use crate::tray_item::TrayItem;
-use crate::ui::MouseButton;
-use crate::widget::{Effect, Layout, Widget};
+use crate::ui::{Effect, Layout, MouseButton, Widget};
 
 #[derive(Debug)]
 pub struct TrayContainer {
@@ -185,6 +186,36 @@ impl Widget for TrayContainer {
             },
             children,
         }
+    }
+
+    fn on_change_layout(
+        &mut self,
+        position: PhysicalPoint,
+        old_size: PhysicalSize,
+        new_size: PhysicalSize,
+    ) -> Effect {
+        Effect::Action(Box::new(move |connection, _, window| {
+            {
+                let mut size_hints = properties::WmSizeHints::new();
+                size_hints.min_size = Some((0, new_size.height as i32));
+                size_hints.max_size = Some((0, new_size.height as i32));
+
+                size_hints.set_normal_hints(connection, window)?.check()?;
+            }
+
+            {
+                let values = xproto::ConfigureWindowAux::new()
+                    .x(position.x)
+                    .y(position.y
+                        - (((old_size.height as i32 - new_size.height as i32) / 2) as i32))
+                    .height(new_size.height)
+                    .width(new_size.width);
+
+                connection.configure_window(window, &values)?.check()?;
+            }
+
+            Ok(())
+        }))
     }
 
     fn on_event(&mut self, event: &protocol::Event, _position: Point, layout: &Layout) -> Effect {

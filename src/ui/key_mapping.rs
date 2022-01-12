@@ -5,11 +5,11 @@ use crate::command::Command;
 use crate::ui::{Key, Modifiers};
 
 #[derive(Debug)]
-pub struct KeyMappingManager {
+pub struct KeyMappingInterInterpreter {
     command_table: HashMap<(Key, Modifiers), Vec<Command>>,
 }
 
-impl KeyMappingManager {
+impl KeyMappingInterInterpreter {
     pub fn new(key_mappings: Vec<KeyMapping>) -> Self {
         let mut command_table: HashMap<(Key, Modifiers), Vec<Command>> = HashMap::new();
         for key_mapping in key_mappings {
