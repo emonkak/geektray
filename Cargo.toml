@@ -18,7 +18,7 @@ pango-sys = "0.14"
 pangocairo-sys = "0.14"
 serde = { version = "1.0.133", features = ["derive"] }
 serde_json = "1.0.74"
-x11rb = { version = "0.9", features = ["allow-unsafe-code"] }
+x11rb = { version = "0.9", features = ["allow-unsafe-code", "xkb"] }
 
 [build-dependencies]
 bindgen = "0.59.2"

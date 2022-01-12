@@ -22,108 +22,108 @@ impl Default for Config {
             keys: vec![
                 KeyMapping::new(
                     xkb::XKB_KEY_1,
-                    Modifiers::none(),
+                    Modifiers::NONE,
                     vec![Command::SelectItem(0)],
                 ),
                 KeyMapping::new(
                     xkb::XKB_KEY_2,
-                    Modifiers::none(),
+                    Modifiers::NONE,
                     vec![Command::SelectItem(1)],
                 ),
                 KeyMapping::new(
                     xkb::XKB_KEY_3,
-                    Modifiers::none(),
+                    Modifiers::NONE,
                     vec![Command::SelectItem(2)],
                 ),
                 KeyMapping::new(
                     xkb::XKB_KEY_4,
-                    Modifiers::none(),
+                    Modifiers::NONE,
                     vec![Command::SelectItem(3)],
                 ),
                 KeyMapping::new(
                     xkb::XKB_KEY_5,
-                    Modifiers::none(),
+                    Modifiers::NONE,
                     vec![Command::SelectItem(4)],
                 ),
                 KeyMapping::new(
                     xkb::XKB_KEY_6,
-                    Modifiers::none(),
+                    Modifiers::NONE,
                     vec![Command::SelectItem(5)],
                 ),
                 KeyMapping::new(
                     xkb::XKB_KEY_7,
-                    Modifiers::none(),
+                    Modifiers::NONE,
                     vec![Command::SelectItem(6)],
                 ),
                 KeyMapping::new(
                     xkb::XKB_KEY_8,
-                    Modifiers::none(),
+                    Modifiers::NONE,
                     vec![Command::SelectItem(7)],
                 ),
                 KeyMapping::new(
                     xkb::XKB_KEY_9,
-                    Modifiers::none(),
+                    Modifiers::NONE,
                     vec![Command::SelectItem(8)],
                 ),
                 KeyMapping::new(
                     xkb::XKB_KEY_j,
-                    Modifiers::none(),
+                    Modifiers::NONE,
                     vec![Command::SelectNextItem],
                 ),
                 KeyMapping::new(
                     xkb::XKB_KEY_Down,
-                    Modifiers::none(),
+                    Modifiers::NONE,
                     vec![Command::SelectNextItem],
                 ),
                 KeyMapping::new(
                     xkb::XKB_KEY_n,
-                    Modifiers::control(),
+                    Modifiers::CONTROL,
                     vec![Command::SelectNextItem],
                 ),
                 KeyMapping::new(
                     xkb::XKB_KEY_k,
-                    Modifiers::none(),
+                    Modifiers::NONE,
                     vec![Command::SelectPreviousItem],
                 ),
                 KeyMapping::new(
                     xkb::XKB_KEY_Down,
-                    Modifiers::none(),
+                    Modifiers::NONE,
                     vec![Command::SelectPreviousItem],
                 ),
                 KeyMapping::new(
                     xkb::XKB_KEY_p,
-                    Modifiers::control(),
+                    Modifiers::CONTROL,
                     vec![Command::SelectPreviousItem],
                 ),
                 KeyMapping::new(
                     xkb::XKB_KEY_l,
-                    Modifiers::control(),
+                    Modifiers::CONTROL,
                     vec![Command::ClickMouseButton(MouseButton::Left)],
                 ),
                 KeyMapping::new(
                     xkb::XKB_KEY_Return,
-                    Modifiers::none(),
+                    Modifiers::NONE,
                     vec![Command::ClickMouseButton(MouseButton::Left)],
                 ),
                 KeyMapping::new(
                     xkb::XKB_KEY_Return,
-                    Modifiers::none(),
+                    Modifiers::NONE,
                     vec![Command::ClickMouseButton(MouseButton::Left)],
                 ),
                 KeyMapping::new(
                     xkb::XKB_KEY_h,
-                    Modifiers::none(),
+                    Modifiers::NONE,
                     vec![Command::ClickMouseButton(MouseButton::Right)],
                 ),
                 KeyMapping::new(
                     xkb::XKB_KEY_Return,
-                    Modifiers::shift(),
+                    Modifiers::SHIFT,
                     vec![Command::ClickMouseButton(MouseButton::Right)],
                 ),
-                KeyMapping::new(xkb::XKB_KEY_q, Modifiers::none(), vec![Command::HideWindow]),
+                KeyMapping::new(xkb::XKB_KEY_q, Modifiers::NONE, vec![Command::HideWindow]),
                 KeyMapping::new(
                     xkb::XKB_KEY_Escape,
-                    Modifiers::none(),
+                    Modifiers::NONE,
                     vec![Command::HideWindow],
                 ),
             ],
@@ -137,6 +137,7 @@ pub struct WindowConfig {
     pub name: Cow<'static, str>,
     pub class: Cow<'static, str>,
     pub initial_width: f64,
+    pub sticky: bool,
 }
 
 impl Default for WindowConfig {
@@ -145,6 +146,7 @@ impl Default for WindowConfig {
             name: Cow::Borrowed("KeyTray"),
             class: Cow::Borrowed("KeyTray"),
             initial_width: 480.0,
+            sticky: true,
         }
     }
 }

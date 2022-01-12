@@ -1,3 +1,4 @@
+use anyhow::Context as _;
 use libdbus_sys as dbus;
 use std::ffi::CString;
 use std::mem::ManuallyDrop;
@@ -5,31 +6,32 @@ use std::rc::Rc;
 use std::str::FromStr;
 use x11rb::connection::Connection;
 use x11rb::errors::ReplyError;
-use x11rb::protocol;
+use x11rb::protocol::xkb::ConnectionExt as _;
+use x11rb::protocol::xproto::ConnectionExt as _;
 use x11rb::protocol::xproto;
-use x11rb::protocol::xproto::ConnectionExt;
+use x11rb::protocol;
 use x11rb::wrapper::ConnectionExt as _;
 use x11rb::xcb_ffi::XCBConnection;
 
-use crate::atoms::Atoms;
 use crate::command::Command;
 use crate::config::Config;
 use crate::event_loop::{Event, EventLoop};
 use crate::graphics::{FontDescription, PhysicalPoint, PhysicalSize, Size};
 use crate::tray_container::TrayContainer;
-use crate::tray_manager::{TrayEvent, TrayManager};
-use crate::ui::{ControlFlow, KeyMappingInterInterpreter, KeyboardMapping, Modifiers, Window};
+use crate::tray_manager::{SystemTrayOrientation, TrayEvent, TrayManager};
+use crate::ui::xkb;
+use crate::ui::{ControlFlow, KeyInterpreter, KeyState, Window};
 use crate::utils;
 
 #[derive(Debug)]
 pub struct App {
     connection: Rc<XCBConnection>,
     screen_num: usize,
-    atoms: Rc<Atoms>,
+    atoms: Atoms,
     window: ManuallyDrop<Window<TrayContainer>>,
     tray_manager: ManuallyDrop<TrayManager<XCBConnection>>,
-    keyboard_mapping: KeyboardMapping,
-    key_mapping_interpreter: KeyMappingInterInterpreter,
+    keyboard_state: xkb::State,
+    key_interpreter: KeyInterpreter,
 }
 
 impl App {
@@ -37,7 +39,7 @@ impl App {
         let (connection, screen_num) = XCBConnection::connect(None)?;
         let connection = Rc::new(connection);
 
-        let atoms = Rc::new(Atoms::new(connection.as_ref(), screen_num)?);
+        let atoms = Atoms::new(connection.as_ref())?.reply()?;
 
         let font = FontDescription::new(
             config.ui.font.family.clone(),
@@ -120,42 +122,32 @@ impl App {
             )?
             .check()?;
 
-        connection
-            .change_property32(
-                xproto::PropMode::REPLACE,
-                window.id(),
-                atoms._NET_WM_STATE,
-                xproto::AtomEnum::ATOM,
-                &[atoms._NET_WM_STATE_STICKY],
-            )?
-            .check()?;
-
-        connection
-            .change_property32(
-                xproto::PropMode::REPLACE,
-                window.id(),
-                atoms._NET_SYSTEM_TRAY_ORIENTATION,
-                xproto::AtomEnum::CARDINAL,
-                &[1], // _NET_SYSTEM_TRAY_ORIENTATION_VERT
-            )?
-            .check()?;
-
-        {
-            let screen = &connection.setup().roots[screen_num];
+        if config.window.sticky {
             connection
                 .change_property32(
                     xproto::PropMode::REPLACE,
                     window.id(),
-                    atoms._NET_SYSTEM_TRAY_VISUAL,
-                    xproto::AtomEnum::VISUALID,
-                    &[screen.root_visual],
+                    atoms._NET_WM_STATE,
+                    xproto::AtomEnum::ATOM,
+                    &[atoms._NET_WM_STATE_STICKY],
                 )?
                 .check()?;
         }
 
-        let tray_manager = TrayManager::new(connection.clone(), screen_num, atoms.clone())?;
-        let keyboard_mapping = KeyboardMapping::from_connection(connection.as_ref())?;
-        let key_mapping_interpreter = KeyMappingInterInterpreter::new(config.keys);
+        connection.xkb_use_extension(1, 0)?
+            .reply()
+            .context("init xkb extension")?;
+
+        let tray_manager = TrayManager::new(connection.clone(), screen_num, SystemTrayOrientation::VERTICAL)?;
+        let keyboard_state = {
+            let context = xkb::Context::new();
+            let device_id = xkb::DeviceId::core_keyboard(&connection)
+                .context("get the core keyboard device ID")?;
+            let keymap = xkb::Keymap::from_device(context, &connection, device_id)
+                .context("create a keymap from a device")?;
+            xkb::State::from_keymap(keymap)
+        };
+        let key_interpreter = KeyInterpreter::new(config.keys);
 
         Ok(Self {
             connection,
@@ -163,8 +155,8 @@ impl App {
             atoms,
             window: ManuallyDrop::new(window),
             tray_manager: ManuallyDrop::new(tray_manager),
-            keyboard_mapping,
-            key_mapping_interpreter,
+            keyboard_state,
+            key_interpreter,
         })
     }
 
@@ -223,25 +215,27 @@ impl App {
         use protocol::Event::*;
 
         match event {
+            KeyPress(event) => {
+                self.keyboard_state
+                    .update(event.detail as u32, KeyState::Down);
+            }
             KeyRelease(event) => {
-                let level = if (u32::from(event.state) & u32::from(xproto::KeyButMask::SHIFT)) != 0
-                {
-                    1
-                } else {
-                    0
-                };
-                if let Some(key) = self.keyboard_mapping.get_key(event.detail, level) {
-                    let modifiers = Modifiers::from_keymask(event.state);
-                    let commands = self.key_mapping_interpreter.eval(key, modifiers);
-                    for command in commands {
-                        if !run_command(
-                            &self.connection,
-                            self.screen_num,
-                            &mut self.window,
-                            *command,
-                        )? {
-                            break;
-                        }
+                self.keyboard_state
+                    .update(event.detail as u32, KeyState::Up);
+                let event = self
+                    .keyboard_state
+                    .key_event(event.detail as u32, KeyState::Up);
+                let commands = self
+                    .key_interpreter
+                    .eval(event.keysym, event.modifiers);
+                for command in commands {
+                    if !run_command(
+                        &self.connection,
+                        self.screen_num,
+                        &mut self.window,
+                        *command,
+                    )? {
+                        break;
                     }
                 }
             }
@@ -434,4 +428,19 @@ fn null_terminated_bytes_to_string(mut bytes: Vec<u8>) -> Option<String> {
         bytes.resize(null_position, 0);
     }
     String::from_utf8(bytes).ok()
+}
+
+x11rb::atom_manager! {
+    Atoms: AtomsCookie {
+        UTF8_STRING,
+        WM_DELETE_WINDOW,
+        WM_PROTOCOLS,
+        _NET_WM_NAME,
+        _NET_WM_PING,
+        _NET_WM_STATE,
+        _NET_WM_STATE_STICKY,
+        _NET_WM_SYNC_REQUEST,
+        _NET_WM_WINDOW_TYPE,
+        _NET_WM_WINDOW_TYPE_DIALOG,
+    }
 }

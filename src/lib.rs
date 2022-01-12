@@ -8,7 +8,6 @@ extern crate x11rb;
 pub mod app;
 pub mod config;
 
-mod atoms;
 mod command;
 mod event_loop;
 mod graphics;

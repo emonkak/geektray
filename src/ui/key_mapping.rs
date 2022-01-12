@@ -2,26 +2,26 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::command::Command;
-use crate::ui::{Key, Modifiers};
+use crate::ui::{Keysym, Modifiers};
 
 #[derive(Debug)]
-pub struct KeyMappingInterInterpreter {
-    command_table: HashMap<(Key, Modifiers), Vec<Command>>,
+pub struct KeyInterpreter {
+    command_table: HashMap<(Keysym, Modifiers), Vec<Command>>,
 }
 
-impl KeyMappingInterInterpreter {
+impl KeyInterpreter {
     pub fn new(key_mappings: Vec<KeyMapping>) -> Self {
-        let mut command_table: HashMap<(Key, Modifiers), Vec<Command>> = HashMap::new();
+        let mut command_table: HashMap<(Keysym, Modifiers), Vec<Command>> = HashMap::new();
         for key_mapping in key_mappings {
             command_table.insert(
-                (key_mapping.key, key_mapping.modifiers),
+                (key_mapping.keysym, key_mapping.modifiers),
                 key_mapping.commands.clone(),
             );
         }
         Self { command_table }
     }
 
-    pub fn eval(&self, key: Key, modifiers: Modifiers) -> &[Command] {
+    pub fn eval(&self, key: Keysym, modifiers: Modifiers) -> &[Command] {
         self.command_table
             .get(&(key, modifiers))
             .map(|commands| commands.as_slice())
@@ -31,16 +31,16 @@ impl KeyMappingInterInterpreter {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct KeyMapping {
-    key: Key,
-    #[serde(default = "Modifiers::none")]
+    keysym: Keysym,
+    #[serde(default)]
     modifiers: Modifiers,
     commands: Vec<Command>,
 }
 
 impl KeyMapping {
-    pub fn new(key: impl Into<Key>, modifiers: Modifiers, commands: Vec<Command>) -> Self {
+    pub fn new(keysym: impl Into<Keysym>, modifiers: Modifiers, commands: Vec<Command>) -> Self {
         Self {
-            key: key.into(),
+            keysym: keysym.into(),
             modifiers,
             commands,
         }
