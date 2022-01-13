@@ -1,13 +1,13 @@
-use std::collections::HashMap;
 use std::collections::hash_map;
+use std::collections::HashMap;
 use std::ffi::CStr;
 use std::rc::Rc;
 use std::time::Duration;
 use x11rb::connection::Connection;
 use x11rb::errors::{ReplyError, ReplyOrIdError};
-use x11rb::protocol::xproto::ConnectionExt;
-use x11rb::protocol::xproto;
 use x11rb::protocol;
+use x11rb::protocol::xproto;
+use x11rb::protocol::xproto::ConnectionExt;
 use x11rb::wrapper::ConnectionExt as _;
 
 use crate::ui::{XEmbedInfo, XEmbedMessage};
@@ -33,12 +33,15 @@ impl<Connection: self::Connection> TrayManager<Connection> {
     pub fn new(
         connection: Rc<Connection>,
         screen_num: usize,
-        orientation: SystemTrayOrientation
+        orientation: SystemTrayOrientation,
     ) -> Result<Self, ReplyOrIdError> {
         let manager_window = connection.generate_id()?;
         let atoms = Atoms::new(connection.as_ref())?.reply()?;
         let system_tray_selection_atom = connection
-            .intern_atom(false, &format!("_NET_SYSTEM_TRAY_S{}", screen_num).as_bytes())?
+            .intern_atom(
+                false,
+                &format!("_NET_SYSTEM_TRAY_S{}", screen_num).as_bytes(),
+            )?
             .reply()?
             .atom;
 
@@ -307,7 +310,13 @@ impl<Connection: self::Connection> TrayManager<Connection> {
             32,
             screen.root,
             self.atoms.MANAGER,
-            [x11rb::CURRENT_TIME, self.system_tray_selection_atom, self.manager_window, 0, 0],
+            [
+                x11rb::CURRENT_TIME,
+                self.system_tray_selection_atom,
+                self.manager_window,
+                0,
+                0,
+            ],
         );
 
         self.connection

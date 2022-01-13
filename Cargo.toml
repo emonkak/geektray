@@ -35,3 +35,6 @@ name = "list_keysyms"
 
 [[example]]
 name = "xcb_cairo_test"
+
+[[example]]
+name = "dbus_test"

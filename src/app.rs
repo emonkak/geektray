@@ -6,10 +6,10 @@ use std::rc::Rc;
 use std::str::FromStr;
 use x11rb::connection::Connection;
 use x11rb::errors::ReplyError;
-use x11rb::protocol::xkb::ConnectionExt as _;
-use x11rb::protocol::xproto::ConnectionExt as _;
-use x11rb::protocol::xproto;
 use x11rb::protocol;
+use x11rb::protocol::xkb::ConnectionExt as _;
+use x11rb::protocol::xproto;
+use x11rb::protocol::xproto::ConnectionExt as _;
 use x11rb::wrapper::ConnectionExt as _;
 use x11rb::xcb_ffi::XCBConnection;
 
@@ -134,11 +134,16 @@ impl App {
                 .check()?;
         }
 
-        connection.xkb_use_extension(1, 0)?
+        connection
+            .xkb_use_extension(1, 0)?
             .reply()
             .context("init xkb extension")?;
 
-        let tray_manager = TrayManager::new(connection.clone(), screen_num, SystemTrayOrientation::VERTICAL)?;
+        let tray_manager = TrayManager::new(
+            connection.clone(),
+            screen_num,
+            SystemTrayOrientation::VERTICAL,
+        )?;
         let keyboard_state = {
             let context = xkb::Context::new();
             let device_id = xkb::DeviceId::core_keyboard(&connection)
@@ -225,9 +230,7 @@ impl App {
                 let event = self
                     .keyboard_state
                     .key_event(event.detail as u32, KeyState::Up);
-                let commands = self
-                    .key_interpreter
-                    .eval(event.keysym, event.modifiers);
+                let commands = self.key_interpreter.eval(event.keysym, event.modifiers);
                 for command in commands {
                     if !run_command(
                         &self.connection,

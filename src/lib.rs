@@ -18,4 +18,4 @@ mod ui;
 mod utils;
 
 #[allow(dead_code)]
-mod dbus;
+pub mod dbus;

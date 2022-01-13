@@ -1,11 +1,11 @@
 use std::array;
 use x11rb::errors::ReplyError;
-use x11rb::protocol::xkb::ConnectionExt as _;
 use x11rb::protocol;
+use x11rb::protocol::xkb::ConnectionExt as _;
 use x11rb::xcb_ffi::XCBConnection;
 
-use crate::ui::{KeyEvent, KeyState, Keysym, Modifiers};
 use super::xkbcommon_sys as xkb;
+use crate::ui::{KeyEvent, KeyState, Keysym, Modifiers};
 
 #[derive(Debug)]
 pub struct State {
@@ -168,7 +168,7 @@ impl DeviceId {
                 0u8,
                 0u8,
                 protocol::xkb::LedClass::KBD_FEEDBACK_CLASS,
-                1u16
+                1u16,
             )?
             .reply()?;
         Ok(Self(reply.device_id))
