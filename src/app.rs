@@ -1,6 +1,5 @@
 use anyhow::Context as _;
 use libdbus_sys as dbus;
-use std::ffi::CString;
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
 use std::str::FromStr;
@@ -292,11 +291,10 @@ impl App {
             TrayEvent::BalloonMessageReceived(icon_window, balloon_message) => {
                 let summary =
                     get_window_title(self.connection.as_ref(), *icon_window, &self.atoms)?
-                        .and_then(|title| CString::new(title).ok())
                         .unwrap_or_default();
                 context.send_notification(
-                    summary.as_c_str(),
-                    balloon_message.as_c_str(),
+                    &summary,
+                    balloon_message.as_str(),
                     *icon_window as u32,
                     Some(balloon_message.timeout()),
                 );

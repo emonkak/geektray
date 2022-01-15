@@ -135,8 +135,8 @@ impl<Connection: self::Connection + AsRawFd> EventLoop<Connection> {
 
     pub fn send_notification(
         &self,
-        summary: &CStr,
-        body: &CStr,
+        summary: &str,
+        body: &str,
         id: u32,
         timeout: Option<Duration>,
     ) -> bool {
@@ -146,19 +146,23 @@ impl<Connection: self::Connection + AsRawFd> EventLoop<Connection> {
             CStr::from_bytes_with_nul(b"org.freedesktop.Notifications\0").unwrap(),
             CStr::from_bytes_with_nul(b"Notify\0").unwrap(),
         );
+        let message_iter = dbus::writer::MessageWriter::from_message(&message);
 
-        let mut iter = dbus::writer::MessageWriter::from_message(&message);
-        iter.append(CStr::from_bytes_with_nul(DBUS_INTERFACE_NAME).unwrap()); // STRING app_name
-        iter.append(id); // UINT32 replaces_id
-        iter.append(CStr::from_bytes_with_nul(b"\0").unwrap()); // STRING app_icon
-        iter.append(summary); // STRING summary
-        iter.append(body); // STRING body
-        iter.append(&[] as &[&CStr]); // as actions
-        iter.append(&[] as &[(&CStr, dbus::Variant<()>)]); // a{sv} hints
-        iter.append(timeout.map_or(-1, |duration| duration.as_millis() as i32)); // INT32 expire_timeout
+        (|| -> Result<(), dbus::writer::Error> {
+            message_iter.write("io.github.emonkak.keytray")?;
+            message_iter.write(id)?;
+            message_iter.write("")?;
+            message_iter.write(summary)?;
+            message_iter.write(body)?;
+            message_iter.write(&[] as &[&str])?;
+            message_iter.write(&[] as &[dbus::DictEntry<&str, dbus::Variant<()>>])?;
+            message_iter.write(timeout.map_or(-1, |duration| duration.as_millis() as i32))?;
+            Ok(())
+        })().ok();
 
         let result = self.dbus_connection.send(&message, None);
         self.dbus_connection.flush();
+
         result
     }
 }

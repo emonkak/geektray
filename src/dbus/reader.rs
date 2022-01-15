@@ -415,15 +415,8 @@ impl<'de, 'a> de::Deserializer<'de> for &mut MessageReader<'a> {
     {
         self.validate_arg_type(ArgType::Variant)?;
 
-        if self.arg_type() == ArgType::Variant {
-            let mut subiter = self.consume_iter();
-            subiter.deserialize_any(visitor)
-        } else {
-            Err(Error::UnexpectedArgType {
-                expected: ArgType::Variant,
-                actual: self.arg_type(),
-            })
-        }
+        let mut subiter = self.consume_iter();
+        subiter.deserialize_any(visitor)
     }
 
     fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value, Self::Error>

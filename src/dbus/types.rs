@@ -1,4 +1,4 @@
-use std::ffi::CStr;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::Write as _;
 use std::iter::Peekable;
@@ -20,7 +20,7 @@ pub enum Signature {
     Signature,
     Array(Box<Signature>),
     Struct(Vec<Signature>),
-    Variant,
+    Variant(Option<Box<Signature>>),
     DictEntry(Box<(Signature, Signature)>),
     UnixFd,
 }
@@ -46,10 +46,24 @@ impl Signature {
             Signature::Signature => ArgType::Signature,
             Signature::Array(_) => ArgType::Array,
             Signature::Struct(_) => ArgType::Struct,
-            Signature::Variant => ArgType::Variant,
+            Signature::Variant(_) => ArgType::Variant,
             Signature::DictEntry(_) => ArgType::DictEntry,
             Signature::UnixFd => ArgType::UnixFd,
         }
+    }
+
+    pub fn is_string_like(&self) -> bool {
+        match self {
+            Signature::Array(element) if *element.as_ref() == Signature::Byte => true,
+            Signature::String => true,
+            Signature::ObjectPath => true,
+            Signature::Signature => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_byte_array(&self) -> bool {
+        matches!(self, Signature::Array(element) if *element.as_ref() == Signature::Byte)
     }
 }
 
@@ -81,7 +95,7 @@ impl fmt::Display for Signature {
                 f.write_char(')')?;
                 Ok(())
             }
-            Signature::Variant => f.write_char('v'),
+            Signature::Variant(_) => f.write_char('v'),
             Signature::DictEntry(entry) => {
                 let (key, value) = entry.as_ref();
                 f.write_char('{')?;
@@ -145,7 +159,7 @@ where
             'd' => Ok(Signature::Double),
             'o' => Ok(Signature::ObjectPath),
             'g' => Ok(Signature::Signature),
-            'v' => Ok(Signature::Variant),
+            'v' => Ok(Signature::Variant(None)),
             'h' => Ok(Signature::UnixFd),
             c => Err(SignatureParseError::UnexpectedCharacter(c)),
         }
@@ -269,9 +283,6 @@ impl From<ArgType> for c_int {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub struct Variant<T>(pub T);
-
 pub trait Argument {
     fn signature() -> Signature;
 
@@ -346,7 +357,13 @@ impl Argument for *const c_char {
     }
 }
 
-impl Argument for CStr {
+impl Argument for str {
+    fn signature() -> Signature {
+        Signature::String
+    }
+}
+
+impl Argument for String {
     fn signature() -> Signature {
         Signature::String
     }
@@ -364,9 +381,9 @@ impl<T: Argument> Argument for [T] {
     }
 }
 
-impl<K: Argument, V: Argument> Argument for (K, V) {
+impl<T: Argument> Argument for Option<T> {
     fn signature() -> Signature {
-        Signature::DictEntry(Box::new((K::signature(), V::signature())))
+        Signature::Variant(Some(Box::new(T::signature())))
     }
 }
 
@@ -376,21 +393,180 @@ impl Argument for () {
     }
 }
 
-impl<T: Argument> Argument for Variant<T> {
+impl<A, B> Argument for (A, B)
+where
+    A: Argument,
+    B: Argument,
+{
     fn signature() -> Signature {
-        Signature::Variant
+        Signature::Struct(vec![A::signature(), B::signature()])
     }
 }
 
-impl<T: Argument> Argument for Option<T> {
+impl<A, B, C> Argument for (A, B, C)
+where
+    A: Argument,
+    B: Argument,
+    C: Argument,
+{
     fn signature() -> Signature {
-        Signature::Variant
+        Signature::Struct(vec![A::signature(), B::signature(), C::signature()])
+    }
+}
+
+impl<A, B, C, D> Argument for (A, B, C, D)
+where
+    A: Argument,
+    B: Argument,
+    C: Argument,
+    D: Argument,
+{
+    fn signature() -> Signature {
+        Signature::Struct(vec![
+            A::signature(),
+            B::signature(),
+            C::signature(),
+            D::signature(),
+        ])
+    }
+}
+
+impl<A, B, C, D, E> Argument for (A, B, C, D, E)
+where
+    A: Argument,
+    B: Argument,
+    C: Argument,
+    D: Argument,
+    E: Argument,
+{
+    fn signature() -> Signature {
+        Signature::Struct(vec![
+            A::signature(),
+            B::signature(),
+            C::signature(),
+            D::signature(),
+            E::signature(),
+        ])
+    }
+}
+
+impl<A, B, C, D, E, F> Argument for (A, B, C, D, E, F)
+where
+    A: Argument,
+    B: Argument,
+    C: Argument,
+    D: Argument,
+    E: Argument,
+    F: Argument,
+{
+    fn signature() -> Signature {
+        Signature::Struct(vec![
+            A::signature(),
+            B::signature(),
+            C::signature(),
+            D::signature(),
+            E::signature(),
+            F::signature(),
+        ])
+    }
+}
+
+impl<A, B, C, D, E, F, G> Argument for (A, B, C, D, E, F, G)
+where
+    A: Argument,
+    B: Argument,
+    C: Argument,
+    D: Argument,
+    E: Argument,
+    F: Argument,
+    G: Argument,
+{
+    fn signature() -> Signature {
+        Signature::Struct(vec![
+            A::signature(),
+            B::signature(),
+            C::signature(),
+            D::signature(),
+            E::signature(),
+            F::signature(),
+            G::signature(),
+        ])
+    }
+}
+
+impl<A, B, C, D, E, F, G, H> Argument for (A, B, C, D, E, F, G, H)
+where
+    A: Argument,
+    B: Argument,
+    C: Argument,
+    D: Argument,
+    E: Argument,
+    F: Argument,
+    G: Argument,
+    H: Argument,
+{
+    fn signature() -> Signature {
+        Signature::Struct(vec![
+            A::signature(),
+            B::signature(),
+            C::signature(),
+            D::signature(),
+            E::signature(),
+            F::signature(),
+            G::signature(),
+            H::signature(),
+        ])
+    }
+}
+
+impl<A, B, C, D, E, F, G, H, I> Argument for (A, B, C, D, E, F, G, H, I)
+where
+    A: Argument,
+    B: Argument,
+    C: Argument,
+    D: Argument,
+    E: Argument,
+    F: Argument,
+    G: Argument,
+    H: Argument,
+    I: Argument,
+{
+    fn signature() -> Signature {
+        Signature::Struct(vec![
+            A::signature(),
+            B::signature(),
+            C::signature(),
+            D::signature(),
+            E::signature(),
+            F::signature(),
+            G::signature(),
+            H::signature(),
+            I::signature(),
+        ])
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct DictEntry<K, V>(pub K, pub V);
+
+impl<K: Argument, V: Argument> Argument for DictEntry<K, V> {
+    fn signature() -> Signature {
+        Signature::DictEntry(Box::new((K::signature(), V::signature())))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub struct Variant<T>(pub T);
+
+impl<T: Argument> Argument for Variant<T> {
+    fn signature() -> Signature {
+        Signature::Variant(Some(Box::new(T::signature())))
     }
 }
 
 impl<T> Argument for &T
 where
-    T: Argument + ?Sized,
+    T: ?Sized + Argument,
 {
     fn signature() -> Signature {
         T::signature()

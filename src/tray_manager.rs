@@ -1,7 +1,7 @@
 use std::collections::hash_map;
 use std::collections::HashMap;
-use std::ffi::CStr;
 use std::rc::Rc;
+use std::str;
 use std::time::Duration;
 use x11rb::connection::Connection;
 use x11rb::errors::{ReplyError, ReplyOrIdError};
@@ -374,7 +374,7 @@ impl BalloonMessage {
         let [_, _, timeout, length, id] = data;
         let length = length as usize;
         Self {
-            buffer: Vec::with_capacity(length + 1),
+            buffer: Vec::with_capacity(length),
             timeout: Duration::from_millis(timeout as u64),
             length,
             id,
@@ -385,8 +385,8 @@ impl BalloonMessage {
         self.timeout
     }
 
-    pub fn as_c_str(&self) -> &CStr {
-        CStr::from_bytes_with_nul(self.buffer.as_slice())
+    pub fn as_str(&self) -> &str {
+        str::from_utf8(&self.buffer.as_slice())
             .ok()
             .unwrap_or_default()
     }
@@ -400,8 +400,7 @@ impl BalloonMessage {
         if incoming_len > 0 {
             self.buffer.extend_from_slice(&bytes[..incoming_len]);
             if self.remaining_len() == 0 {
-                assert_eq!(self.buffer.capacity().saturating_sub(self.buffer.len()), 1);
-                self.buffer.push(0); // Add NULL to last
+                assert_eq!(self.buffer.capacity(), self.buffer.len());
             }
         }
     }
