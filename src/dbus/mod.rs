@@ -1,13 +1,15 @@
 mod connection;
 mod message;
 mod types;
+mod values;
 
 pub mod reader;
 pub mod writer;
 
 pub use connection::Connection;
 pub use message::Message;
-pub use types::{Argument, DictEntry, Signature, SignatureParseError, Variant};
+pub use types::Argument;
+pub use values::{ArgType, DictEntry, ObjectPath, Signature, SignatureParseError, UnixFd, Variant};
 
 use std::ffi::CStr;
 use std::os::raw::*;

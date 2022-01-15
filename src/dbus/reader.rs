@@ -6,9 +6,8 @@ use std::mem;
 use std::str::Utf8Error;
 
 use super::message::Message;
-use super::types::{
-    ArgType, Argument, BasicValue, DictEntry, ObjectPath, Signature, UnixFd, Variant,
-};
+use super::types::{Argument, BasicType};
+use super::values::{ArgType, BasicValue, DictEntry, ObjectPath, Signature, UnixFd, Variant};
 
 pub struct MessageReader<'a> {
     iter: dbus_sys::DBusMessageIter,
@@ -52,26 +51,39 @@ impl<'a> MessageReader<'a> {
     where
         T: Readable,
     {
-        T::peek(self)
+        if self.arg_type() == T::arg_type() {
+            T::peek(self)
+        } else {
+            Err(Error::UnexpectedSignature {
+                expected: T::signature(),
+                actual: self.signature(),
+            })
+        }
     }
 
     pub fn consume<T>(&mut self) -> Result<T, Error>
     where
         T: Readable,
     {
-        T::consume(self)
+        let result = self.peek();
+        self.next();
+        result
     }
 
-    fn get_basic(&self) -> BasicValue {
+    fn get_basic<T>(&self) -> T
+    where
+        T: BasicType,
+    {
         assert!(self.arg_type().is_basic());
         let mut value = mem::MaybeUninit::<BasicValue>::uninit();
-        unsafe {
+        let value = unsafe {
             dbus_sys::dbus_message_iter_get_basic(
                 &self.iter as *const _ as *mut _,
                 value.as_mut_ptr().cast(),
             );
             value.assume_init()
-        }
+        };
+        T::from_basic(value)
     }
 
     fn recurse(&self) -> MessageReader<'a> {
@@ -100,18 +112,7 @@ impl<'a> MessageReader<'a> {
         self.arg_type() != ArgType::Invalid
     }
 
-    fn ensure_argument<T: Argument>(&self) -> Result<(), Error> {
-        if self.arg_type() == T::arg_type() {
-            Ok(())
-        } else {
-            Err(Error::UnexpectedSignature {
-                expected: T::signature(),
-                actual: self.signature(),
-            })
-        }
-    }
-
-    fn ensure_terminated(&self) -> Result<(), Error> {
+    fn terminate(&self) -> Result<(), Error> {
         if !self.has_next() {
             Ok(())
         } else {
@@ -179,130 +180,108 @@ where
     Self: Sized,
 {
     fn peek(reader: &MessageReader) -> Result<Self, Error>;
-
-    fn consume(reader: &mut MessageReader) -> Result<Self, Error> {
-        let result = Self::peek(reader);
-        reader.next();
-        result
-    }
 }
 
 impl Readable for bool {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
-        Ok(unsafe { reader.get_basic().bool })
+        Ok(reader.get_basic())
     }
 }
 
 impl Readable for u8 {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
-        Ok(unsafe { reader.get_basic().byte })
+        Ok(reader.get_basic())
     }
 }
 
 impl Readable for i16 {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
-        Ok(unsafe { reader.get_basic().i16 })
+        Ok(reader.get_basic())
     }
 }
 
 impl Readable for i32 {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
-        Ok(unsafe { reader.get_basic().i32 })
+        Ok(reader.get_basic())
     }
 }
 
 impl Readable for i64 {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
-        Ok(unsafe { reader.get_basic().i64 })
+        Ok(reader.get_basic())
     }
 }
 
 impl Readable for u16 {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
-        Ok(unsafe { reader.get_basic().u16 })
+        Ok(reader.get_basic())
     }
 }
 
 impl Readable for u32 {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
-        Ok(unsafe { reader.get_basic().u32 })
+        Ok(reader.get_basic())
     }
 }
 
 impl Readable for u64 {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
-        Ok(unsafe { reader.get_basic().u64 })
+        Ok(reader.get_basic())
     }
 }
 
 impl Readable for f64 {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
-        Ok(unsafe { reader.get_basic().f64 })
+        Ok(reader.get_basic())
     }
 }
 
 impl Readable for &str {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
-        let c_str = unsafe { CStr::from_ptr(reader.get_basic().str) };
+        let c_str = unsafe { CStr::from_ptr(reader.get_basic()) };
         Ok(c_str.to_str()?)
     }
 }
 
 impl Readable for String {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
-        let c_str = unsafe { CStr::from_ptr(reader.get_basic().str) };
+        let c_str = unsafe { CStr::from_ptr(reader.get_basic()) };
         Ok(c_str.to_string_lossy().into_owned())
     }
 }
 
 impl Readable for &CStr {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
-        Ok(unsafe { CStr::from_ptr(reader.get_basic().str) })
+        Ok(unsafe { CStr::from_ptr(reader.get_basic()) })
     }
 }
 
 impl Readable for CString {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
-        let c_str = unsafe { CStr::from_ptr(reader.get_basic().str) };
+        let c_str = unsafe { CStr::from_ptr(reader.get_basic()) };
         Ok(CString::new(c_str.to_bytes())?)
     }
 }
 
 impl<'a> Readable for ObjectPath<'a> {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
-        let c_str = unsafe { CStr::from_ptr(reader.get_basic().str) };
+        let c_str = unsafe { CStr::from_ptr(reader.get_basic()) };
         Ok(ObjectPath(c_str.to_string_lossy()))
     }
 }
 
 impl Readable for ArgType {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
-        unsafe { Ok(ArgType::from(reader.get_basic().byte)) }
+        Ok(ArgType::from(reader.get_basic::<u8>()))
     }
 }
 
 impl<T: Readable> Readable for Vec<T> {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
         let mut sub_reader = reader.recurse();
         let mut elements = Vec::new();
         while sub_reader.has_next() {
-            let element = T::consume(&mut sub_reader)?;
+            let element = sub_reader.consume()?;
             elements.push(element);
         }
         Ok(elements)
@@ -311,9 +290,8 @@ impl<T: Readable> Readable for Vec<T> {
 
 impl Readable for () {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
         let sub_reader = reader.recurse();
-        sub_reader.ensure_terminated()
+        sub_reader.terminate()
     }
 }
 
@@ -323,11 +301,10 @@ where
     B: Readable,
 {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
         let mut sub_reader = reader.recurse();
-        let a = A::consume(&mut sub_reader)?;
-        let b = B::consume(&mut sub_reader)?;
-        sub_reader.ensure_terminated()?;
+        let a = sub_reader.consume()?;
+        let b = sub_reader.consume()?;
+        sub_reader.terminate()?;
         Ok((a, b))
     }
 }
@@ -339,12 +316,11 @@ where
     C: Readable,
 {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
         let mut sub_reader = reader.recurse();
-        let a = A::consume(&mut sub_reader)?;
-        let b = B::consume(&mut sub_reader)?;
-        let c = C::consume(&mut sub_reader)?;
-        sub_reader.ensure_terminated()?;
+        let a = sub_reader.consume()?;
+        let b = sub_reader.consume()?;
+        let c = sub_reader.consume()?;
+        sub_reader.terminate()?;
         Ok((a, b, c))
     }
 }
@@ -357,13 +333,12 @@ where
     D: Readable,
 {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
         let mut sub_reader = reader.recurse();
-        let a = A::consume(&mut sub_reader)?;
-        let b = B::consume(&mut sub_reader)?;
-        let c = C::consume(&mut sub_reader)?;
-        let d = D::consume(&mut sub_reader)?;
-        sub_reader.ensure_terminated()?;
+        let a = sub_reader.consume()?;
+        let b = sub_reader.consume()?;
+        let c = sub_reader.consume()?;
+        let d = sub_reader.consume()?;
+        sub_reader.terminate()?;
         Ok((a, b, c, d))
     }
 }
@@ -377,14 +352,13 @@ where
     E: Readable,
 {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
         let mut sub_reader = reader.recurse();
-        let a = A::consume(&mut sub_reader)?;
-        let b = B::consume(&mut sub_reader)?;
-        let c = C::consume(&mut sub_reader)?;
-        let d = D::consume(&mut sub_reader)?;
-        let e = E::consume(&mut sub_reader)?;
-        sub_reader.ensure_terminated()?;
+        let a = sub_reader.consume()?;
+        let b = sub_reader.consume()?;
+        let c = sub_reader.consume()?;
+        let d = sub_reader.consume()?;
+        let e = sub_reader.consume()?;
+        sub_reader.terminate()?;
         Ok((a, b, c, d, e))
     }
 }
@@ -399,15 +373,14 @@ where
     F: Readable,
 {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
         let mut sub_reader = reader.recurse();
-        let a = A::consume(&mut sub_reader)?;
-        let b = B::consume(&mut sub_reader)?;
-        let c = C::consume(&mut sub_reader)?;
-        let d = D::consume(&mut sub_reader)?;
-        let e = E::consume(&mut sub_reader)?;
-        let f = F::consume(&mut sub_reader)?;
-        sub_reader.ensure_terminated()?;
+        let a = sub_reader.consume()?;
+        let b = sub_reader.consume()?;
+        let c = sub_reader.consume()?;
+        let d = sub_reader.consume()?;
+        let e = sub_reader.consume()?;
+        let f = sub_reader.consume()?;
+        sub_reader.terminate()?;
         Ok((a, b, c, d, e, f))
     }
 }
@@ -423,16 +396,15 @@ where
     G: Readable,
 {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
         let mut sub_reader = reader.recurse();
-        let a = A::consume(&mut sub_reader)?;
-        let b = B::consume(&mut sub_reader)?;
-        let c = C::consume(&mut sub_reader)?;
-        let d = D::consume(&mut sub_reader)?;
-        let e = E::consume(&mut sub_reader)?;
-        let f = F::consume(&mut sub_reader)?;
-        let g = G::consume(&mut sub_reader)?;
-        sub_reader.ensure_terminated()?;
+        let a = sub_reader.consume()?;
+        let b = sub_reader.consume()?;
+        let c = sub_reader.consume()?;
+        let d = sub_reader.consume()?;
+        let e = sub_reader.consume()?;
+        let f = sub_reader.consume()?;
+        let g = sub_reader.consume()?;
+        sub_reader.terminate()?;
         Ok((a, b, c, d, e, f, g))
     }
 }
@@ -449,17 +421,16 @@ where
     H: Readable,
 {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
         let mut sub_reader = reader.recurse();
-        let a = A::consume(&mut sub_reader)?;
-        let b = B::consume(&mut sub_reader)?;
-        let c = C::consume(&mut sub_reader)?;
-        let d = D::consume(&mut sub_reader)?;
-        let e = E::consume(&mut sub_reader)?;
-        let f = F::consume(&mut sub_reader)?;
-        let g = G::consume(&mut sub_reader)?;
-        let h = H::consume(&mut sub_reader)?;
-        sub_reader.ensure_terminated()?;
+        let a = sub_reader.consume()?;
+        let b = sub_reader.consume()?;
+        let c = sub_reader.consume()?;
+        let d = sub_reader.consume()?;
+        let e = sub_reader.consume()?;
+        let f = sub_reader.consume()?;
+        let g = sub_reader.consume()?;
+        let h = sub_reader.consume()?;
+        sub_reader.terminate()?;
         Ok((a, b, c, d, e, f, g, h))
     }
 }
@@ -477,43 +448,40 @@ where
     I: Readable,
 {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
         let mut sub_reader = reader.recurse();
-        let a = A::consume(&mut sub_reader)?;
-        let b = B::consume(&mut sub_reader)?;
-        let c = C::consume(&mut sub_reader)?;
-        let d = D::consume(&mut sub_reader)?;
-        let e = E::consume(&mut sub_reader)?;
-        let f = F::consume(&mut sub_reader)?;
-        let g = G::consume(&mut sub_reader)?;
-        let h = H::consume(&mut sub_reader)?;
-        let i = I::consume(&mut sub_reader)?;
-        sub_reader.ensure_terminated()?;
+        let a = sub_reader.consume()?;
+        let b = sub_reader.consume()?;
+        let c = sub_reader.consume()?;
+        let d = sub_reader.consume()?;
+        let e = sub_reader.consume()?;
+        let f = sub_reader.consume()?;
+        let g = sub_reader.consume()?;
+        let h = sub_reader.consume()?;
+        let i = sub_reader.consume()?;
+        sub_reader.terminate()?;
         Ok((a, b, c, d, e, f, g, h, i))
     }
 }
 
 impl<T: Readable> Readable for Variant<T> {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
-        Ok(Variant(T::peek(&reader.recurse())?))
+        let sub_reader = reader.recurse();
+        Ok(Variant(sub_reader.peek()?))
     }
 }
 
 impl<K: Readable, V: Readable> Readable for DictEntry<K, V> {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
         let mut sub_reader = reader.recurse();
-        let key = K::consume(&mut sub_reader)?;
-        let value = V::consume(&mut sub_reader)?;
-        sub_reader.ensure_terminated()?;
+        let key = sub_reader.consume()?;
+        let value = sub_reader.consume()?;
+        sub_reader.terminate()?;
         Ok(DictEntry(key, value))
     }
 }
 
 impl Readable for UnixFd {
     fn peek(reader: &MessageReader) -> Result<Self, Error> {
-        reader.ensure_argument::<Self>()?;
-        Ok(UnixFd(unsafe { reader.get_basic().fd }))
+        Ok(UnixFd(reader.get_basic()))
     }
 }

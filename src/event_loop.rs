@@ -148,7 +148,7 @@ impl<Connection: self::Connection + AsRawFd> EventLoop<Connection> {
         );
 
         let mut writer = dbus::writer::MessageWriter::from_message(&message);
-        writer.append("io.github.emonkak.keytray");
+        writer.append(CStr::from_bytes_with_nul(DBUS_INTERFACE_NAME).unwrap());
         writer.append(id);
         writer.append("");
         writer.append(summary);
