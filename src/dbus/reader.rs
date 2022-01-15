@@ -1,13 +1,14 @@
 use libdbus_sys as dbus_sys;
-use serde::de;
 use std::error;
-use std::ffi::CStr;
+use std::ffi::{CStr, CString, NulError};
 use std::fmt;
 use std::mem;
-use std::str;
+use std::str::Utf8Error;
 
 use super::message::Message;
-use super::types::{ArgType, Argument, Signature, SignatureParseError};
+use super::types::{
+    ArgType, Argument, BasicValue, DictEntry, ObjectPath, Signature, UnixFd, Variant,
+};
 
 pub struct MessageReader<'a> {
     iter: dbus_sys::DBusMessageIter,
@@ -25,71 +26,56 @@ impl<'a> MessageReader<'a> {
     }
 
     pub fn arg_type(&self) -> ArgType {
-        unsafe { dbus_sys::dbus_message_iter_get_arg_type(&self.iter as *const _ as *mut _).into() }
+        ArgType::from(unsafe {
+            dbus_sys::dbus_message_iter_get_arg_type(&self.iter as *const _ as *mut _) as u8
+        })
     }
 
     pub fn element_type(&self) -> ArgType {
-        unsafe {
-            dbus_sys::dbus_message_iter_get_element_type(&self.iter as *const _ as *mut _).into()
-        }
+        ArgType::from(unsafe {
+            dbus_sys::dbus_message_iter_get_element_type(&self.iter as *const _ as *mut _) as u8
+        })
     }
 
-    pub fn signature(&self) -> Signature {
-        let signature_str = unsafe {
-            CStr::from_ptr(dbus_sys::dbus_message_iter_get_signature(
-                &self.iter as *const _ as *mut _,
-            ))
-        };
-        Signature::parse(signature_str.to_bytes()).expect("parse signature")
-    }
-
-    fn has_next(&self) -> bool {
-        self.arg_type() != ArgType::Invalid
-    }
-
-    fn consume_basic<T>(&mut self) -> Result<T, Error>
-    where
-        T: Argument,
-    {
-        let value = self.peek_basic();
-        self.advance();
-        value
-    }
-
-    fn consume_iter(&mut self) -> MessageReader<'a> {
-        let subiter = self.peek_iter();
-        self.advance();
-        subiter
-    }
-
-    fn advance(&mut self) {
-        unsafe {
-            dbus_sys::dbus_message_iter_next(&mut self.iter);
-        }
-    }
-
-    fn peek_basic<T>(&self) -> Result<T, Error>
-    where
-        T: Argument,
-    {
-        if self.arg_type() == T::arg_type() {
-            let mut value = mem::MaybeUninit::<T>::uninit();
-            unsafe {
-                dbus_sys::dbus_message_iter_get_basic(
-                    &self.iter as *const _ as *mut _,
-                    value.as_mut_ptr().cast(),
-                );
-                Ok(value.assume_init())
-            }
+    pub fn signature(&self) -> Option<Signature> {
+        let signature_ptr =
+            unsafe { dbus_sys::dbus_message_iter_get_signature(&self.iter as *const _ as *mut _) };
+        if signature_ptr.is_null() || unsafe { *signature_ptr } == 0 {
+            None
         } else {
-            Err(Error::UnexpectedArgType {
-                expected: T::arg_type(),
-                actual: self.arg_type(),
-            })
+            let signature_str = unsafe { CString::from_raw(signature_ptr) };
+            Some(Signature::parse(signature_str.to_bytes()).expect("parse signature"))
         }
     }
 
-    fn peek_iter(&self) -> MessageReader<'a> {
+    pub fn peek<T>(&self) -> Result<T, Error>
+    where
+        T: Readable,
+    {
+        T::peek(self)
+    }
+
+    pub fn consume<T>(&mut self) -> Result<T, Error>
+    where
+        T: Readable,
+    {
+        T::consume(self)
+    }
+
+    fn get_basic(&self) -> BasicValue {
+        assert!(self.arg_type().is_basic());
+        let mut value = mem::MaybeUninit::<BasicValue>::uninit();
+        unsafe {
+            dbus_sys::dbus_message_iter_get_basic(
+                &self.iter as *const _ as *mut _,
+                value.as_mut_ptr().cast(),
+            );
+            value.assume_init()
+        }
+    }
+
+    fn recurse(&self) -> MessageReader<'a> {
+        assert!(self.arg_type().is_container());
         let subiter = unsafe {
             let mut subiter = mem::MaybeUninit::uninit();
             dbus_sys::dbus_message_iter_recurse(
@@ -104,446 +90,76 @@ impl<'a> MessageReader<'a> {
         }
     }
 
-    fn validate_arg_type(&self, expected: ArgType) -> Result<(), Error> {
-        if self.arg_type() == expected {
+    fn next(&mut self) {
+        unsafe {
+            dbus_sys::dbus_message_iter_next(&mut self.iter);
+        }
+    }
+
+    fn has_next(&self) -> bool {
+        self.arg_type() != ArgType::Invalid
+    }
+
+    fn ensure_argument<T: Argument>(&self) -> Result<(), Error> {
+        if self.arg_type() == T::arg_type() {
             Ok(())
         } else {
-            Err(Error::UnexpectedArgType {
-                expected,
-                actual: self.element_type(),
+            Err(Error::UnexpectedSignature {
+                expected: T::signature(),
+                actual: self.signature(),
             })
         }
     }
 
-    fn validate_element_type(&self, expected: ArgType) -> Result<(), Error> {
-        if self.element_type() == expected {
+    fn ensure_terminated(&self) -> Result<(), Error> {
+        if !self.has_next() {
             Ok(())
         } else {
-            Err(Error::UnexpectedElementType {
-                expected,
-                actual: self.element_type(),
+            Err(Error::TrailingSignature {
+                actual: self.signature(),
             })
         }
     }
 }
 
-impl<'de, 'a> de::Deserializer<'de> for &mut MessageReader<'a> {
-    type Error = Error;
-
-    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        match self.arg_type() {
-            ArgType::Array | ArgType::Struct | ArgType::DictEntry => {
-                let subiter = self.consume_iter();
-                visitor.visit_seq(subiter)
-            }
-            ArgType::Variant => {
-                let mut subiter = self.consume_iter();
-                subiter.deserialize_any(visitor)
-            }
-            ArgType::Boolean => self.deserialize_bool(visitor),
-            ArgType::String => self.deserialize_str(visitor),
-            ArgType::Byte => self.deserialize_u8(visitor),
-            ArgType::Int16 => self.deserialize_i16(visitor),
-            ArgType::Uint16 => self.deserialize_u16(visitor),
-            ArgType::Int32 => self.deserialize_i32(visitor),
-            ArgType::Uint32 => self.deserialize_u32(visitor),
-            ArgType::Int64 => self.deserialize_i64(visitor),
-            ArgType::Uint64 => self.deserialize_u64(visitor),
-            ArgType::Double => self.deserialize_f64(visitor),
-            ArgType::UnixFd => self.deserialize_i32(visitor),
-            ArgType::ObjectPath => self.deserialize_str(visitor),
-            ArgType::Signature => self.deserialize_str(visitor),
-            ArgType::Invalid => Err(Error::InvalidArgType),
-        }
-    }
-
-    fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        visitor.visit_bool(self.consume_basic()?)
-    }
-
-    fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        visitor.visit_i8(self.consume_basic::<u8>()? as i8)
-    }
-
-    fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        visitor.visit_u16(self.consume_basic()?)
-    }
-
-    fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        visitor.visit_i32(self.consume_basic()?)
-    }
-
-    fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        visitor.visit_i64(self.consume_basic()?)
-    }
-
-    fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        visitor.visit_u8(self.consume_basic()?)
-    }
-
-    fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        visitor.visit_u16(self.consume_basic()?)
-    }
-
-    fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        visitor.visit_u32(self.consume_basic()?)
-    }
-
-    fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        visitor.visit_u64(self.consume_basic()?)
-    }
-
-    fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        visitor.visit_f32(self.consume_basic::<f64>()? as f32)
-    }
-
-    fn deserialize_f64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        visitor.visit_f64(self.consume_basic()?)
-    }
-
-    fn deserialize_char<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        visitor.visit_char(unsafe { char::from_u32_unchecked(self.consume_basic()?) })
-    }
-
-    fn deserialize_str<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        let c_str = unsafe { CStr::from_ptr(self.consume_basic()?) };
-        visitor.visit_str(c_str.to_string_lossy().as_ref())
-    }
-
-    fn deserialize_string<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        let c_str = unsafe { CStr::from_ptr(self.consume_basic()?) };
-        visitor.visit_string(c_str.to_string_lossy().into_owned())
-    }
-
-    fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        self.validate_arg_type(ArgType::Array)?;
-        self.validate_element_type(ArgType::Byte)?;
-
-        let mut bytes = Vec::new();
-        let mut subiter = self.consume_iter();
-
-        while subiter.has_next() {
-            bytes.push(subiter.consume_basic()?);
-        }
-
-        visitor.visit_bytes(&bytes)
-    }
-
-    fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        self.validate_arg_type(ArgType::Array)?;
-        self.validate_element_type(ArgType::Byte)?;
-
-        let mut bytes = Vec::new();
-        let mut subiter = self.consume_iter();
-
-        while subiter.has_next() {
-            bytes.push(subiter.consume_basic()?);
-        }
-
-        visitor.visit_byte_buf(bytes)
-    }
-
-    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        self.validate_arg_type(ArgType::Variant)?;
-
-        let mut subiter = self.consume_iter();
-
-        match subiter.signature() {
-            Signature::Struct(contents) if contents.len() == 0 => visitor.visit_unit(),
-            _ => subiter.deserialize_any(visitor),
-        }
-    }
-
-    fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        match self.signature() {
-            Signature::Struct(contents) if contents.len() == 0 => visitor.visit_unit(),
-            signature => Err(Error::UnexpectedSignature {
-                expected: Signature::Struct(vec![]),
-                actual: signature,
-            }),
-        }
-    }
-
-    fn deserialize_unit_struct<V>(
-        self,
-        _name: &'static str,
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        self.deserialize_unit(visitor)
-    }
-
-    fn deserialize_newtype_struct<V>(
-        self,
-        _name: &'static str,
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        visitor.visit_newtype_struct(self)
-    }
-
-    fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        self.validate_arg_type(ArgType::Array)?;
-
-        let subiter = self.consume_iter();
-        visitor.visit_seq(subiter)
-    }
-
-    fn deserialize_tuple<V>(self, len: usize, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        match self.signature() {
-            Signature::Struct(contents) if contents.len() == len => {
-                let subiter = self.consume_iter();
-                visitor.visit_seq(subiter)
-            }
-            signature => Err(Error::UnexpectedArgType {
-                expected: ArgType::Struct,
-                actual: signature.arg_type(),
-            }),
-        }
-    }
-
-    fn deserialize_tuple_struct<V>(
-        self,
-        _name: &'static str,
-        _len: usize,
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        visitor.visit_seq(self)
-    }
-
-    fn deserialize_map<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        self.validate_arg_type(ArgType::Array)?;
-        self.validate_element_type(ArgType::DictEntry)?;
-
-        let subiter = self.consume_iter();
-        visitor.visit_map(subiter)
-    }
-
-    fn deserialize_struct<V>(
-        self,
-        _name: &'static str,
-        _fields: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        self.deserialize_map(visitor)
-    }
-
-    fn deserialize_enum<V>(
-        self,
-        _name: &'static str,
-        _variants: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        self.validate_arg_type(ArgType::Variant)?;
-
-        let mut subiter = self.consume_iter();
-        subiter.deserialize_any(visitor)
-    }
-
-    fn deserialize_identifier<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        self.deserialize_str(visitor)
-    }
-
-    fn deserialize_ignored_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::Visitor<'de>,
-    {
-        self.deserialize_any(visitor)
-    }
-}
-
-impl<'de, 'a> de::SeqAccess<'de> for MessageReader<'a> {
-    type Error = Error;
-
-    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
-    where
-        T: de::DeserializeSeed<'de>,
-    {
-        if self.has_next() {
-            seed.deserialize(self).map(Some)
-        } else {
-            Ok(None)
-        }
-    }
-}
-
-impl<'de, 'a> de::MapAccess<'de> for MessageReader<'a> {
-    type Error = Error;
-
-    fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
-    where
-        K: de::DeserializeSeed<'de>,
-    {
-        if self.has_next() {
-            let mut subiter = self.peek_iter();
-            seed.deserialize(&mut subiter).map(Some)
-        } else {
-            Ok(None)
-        }
-    }
-
-    fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
-    where
-        V: de::DeserializeSeed<'de>,
-    {
-        let mut subiter = self.consume_iter();
-        subiter.advance();
-        seed.deserialize(&mut subiter)
-    }
-
-    fn next_entry_seed<K, V>(
-        &mut self,
-        kseed: K,
-        vseed: V,
-    ) -> Result<Option<(K::Value, V::Value)>, Self::Error>
-    where
-        K: de::DeserializeSeed<'de>,
-        V: de::DeserializeSeed<'de>,
-    {
-        if self.has_next() {
-            let mut subiter = self.consume_iter();
-            let key = kseed.deserialize(&mut subiter).map(Some)?;
-            let value = vseed.deserialize(&mut subiter).map(Some)?;
-            Ok(key.zip(value))
-        } else {
-            Ok(None)
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Error {
-    Message(String),
-    InvalidArgType,
-    UnexpectedArgType {
-        expected: ArgType,
-        actual: ArgType,
+    Utf8Error(Utf8Error),
+    NulError(NulError),
+    UnexpectedEOF {
+        expected: Signature,
     },
-    UnexpectedElementType {
-        expected: ArgType,
-        actual: ArgType,
+    TrailingSignature {
+        actual: Option<Signature>,
     },
     UnexpectedSignature {
         expected: Signature,
-        actual: Signature,
+        actual: Option<Signature>,
     },
-    SignatureParseError(SignatureParseError),
 }
 
-impl From<SignatureParseError> for Error {
-    fn from(error: SignatureParseError) -> Self {
-        Self::SignatureParseError(error)
+impl From<Utf8Error> for Error {
+    fn from(error: Utf8Error) -> Self {
+        Self::Utf8Error(error)
     }
 }
 
-impl From<String> for Error {
-    fn from(message: String) -> Self {
-        Self::Message(message)
+impl From<NulError> for Error {
+    fn from(error: NulError) -> Self {
+        Self::NulError(error)
     }
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Error::Message(message) => f.write_str(message),
-            Error::InvalidArgType => {
-                write!(f, "Argument type is invalid.",)
+            Error::Utf8Error(error) => error.fmt(f),
+            Error::NulError(error) => error.fmt(f),
+            Error::TrailingSignature { actual } => {
+                write!(f, "Trailing signature `{:?}` found.", actual)
             }
-            Error::UnexpectedArgType { expected, actual } => {
-                write!(
-                    f,
-                    "Expected argument type `{:?}` but got `{:?}`.",
-                    expected, actual,
-                )
-            }
-            Error::UnexpectedElementType { expected, actual } => {
-                write!(
-                    f,
-                    "Expected element type `{:?}` but got `{:?}`.",
-                    expected, actual,
-                )
+            Error::UnexpectedEOF { expected } => {
+                write!(f, "Expected signature type `{:?}` but EOF found.", expected)
             }
             Error::UnexpectedSignature { expected, actual } => {
                 write!(
@@ -552,15 +168,352 @@ impl fmt::Display for Error {
                     expected, actual,
                 )
             }
-            Error::SignatureParseError(error) => error.fmt(f),
         }
     }
 }
 
 impl error::Error for Error {}
 
-impl de::Error for Error {
-    fn custom<T: fmt::Display>(message: T) -> Self {
-        Error::Message(message.to_string())
+pub trait Readable: Argument
+where
+    Self: Sized,
+{
+    fn peek(reader: &MessageReader) -> Result<Self, Error>;
+
+    fn consume(reader: &mut MessageReader) -> Result<Self, Error> {
+        let result = Self::peek(reader);
+        reader.next();
+        result
+    }
+}
+
+impl Readable for bool {
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        Ok(unsafe { reader.get_basic().bool })
+    }
+}
+
+impl Readable for u8 {
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        Ok(unsafe { reader.get_basic().byte })
+    }
+}
+
+impl Readable for i16 {
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        Ok(unsafe { reader.get_basic().i16 })
+    }
+}
+
+impl Readable for i32 {
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        Ok(unsafe { reader.get_basic().i32 })
+    }
+}
+
+impl Readable for i64 {
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        Ok(unsafe { reader.get_basic().i64 })
+    }
+}
+
+impl Readable for u16 {
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        Ok(unsafe { reader.get_basic().u16 })
+    }
+}
+
+impl Readable for u32 {
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        Ok(unsafe { reader.get_basic().u32 })
+    }
+}
+
+impl Readable for u64 {
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        Ok(unsafe { reader.get_basic().u64 })
+    }
+}
+
+impl Readable for f64 {
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        Ok(unsafe { reader.get_basic().f64 })
+    }
+}
+
+impl Readable for &str {
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        let c_str = unsafe { CStr::from_ptr(reader.get_basic().str) };
+        Ok(c_str.to_str()?)
+    }
+}
+
+impl Readable for String {
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        let c_str = unsafe { CStr::from_ptr(reader.get_basic().str) };
+        Ok(c_str.to_string_lossy().into_owned())
+    }
+}
+
+impl Readable for &CStr {
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        Ok(unsafe { CStr::from_ptr(reader.get_basic().str) })
+    }
+}
+
+impl Readable for CString {
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        let c_str = unsafe { CStr::from_ptr(reader.get_basic().str) };
+        Ok(CString::new(c_str.to_bytes())?)
+    }
+}
+
+impl<'a> Readable for ObjectPath<'a> {
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        let c_str = unsafe { CStr::from_ptr(reader.get_basic().str) };
+        Ok(ObjectPath(c_str.to_string_lossy()))
+    }
+}
+
+impl Readable for ArgType {
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        unsafe { Ok(ArgType::from(reader.get_basic().byte)) }
+    }
+}
+
+impl<T: Readable> Readable for Vec<T> {
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        let mut sub_reader = reader.recurse();
+        let mut elements = Vec::new();
+        while sub_reader.has_next() {
+            let element = T::consume(&mut sub_reader)?;
+            elements.push(element);
+        }
+        Ok(elements)
+    }
+}
+
+impl Readable for () {
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        let sub_reader = reader.recurse();
+        sub_reader.ensure_terminated()
+    }
+}
+
+impl<A, B> Readable for (A, B)
+where
+    A: Readable,
+    B: Readable,
+{
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        let mut sub_reader = reader.recurse();
+        let a = A::consume(&mut sub_reader)?;
+        let b = B::consume(&mut sub_reader)?;
+        sub_reader.ensure_terminated()?;
+        Ok((a, b))
+    }
+}
+
+impl<A, B, C> Readable for (A, B, C)
+where
+    A: Readable,
+    B: Readable,
+    C: Readable,
+{
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        let mut sub_reader = reader.recurse();
+        let a = A::consume(&mut sub_reader)?;
+        let b = B::consume(&mut sub_reader)?;
+        let c = C::consume(&mut sub_reader)?;
+        sub_reader.ensure_terminated()?;
+        Ok((a, b, c))
+    }
+}
+
+impl<A, B, C, D> Readable for (A, B, C, D)
+where
+    A: Readable,
+    B: Readable,
+    C: Readable,
+    D: Readable,
+{
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        let mut sub_reader = reader.recurse();
+        let a = A::consume(&mut sub_reader)?;
+        let b = B::consume(&mut sub_reader)?;
+        let c = C::consume(&mut sub_reader)?;
+        let d = D::consume(&mut sub_reader)?;
+        sub_reader.ensure_terminated()?;
+        Ok((a, b, c, d))
+    }
+}
+
+impl<A, B, C, D, E> Readable for (A, B, C, D, E)
+where
+    A: Readable,
+    B: Readable,
+    C: Readable,
+    D: Readable,
+    E: Readable,
+{
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        let mut sub_reader = reader.recurse();
+        let a = A::consume(&mut sub_reader)?;
+        let b = B::consume(&mut sub_reader)?;
+        let c = C::consume(&mut sub_reader)?;
+        let d = D::consume(&mut sub_reader)?;
+        let e = E::consume(&mut sub_reader)?;
+        sub_reader.ensure_terminated()?;
+        Ok((a, b, c, d, e))
+    }
+}
+
+impl<A, B, C, D, E, F> Readable for (A, B, C, D, E, F)
+where
+    A: Readable,
+    B: Readable,
+    C: Readable,
+    D: Readable,
+    E: Readable,
+    F: Readable,
+{
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        let mut sub_reader = reader.recurse();
+        let a = A::consume(&mut sub_reader)?;
+        let b = B::consume(&mut sub_reader)?;
+        let c = C::consume(&mut sub_reader)?;
+        let d = D::consume(&mut sub_reader)?;
+        let e = E::consume(&mut sub_reader)?;
+        let f = F::consume(&mut sub_reader)?;
+        sub_reader.ensure_terminated()?;
+        Ok((a, b, c, d, e, f))
+    }
+}
+
+impl<A, B, C, D, E, F, G> Readable for (A, B, C, D, E, F, G)
+where
+    A: Readable,
+    B: Readable,
+    C: Readable,
+    D: Readable,
+    E: Readable,
+    F: Readable,
+    G: Readable,
+{
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        let mut sub_reader = reader.recurse();
+        let a = A::consume(&mut sub_reader)?;
+        let b = B::consume(&mut sub_reader)?;
+        let c = C::consume(&mut sub_reader)?;
+        let d = D::consume(&mut sub_reader)?;
+        let e = E::consume(&mut sub_reader)?;
+        let f = F::consume(&mut sub_reader)?;
+        let g = G::consume(&mut sub_reader)?;
+        sub_reader.ensure_terminated()?;
+        Ok((a, b, c, d, e, f, g))
+    }
+}
+
+impl<A, B, C, D, E, F, G, H> Readable for (A, B, C, D, E, F, G, H)
+where
+    A: Readable,
+    B: Readable,
+    C: Readable,
+    D: Readable,
+    E: Readable,
+    F: Readable,
+    G: Readable,
+    H: Readable,
+{
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        let mut sub_reader = reader.recurse();
+        let a = A::consume(&mut sub_reader)?;
+        let b = B::consume(&mut sub_reader)?;
+        let c = C::consume(&mut sub_reader)?;
+        let d = D::consume(&mut sub_reader)?;
+        let e = E::consume(&mut sub_reader)?;
+        let f = F::consume(&mut sub_reader)?;
+        let g = G::consume(&mut sub_reader)?;
+        let h = H::consume(&mut sub_reader)?;
+        sub_reader.ensure_terminated()?;
+        Ok((a, b, c, d, e, f, g, h))
+    }
+}
+
+impl<A, B, C, D, E, F, G, H, I> Readable for (A, B, C, D, E, F, G, H, I)
+where
+    A: Readable,
+    B: Readable,
+    C: Readable,
+    D: Readable,
+    E: Readable,
+    F: Readable,
+    G: Readable,
+    H: Readable,
+    I: Readable,
+{
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        let mut sub_reader = reader.recurse();
+        let a = A::consume(&mut sub_reader)?;
+        let b = B::consume(&mut sub_reader)?;
+        let c = C::consume(&mut sub_reader)?;
+        let d = D::consume(&mut sub_reader)?;
+        let e = E::consume(&mut sub_reader)?;
+        let f = F::consume(&mut sub_reader)?;
+        let g = G::consume(&mut sub_reader)?;
+        let h = H::consume(&mut sub_reader)?;
+        let i = I::consume(&mut sub_reader)?;
+        sub_reader.ensure_terminated()?;
+        Ok((a, b, c, d, e, f, g, h, i))
+    }
+}
+
+impl<T: Readable> Readable for Variant<T> {
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        Ok(Variant(T::peek(&reader.recurse())?))
+    }
+}
+
+impl<K: Readable, V: Readable> Readable for DictEntry<K, V> {
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        let mut sub_reader = reader.recurse();
+        let key = K::consume(&mut sub_reader)?;
+        let value = V::consume(&mut sub_reader)?;
+        sub_reader.ensure_terminated()?;
+        Ok(DictEntry(key, value))
+    }
+}
+
+impl Readable for UnixFd {
+    fn peek(reader: &MessageReader) -> Result<Self, Error> {
+        reader.ensure_argument::<Self>()?;
+        Ok(UnixFd(unsafe { reader.get_basic().fd }))
     }
 }

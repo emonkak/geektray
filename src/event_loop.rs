@@ -146,19 +146,16 @@ impl<Connection: self::Connection + AsRawFd> EventLoop<Connection> {
             CStr::from_bytes_with_nul(b"org.freedesktop.Notifications\0").unwrap(),
             CStr::from_bytes_with_nul(b"Notify\0").unwrap(),
         );
-        let message_iter = dbus::writer::MessageWriter::from_message(&message);
 
-        (|| -> Result<(), dbus::writer::Error> {
-            message_iter.write("io.github.emonkak.keytray")?;
-            message_iter.write(id)?;
-            message_iter.write("")?;
-            message_iter.write(summary)?;
-            message_iter.write(body)?;
-            message_iter.write(&[] as &[&str])?;
-            message_iter.write(&[] as &[dbus::DictEntry<&str, dbus::Variant<()>>])?;
-            message_iter.write(timeout.map_or(-1, |duration| duration.as_millis() as i32))?;
-            Ok(())
-        })().ok();
+        let mut writer = dbus::writer::MessageWriter::from_message(&message);
+        writer.append("io.github.emonkak.keytray");
+        writer.append(id);
+        writer.append("");
+        writer.append(summary);
+        writer.append(body);
+        writer.append(&[] as &[&str]);
+        writer.append(&[] as &[dbus::DictEntry<&str, dbus::Variant<()>>]);
+        writer.append(timeout.map_or(-1, |duration| duration.as_millis() as i32));
 
         let result = self.dbus_connection.send(&message, None);
         self.dbus_connection.flush();

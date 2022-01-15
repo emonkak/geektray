@@ -20,16 +20,6 @@ struct OneTwoThree {
 }
 
 #[derive(Debug, Deserialize)]
-struct ExampleMethodArguments(
-    i32,
-    String,
-    f64,
-    Vec<String>,
-    OneTwoThree,
-    Either<i64, String>,
-);
-
-#[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum Either<L, R> {
     Left(L),
@@ -45,18 +35,14 @@ fn run() -> anyhow::Result<()> {
     while connection.read_write(None) {
         while let Some(message) = connection.pop_message() {
             if message.member() == Some("ExampleMethod") {
-                let mut iter = dbus::reader::MessageReader::from_message(&message);
-                let arguments = ExampleMethodArguments::deserialize(&mut iter);
+                let mut reader = dbus::reader::MessageReader::from_message(&message);
 
-                println!("{:?}", arguments);
-
-                // println!("{:?}", message);
-                // println!("{:?}", iter.next::<i32>());
-                // println!("{:?}", iter.next::<&CStr>());
-                // println!("{:?}", iter.next::<f64>());
-                // println!("{:?}", iter.next::<Vec<&CStr>>());
-                // println!("{:?}", iter.next::<Vec<(&CStr, i32)>>());
-                // println!("{:?}", iter.next::<dbus::Variant<i32>>());
+                println!("{:?}", reader.consume::<i32>());
+                println!("{:?}", reader.consume::<&CStr>());
+                println!("{:?}", reader.consume::<f64>());
+                println!("{:?}", reader.consume::<Vec<&CStr>>());
+                println!("{:?}", reader.consume::<Vec<(&CStr, i32)>>());
+                println!("{:?}", reader.consume::<dbus::Variant<i32>>());
             }
         }
     }
