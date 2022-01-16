@@ -362,6 +362,7 @@ enum TrayStatus {
 }
 
 #[derive(Debug)]
+#[allow(unused)]
 pub struct BalloonMessage {
     buffer: Vec<u8>,
     timeout: Duration,
@@ -369,6 +370,7 @@ pub struct BalloonMessage {
     id: u32,
 }
 
+#[allow(unused)]
 impl BalloonMessage {
     fn new(data: [u32; 5]) -> Self {
         let [_, _, timeout, length, id] = data;

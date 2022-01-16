@@ -1,8 +1,6 @@
 use anyhow::{anyhow, Context as _};
-use libdbus_sys as dbus;
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
-use std::str::FromStr;
 use x11rb::connection::Connection;
 use x11rb::errors::ReplyError;
 use x11rb::protocol;
@@ -133,36 +131,13 @@ impl App {
         self.tray_manager.acquire_tray_selection()?;
         self.window.show()?;
 
-        event_loop.run(|event, control_flow, context| match event {
+        event_loop.run(|event, _event_loop, control_flow| match event {
             Event::X11Event(event) => {
                 if let Ok(Some(event)) = self.tray_manager.process_event(self.window.id(), &event) {
-                    self.on_tray_event(&event, context, control_flow)?;
+                    self.on_tray_event(&event, control_flow)?;
                 }
                 self.window.on_event(&event, control_flow)?;
                 self.on_x11_event(&event, control_flow)?;
-                Ok(())
-            }
-            Event::DBusMessage(message) => {
-                use dbus::DBusMessageType::*;
-
-                match (
-                    message.message_type(),
-                    message.path().unwrap_or_default(),
-                    message.member().unwrap_or_default(),
-                ) {
-                    (MethodCall, "/", command_str) => {
-                        if let Ok(command) = Command::from_str(command_str) {
-                            run_command(
-                                &self.connection,
-                                self.screen_num,
-                                &mut self.window,
-                                command,
-                            )?;
-                        }
-                        context.send_dbus_message(&message.new_method_return());
-                    }
-                    _ => {}
-                }
                 Ok(())
             }
             Event::Signal(_) => {
@@ -255,20 +230,11 @@ impl App {
     fn on_tray_event(
         &mut self,
         event: &TrayEvent,
-        context: &mut EventLoop<XCBConnection>,
         control_flow: &mut ControlFlow,
     ) -> anyhow::Result<()> {
         match event {
-            TrayEvent::BalloonMessageReceived(icon_window, balloon_message) => {
-                let summary =
-                    get_window_title(self.connection.as_ref(), *icon_window, &self.atoms)?
-                        .unwrap_or_default();
-                context.send_notification(
-                    &summary,
-                    balloon_message.as_str(),
-                    *icon_window as u32,
-                    Some(balloon_message.timeout()),
-                );
+            TrayEvent::BalloonMessageReceived(_icon_window, _balloon_message) => {
+                // TODO: Handle balloon messag
             }
             TrayEvent::TrayIconAdded(icon_window) => {
                 let title = get_window_title(self.connection.as_ref(), *icon_window, &self.atoms)?

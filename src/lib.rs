@@ -1,5 +1,4 @@
 extern crate cairo_sys;
-extern crate libdbus_sys;
 extern crate nix;
 extern crate serde;
 extern crate serde_json;
@@ -16,6 +15,3 @@ mod tray_item;
 mod tray_manager;
 mod ui;
 mod utils;
-
-#[allow(dead_code)]
-pub mod dbus;

@@ -12,7 +12,6 @@ xlib = []
 anyhow = "1.0.52"
 cairo-sys-rs = { version = "0.14.9", features = ["xcb"] }
 gobject-sys = "0.14"
-libdbus-sys = "0.2.2"
 nix = "0.23.1"
 pango-sys = "0.14"
 pangocairo-sys = "0.14"
@@ -35,6 +34,3 @@ name = "list_keysyms"
 
 [[example]]
 name = "xcb_cairo_test"
-
-[[example]]
-name = "dbus_test"
