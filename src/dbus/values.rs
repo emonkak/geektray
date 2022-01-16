@@ -316,6 +316,56 @@ pub struct DictEntry<K, V>(pub K, pub V);
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct UnixFd(pub RawFd);
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum Any<'a> {
+    Boolean(bool),
+    Byte(u32),
+    Int16(i16),
+    Int32(i32),
+    Int64(i64),
+    Uint16(u16),
+    Uint32(u32),
+    Uint64(u64),
+    Double(f64),
+    String(Cow<'a, str>),
+    ObjectPath(ObjectPath<'a>),
+    Signature(ArgType),
+    Array(Vec<Any<'a>>, Signature),
+    Struct(Vec<Any<'a>>),
+    Variant(Box<Any<'a>>),
+    DictEntry(Box<DictEntry<Any<'a>, Any<'a>>>),
+    UnixFd(UnixFd),
+}
+
+impl<'a> Any<'a> {
+    pub fn signature(&self) -> Signature {
+        match self {
+            Self::Boolean(_) => Signature::Boolean,
+            Self::Byte(_) => Signature::Byte,
+            Self::Int16(_) => Signature::Int16,
+            Self::Int32(_) => Signature::Int32,
+            Self::Int64(_) => Signature::Int64,
+            Self::Uint16(_) => Signature::Uint16,
+            Self::Uint32(_) => Signature::Uint32,
+            Self::Uint64(_) => Signature::Uint64,
+            Self::Double(_) => Signature::Double,
+            Self::String(_) => Signature::String,
+            Self::ObjectPath(_) => Signature::ObjectPath,
+            Self::Signature(_) => Signature::Signature,
+            Self::Array(_, signature) => Signature::Array(Box::new(signature.clone())),
+            Self::Struct(values) => {
+                Signature::Struct(values.iter().map(|value| value.signature()).collect())
+            }
+            Self::Variant(_) => Signature::Variant,
+            Self::DictEntry(entry) => {
+                let DictEntry(key, value) = entry.as_ref();
+                Signature::DictEntry(Box::new((key.signature(), value.signature())))
+            }
+            Self::UnixFd(_) => Signature::UnixFd,
+        }
+    }
+}
+
 pub union BasicValue {
     pub bool: bool,
     pub byte: u8,

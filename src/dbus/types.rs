@@ -1,7 +1,8 @@
+use std::borrow::Cow;
 use std::ffi::{CStr, CString};
 use std::os::raw::*;
 
-use super::values::{ArgType, BasicValue, DictEntry, ObjectPath, Signature, UnixFd, Variant};
+use super::values::{Any, ArgType, BasicValue, DictEntry, ObjectPath, Signature, UnixFd, Variant};
 
 pub trait BasicType
 where
@@ -118,6 +119,10 @@ pub trait Argument {
     fn arg_type() -> ArgType {
         Self::signature().arg_type()
     }
+
+    fn compatible(arg_type: ArgType) -> bool {
+        arg_type != ArgType::Invalid && arg_type == Self::arg_type()
+    }
 }
 
 impl Argument for bool {
@@ -174,12 +179,6 @@ impl Argument for f64 {
     }
 }
 
-impl Argument for *const c_char {
-    fn signature() -> Signature {
-        Signature::String
-    }
-}
-
 impl Argument for str {
     fn signature() -> Signature {
         Signature::String
@@ -192,6 +191,12 @@ impl Argument for String {
     }
 }
 
+impl<'a> Argument for Cow<'a, str> {
+    fn signature() -> Signature {
+        Signature::String
+    }
+}
+
 impl Argument for CStr {
     fn signature() -> Signature {
         Signature::String
@@ -199,6 +204,12 @@ impl Argument for CStr {
 }
 
 impl Argument for CString {
+    fn signature() -> Signature {
+        Signature::String
+    }
+}
+
+impl<'a> Argument for Cow<'a, CStr> {
     fn signature() -> Signature {
         Signature::String
     }
@@ -225,12 +236,6 @@ impl<T: Argument> Argument for Vec<T> {
 impl<T: Argument> Argument for [T] {
     fn signature() -> Signature {
         Signature::Array(Box::new(T::signature()))
-    }
-}
-
-impl<T: Argument> Argument for Option<T> {
-    fn signature() -> Signature {
-        Signature::Variant
     }
 }
 
@@ -408,6 +413,16 @@ impl<K: Argument, V: Argument> Argument for DictEntry<K, V> {
 impl Argument for UnixFd {
     fn signature() -> Signature {
         Signature::UnixFd
+    }
+}
+
+impl<'a> Argument for Any<'a> {
+    fn signature() -> Signature {
+        Signature::Variant
+    }
+
+    fn compatible(arg_type: ArgType) -> bool {
+        arg_type != ArgType::Invalid
     }
 }
 

@@ -147,7 +147,7 @@ impl<Connection: self::Connection + AsRawFd> EventLoop<Connection> {
             CStr::from_bytes_with_nul(b"Notify\0").unwrap(),
         );
 
-        let mut writer = dbus::writer::MessageWriter::from_message(&message);
+        let mut writer = dbus::writer::Writer::from_message(&message);
         writer.append(CStr::from_bytes_with_nul(DBUS_INTERFACE_NAME).unwrap());
         writer.append(id);
         writer.append("");
