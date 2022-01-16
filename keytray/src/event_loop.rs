@@ -1,3 +1,4 @@
+use keytray_shell::event::ControlFlow;
 use nix;
 use nix::sys::epoll;
 use nix::sys::signal;
@@ -7,8 +8,6 @@ use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
 use x11rb::connection::Connection;
 use x11rb::protocol;
-
-use crate::ui::ControlFlow;
 
 const EVENT_KIND_X11: u64 = 1;
 const EVENT_KIND_SIGNAL: u64 = 2;

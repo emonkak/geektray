@@ -1,21 +1,21 @@
+use keytray_shell::event::{Keysym, Modifiers};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::command::Command;
-use crate::ui::{Keysym, Modifiers};
 
 #[derive(Debug)]
-pub struct KeyInterpreter {
+pub struct HotkeyInterpreter {
     command_table: HashMap<(Keysym, Modifiers), Vec<Command>>,
 }
 
-impl KeyInterpreter {
-    pub fn new(key_mappings: impl Iterator<Item = KeyMapping>) -> Self {
+impl HotkeyInterpreter {
+    pub fn new(hotkeys: impl Iterator<Item = Hotkey>) -> Self {
         let mut command_table: HashMap<(Keysym, Modifiers), Vec<Command>> = HashMap::new();
-        for key_mapping in key_mappings {
+        for hotkey in hotkeys {
             command_table.insert(
-                (key_mapping.keysym, key_mapping.modifiers.without_locks()),
-                key_mapping.commands,
+                (hotkey.keysym, hotkey.modifiers.without_locks()),
+                hotkey.commands,
             );
         }
         Self { command_table }
@@ -30,14 +30,14 @@ impl KeyInterpreter {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct KeyMapping {
+pub struct Hotkey {
     keysym: Keysym,
     #[serde(default)]
     modifiers: Modifiers,
     commands: Vec<Command>,
 }
 
-impl KeyMapping {
+impl Hotkey {
     pub fn new(keysym: impl Into<Keysym>, modifiers: Modifiers, commands: Vec<Command>) -> Self {
         Self {
             keysym: keysym.into(),

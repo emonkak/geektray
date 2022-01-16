@@ -10,8 +10,8 @@ use x11rb::protocol::xproto;
 use x11rb::protocol::xproto::ConnectionExt;
 use x11rb::wrapper::ConnectionExt as _;
 
-use crate::ui::{XEmbedInfo, XEmbedMessage};
 use crate::utils;
+use crate::xembed::{XEmbedInfo, XEmbedMessage};
 
 const SYSTEM_TRAY_REQUEST_DOCK: u32 = 0;
 const SYSTEM_TRAY_BEGIN_MESSAGE: u32 = 1;
@@ -171,10 +171,7 @@ impl<Connection: self::Connection> TrayManager<Connection> {
                     entry.get_mut().write_message(&event.data.as_data8());
                     if entry.get().remaining_len() == 0 {
                         let balloon_message = entry.remove();
-                        Some(TrayEvent::BalloonMessageReceived(
-                            event.window,
-                            balloon_message,
-                        ))
+                        Some(TrayEvent::MessageReceived(event.window, balloon_message))
                     } else {
                         None
                     }
@@ -350,7 +347,7 @@ impl SystemTrayOrientation {
 pub enum TrayEvent {
     TrayIconAdded(xproto::Window),
     TrayIconRemoved(xproto::Window),
-    BalloonMessageReceived(xproto::Window, BalloonMessage),
+    MessageReceived(xproto::Window, BalloonMessage),
     SelectionCleared,
 }
 

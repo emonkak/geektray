@@ -1,4 +1,4 @@
-extern crate cairo_sys;
+extern crate keytray_shell;
 extern crate nix;
 extern crate serde;
 extern crate serde_json;
@@ -9,9 +9,9 @@ pub mod config;
 
 mod command;
 mod event_loop;
-mod graphics;
+mod hotkey;
 mod tray_container;
 mod tray_item;
 mod tray_manager;
-mod ui;
 mod utils;
+mod xembed;

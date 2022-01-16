@@ -1,4 +1,8 @@
 use anyhow::{anyhow, Context as _};
+use keytray_shell::event::{ControlFlow, KeyState, Modifiers};
+use keytray_shell::graphics::{FontDescription, PhysicalPoint, PhysicalSize, Size};
+use keytray_shell::window::Window;
+use keytray_shell::xkb;
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
 use x11rb::connection::Connection;
@@ -13,11 +17,9 @@ use x11rb::xcb_ffi::XCBConnection;
 use crate::command::Command;
 use crate::config::{Config, WindowConfig};
 use crate::event_loop::{Event, EventLoop};
-use crate::graphics::{FontDescription, PhysicalPoint, PhysicalSize, Size};
+use crate::hotkey::HotkeyInterpreter;
 use crate::tray_container::TrayContainer;
 use crate::tray_manager::{SystemTrayOrientation, TrayEvent, TrayManager};
-use crate::ui::xkb;
-use crate::ui::{ControlFlow, KeyInterpreter, KeyState, Modifiers, Window};
 use crate::utils;
 
 #[derive(Debug)]
@@ -28,7 +30,7 @@ pub struct App {
     window: ManuallyDrop<Window<TrayContainer>>,
     tray_manager: ManuallyDrop<TrayManager<XCBConnection>>,
     keyboard_state: xkb::State,
-    key_interpreter: KeyInterpreter,
+    hotkey_interpreter: HotkeyInterpreter,
 }
 
 impl App {
@@ -82,7 +84,7 @@ impl App {
 
         {
             let screen = &connection.setup().roots[screen_num];
-            for key in &config.global_keys {
+            for key in &config.global_hotkeys {
                 let keycode = keyboard_state
                     .lookup_keycode(key.keysym())
                     .context("lookup keycode")?;
@@ -108,11 +110,11 @@ impl App {
             }
         }
 
-        let key_mappings = config
-            .keys
+        let all_hotkeys = config
+            .hotkeys
             .into_iter()
-            .chain(config.global_keys.into_iter());
-        let key_interpreter = KeyInterpreter::new(key_mappings);
+            .chain(config.global_hotkeys.into_iter());
+        let hotkey_interpreter = HotkeyInterpreter::new(all_hotkeys);
 
         Ok(Self {
             connection,
@@ -121,7 +123,7 @@ impl App {
             window: ManuallyDrop::new(window),
             tray_manager: ManuallyDrop::new(tray_manager),
             keyboard_state,
-            key_interpreter,
+            hotkey_interpreter,
         })
     }
 
@@ -174,7 +176,7 @@ impl App {
                     let modifiers = Modifiers::from(event.state);
                     (keysym, modifiers)
                 };
-                let commands = self.key_interpreter.eval(keysym, modifiers);
+                let commands = self.hotkey_interpreter.eval(keysym, modifiers);
                 for command in commands {
                     if !run_command(
                         &self.connection,
@@ -233,8 +235,8 @@ impl App {
         control_flow: &mut ControlFlow,
     ) -> anyhow::Result<()> {
         match event {
-            TrayEvent::BalloonMessageReceived(_icon_window, _balloon_message) => {
-                // TODO: Handle balloon messag
+            TrayEvent::MessageReceived(_icon_window, _message) => {
+                // TODO: Handle balloon message
             }
             TrayEvent::TrayIconAdded(icon_window) => {
                 let title = get_window_title(self.connection.as_ref(), *icon_window, &self.atoms)?

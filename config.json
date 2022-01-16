@@ -27,7 +27,7 @@
             "selected_item_foreground": "#e8eaeb"
         }
     },
-    "keys": [
+    "hotkeys": [
         {
             "keysym": "1",
             "commands": [
@@ -231,7 +231,7 @@
             ]
         }
     ],
-    "global_keys": [
+    "global_hotkeys": [
         {
             "keysym": "grave",
             "modifiers": {

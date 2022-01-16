@@ -1,14 +1,15 @@
+use keytray_shell::event::MouseButton;
+use keytray_shell::graphics::{
+    FontDescription, HorizontalAlign, PhysicalPoint, Point, Rect, RenderContext, Size, Text,
+    VerticalAlign,
+};
+use keytray_shell::window::{Effect, Layout, Widget};
 use std::rc::Rc;
 use x11rb::protocol;
 use x11rb::protocol::xproto;
 use x11rb::protocol::xproto::ConnectionExt as _;
 
 use crate::config::UiConfig;
-use crate::graphics::{
-    FontDescription, HorizontalAlign, PhysicalPoint, Point, Rect, RenderContext, Size, Text,
-    VerticalAlign,
-};
-use crate::ui::{Effect, Layout, MouseButton, Widget};
 use crate::utils;
 
 #[derive(Debug)]

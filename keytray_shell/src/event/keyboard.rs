@@ -7,7 +7,7 @@ use std::ops::{BitOr, BitOrAssign};
 use std::str;
 use x11rb::protocol::xproto;
 
-use super::xkbcommon_sys as xkb;
+use crate::xkbcommon_sys as ffi;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct KeyEvent {
@@ -16,13 +16,13 @@ pub struct KeyEvent {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct Keysym(pub xproto::Keysym);
+pub struct Keysym(xproto::Keysym);
 
 impl fmt::Display for Keysym {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut buffer = [0u8; 256];
         let length = unsafe {
-            xkb::xkb_keysym_get_name((self.0).into(), buffer.as_mut_ptr().cast(), buffer.len())
+            ffi::xkb_keysym_get_name((self.0).into(), buffer.as_mut_ptr().cast(), buffer.len())
         };
         if length < 0 {
             f.write_str("<NO_SYMBOL>")?;
@@ -42,6 +42,12 @@ impl From<xproto::Keysym> for Keysym {
     }
 }
 
+impl From<Keysym> for xproto::Keysym {
+    fn from(keysym: Keysym) -> Self {
+        keysym.0
+    }
+}
+
 impl Serialize for Keysym {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -49,7 +55,7 @@ impl Serialize for Keysym {
     {
         let mut buffer = [0u8; 256];
         let length = unsafe {
-            xkb::xkb_keysym_get_name((self.0).into(), buffer.as_mut_ptr().cast(), buffer.len())
+            ffi::xkb_keysym_get_name((self.0).into(), buffer.as_mut_ptr().cast(), buffer.len())
         };
         if length < 0 {
             return Err(ser::Error::custom(format!(
@@ -71,7 +77,7 @@ impl<'de> Deserialize<'de> for Keysym {
     {
         let s = String::deserialize(deserializer)?;
         let c_str = CString::new(s).map_err(de::Error::custom)?;
-        let keysym = unsafe { xkb::xkb_keysym_from_name(c_str.as_ptr(), xkb::XKB_KEYSYM_NO_FLAGS) };
+        let keysym = unsafe { ffi::xkb_keysym_from_name(c_str.as_ptr(), ffi::XKB_KEYSYM_NO_FLAGS) };
         if keysym == x11rb::NO_SYMBOL {
             return Err(de::Error::custom(format!(
                 "String \"{}\" does not match a valid Keysym.",

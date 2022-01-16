@@ -1,0 +1,15 @@
+[package]
+name = "keytray"
+version = "0.0.0"
+authors = ["Shota Nozaki <emonkak@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+anyhow = "1.0.52"
+nix = "0.23.1"
+serde = { version = "1.0.133", features = ["derive"] }
+serde_json = "1.0.74"
+x11rb = { version = "0.9", features = ["allow-unsafe-code", "xkb"] }
+
+[dependencies.keytray_shell]
+path = "../keytray_shell"

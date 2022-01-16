@@ -10,8 +10,8 @@ use x11rb::xcb_ffi::XCBConnection;
 use super::effect::Effect;
 use super::layout::Layout;
 use super::widget::Widget;
+use crate::event::ControlFlow;
 use crate::graphics::{PhysicalPoint, PhysicalSize, Point, RenderContext, Size};
-use crate::ui::ControlFlow;
 
 #[derive(Debug)]
 pub struct Window<Widget> {

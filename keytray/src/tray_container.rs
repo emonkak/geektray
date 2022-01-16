@@ -1,3 +1,8 @@
+use keytray_shell::event::MouseButton;
+use keytray_shell::graphics::{
+    FontDescription, PhysicalPoint, PhysicalSize, Point, RenderContext, Size,
+};
+use keytray_shell::window::{Effect, Layout, Widget};
 use std::rc::Rc;
 use x11rb::properties;
 use x11rb::protocol;
@@ -5,9 +10,7 @@ use x11rb::protocol::xproto;
 use x11rb::protocol::xproto::ConnectionExt as _;
 
 use crate::config::UiConfig;
-use crate::graphics::{FontDescription, PhysicalPoint, PhysicalSize, Point, RenderContext, Size};
 use crate::tray_item::TrayItem;
-use crate::ui::{Effect, Layout, MouseButton, Widget};
 
 #[derive(Debug)]
 pub struct TrayContainer {

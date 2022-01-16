@@ -1,11 +1,12 @@
 use std::array;
+use std::ops::RangeInclusive;
 use x11rb::errors::ReplyError;
 use x11rb::protocol::xkb;
 use x11rb::protocol::xkb::ConnectionExt as _;
 use x11rb::xcb_ffi::XCBConnection;
 
-use super::xkbcommon_sys as ffi;
-use crate::ui::{KeyEvent, KeyState, Keysym, Modifiers};
+use crate::event::{KeyEvent, KeyState, Keysym, Modifiers};
+use crate::xkbcommon_sys as ffi;
 
 #[derive(Debug)]
 pub struct State {
@@ -39,7 +40,7 @@ impl State {
     }
 
     pub fn get_keysym(&self, keycode: u32) -> Keysym {
-        Keysym(unsafe { ffi::xkb_state_key_get_one_sym(self.state, keycode) })
+        Keysym::from(unsafe { ffi::xkb_state_key_get_one_sym(self.state, keycode) })
     }
 
     pub fn key_event(&self, keycode: u32) -> KeyEvent {
@@ -162,6 +163,10 @@ impl Keymap {
         } else {
             Some(Self { keymap, context })
         }
+    }
+
+    pub fn all_keycodes(&self) -> RangeInclusive<u32> {
+        self.min_keycode()..=self.max_keycode()
     }
 
     pub fn min_keycode(&self) -> u32 {
