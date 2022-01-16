@@ -1,22 +1,22 @@
 use std::array;
 use x11rb::errors::ReplyError;
-use x11rb::protocol;
+use x11rb::protocol::xkb;
 use x11rb::protocol::xkb::ConnectionExt as _;
 use x11rb::xcb_ffi::XCBConnection;
 
-use super::xkbcommon_sys as xkb;
+use super::xkbcommon_sys as ffi;
 use crate::ui::{KeyEvent, KeyState, Keysym, Modifiers};
 
 #[derive(Debug)]
 pub struct State {
-    state: *mut xkb::xkb_state,
+    state: *mut ffi::xkb_state,
     mod_indices: ModIndices,
     keymap: Keymap,
 }
 
 impl State {
     pub fn from_keymap(keymap: Keymap) -> Self {
-        let state = unsafe { xkb::xkb_state_new(keymap.keymap) };
+        let state = unsafe { ffi::xkb_state_new(keymap.keymap) };
         let mod_indices = ModIndices::from_keymap(&keymap);
         Self {
             state,
@@ -25,8 +25,25 @@ impl State {
         }
     }
 
-    pub fn key_event(&self, keycode: u32, state: KeyState) -> KeyEvent {
-        let keysym = Keysym(unsafe { xkb::xkb_state_key_get_one_sym(self.state, keycode) });
+    pub fn lookup_keycode(&self, keysym: Keysym) -> Option<u32> {
+        let min_keycode = self.keymap.min_keycode();
+        let max_keycode = self.keymap.max_keycode();
+
+        for keycode in min_keycode..=max_keycode {
+            if self.get_keysym(keycode) == keysym {
+                return Some(keycode);
+            }
+        }
+
+        None
+    }
+
+    pub fn get_keysym(&self, keycode: u32) -> Keysym {
+        Keysym(unsafe { ffi::xkb_state_key_get_one_sym(self.state, keycode) })
+    }
+
+    pub fn key_event(&self, keycode: u32) -> KeyEvent {
+        let keysym = self.get_keysym(keycode);
         let modifiers = array::IntoIter::new([
             (self.mod_indices.control, Modifiers::CONTROL),
             (self.mod_indices.alt, Modifiers::ALT),
@@ -37,7 +54,7 @@ impl State {
         ])
         .fold(Modifiers::NONE, |acc, (index, modifier)| {
             let is_active = unsafe {
-                xkb::xkb_state_mod_index_is_active(self.state, index, xkb::XKB_STATE_MODS_EFFECTIVE)
+                ffi::xkb_state_mod_index_is_active(self.state, index, ffi::XKB_STATE_MODS_EFFECTIVE)
                     != 0
             };
             if is_active {
@@ -47,22 +64,32 @@ impl State {
             }
         });
 
-        KeyEvent {
-            keysym,
-            modifiers,
-            state,
-        }
+        KeyEvent { keysym, modifiers }
     }
 
-    pub fn update(&self, keycode: u32, state: KeyState) {
+    pub fn update_key(&self, keycode: u32, state: KeyState) {
         unsafe {
-            xkb::xkb_state_update_key(
+            ffi::xkb_state_update_key(
                 self.state,
                 keycode,
                 match state {
-                    KeyState::Down => xkb::XKB_KEY_DOWN,
-                    KeyState::Up => xkb::XKB_KEY_UP,
+                    KeyState::Down => ffi::XKB_KEY_DOWN,
+                    KeyState::Up => ffi::XKB_KEY_UP,
                 },
+            );
+        }
+    }
+
+    pub fn update_mask(&self, event: &xkb::StateNotifyEvent) {
+        unsafe {
+            ffi::xkb_state_update_mask(
+                self.state,
+                event.base_mods as u32,
+                event.latched_mods as u32,
+                event.locked_mods as u32,
+                event.base_group as u32,
+                event.latched_group as u32,
+                u32::from(event.locked_group),
             );
         }
     }
@@ -73,46 +100,46 @@ impl Clone for State {
         Self {
             keymap: self.keymap.clone(),
             mod_indices: self.mod_indices.clone(),
-            state: unsafe { xkb::xkb_state_ref(self.state) },
+            state: unsafe { ffi::xkb_state_ref(self.state) },
         }
     }
 }
 
 impl Drop for State {
     fn drop(&mut self) {
-        unsafe { xkb::xkb_state_unref(self.state) }
+        unsafe { ffi::xkb_state_unref(self.state) }
     }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 struct ModIndices {
-    control: xkb::xkb_mod_index_t,
-    shift: xkb::xkb_mod_index_t,
-    alt: xkb::xkb_mod_index_t,
-    super_: xkb::xkb_mod_index_t,
-    caps_lock: xkb::xkb_mod_index_t,
-    num_lock: xkb::xkb_mod_index_t,
+    control: ffi::xkb_mod_index_t,
+    shift: ffi::xkb_mod_index_t,
+    alt: ffi::xkb_mod_index_t,
+    super_: ffi::xkb_mod_index_t,
+    caps_lock: ffi::xkb_mod_index_t,
+    num_lock: ffi::xkb_mod_index_t,
 }
 
 impl ModIndices {
     fn from_keymap(keymap: &Keymap) -> Self {
         let mod_index = |name: &'static [u8]| unsafe {
-            xkb::xkb_keymap_mod_get_index(keymap.keymap, name.as_ptr().cast())
+            ffi::xkb_keymap_mod_get_index(keymap.keymap, name.as_ptr().cast())
         };
         Self {
-            control: mod_index(xkb::XKB_MOD_NAME_CTRL),
-            shift: mod_index(xkb::XKB_MOD_NAME_SHIFT),
-            alt: mod_index(xkb::XKB_MOD_NAME_ALT),
-            super_: mod_index(xkb::XKB_MOD_NAME_LOGO),
-            caps_lock: mod_index(xkb::XKB_MOD_NAME_CAPS),
-            num_lock: mod_index(xkb::XKB_MOD_NAME_NUM),
+            control: mod_index(ffi::XKB_MOD_NAME_CTRL),
+            shift: mod_index(ffi::XKB_MOD_NAME_SHIFT),
+            alt: mod_index(ffi::XKB_MOD_NAME_ALT),
+            super_: mod_index(ffi::XKB_MOD_NAME_LOGO),
+            caps_lock: mod_index(ffi::XKB_MOD_NAME_CAPS),
+            num_lock: mod_index(ffi::XKB_MOD_NAME_NUM),
         }
     }
 }
 
 #[derive(Debug)]
 pub struct Keymap {
-    keymap: *mut xkb::xkb_keymap,
+    keymap: *mut ffi::xkb_keymap,
     context: Context,
 }
 
@@ -123,11 +150,11 @@ impl Keymap {
         device_id: DeviceId,
     ) -> Option<Self> {
         let keymap = unsafe {
-            xkb::xkb_x11_keymap_new_from_device(
+            ffi::xkb_x11_keymap_new_from_device(
                 context.0,
                 connection.get_raw_xcb_connection().cast(),
                 device_id.0 as i32,
-                xkb::XKB_KEYMAP_COMPILE_NO_FLAGS,
+                ffi::XKB_KEYMAP_COMPILE_NO_FLAGS,
             )
         };
         if keymap.is_null() {
@@ -136,13 +163,21 @@ impl Keymap {
             Some(Self { keymap, context })
         }
     }
+
+    pub fn min_keycode(&self) -> u32 {
+        unsafe { ffi::xkb_keymap_min_keycode(self.keymap) }
+    }
+
+    pub fn max_keycode(&self) -> u32 {
+        unsafe { ffi::xkb_keymap_max_keycode(self.keymap) }
+    }
 }
 
 impl Clone for Keymap {
     fn clone(&self) -> Self {
         Self {
             context: self.context.clone(),
-            keymap: unsafe { xkb::xkb_keymap_ref(self.keymap) },
+            keymap: unsafe { ffi::xkb_keymap_ref(self.keymap) },
         }
     }
 }
@@ -150,7 +185,7 @@ impl Clone for Keymap {
 impl Drop for Keymap {
     fn drop(&mut self) {
         unsafe {
-            xkb::xkb_keymap_unref(self.keymap);
+            ffi::xkb_keymap_unref(self.keymap);
         }
     }
 }
@@ -162,12 +197,12 @@ impl DeviceId {
     pub fn core_keyboard(connection: &XCBConnection) -> Result<Self, ReplyError> {
         let reply = connection
             .xkb_get_device_info(
-                protocol::xkb::ID::USE_CORE_KBD.into(),
+                xkb::ID::USE_CORE_KBD.into(),
                 0u16,
                 false,
                 0u8,
                 0u8,
-                protocol::xkb::LedClass::KBD_FEEDBACK_CLASS,
+                xkb::LedClass::KBD_FEEDBACK_CLASS,
                 1u16,
             )?
             .reply()?;
@@ -176,24 +211,24 @@ impl DeviceId {
 }
 
 #[derive(Debug)]
-pub struct Context(*mut xkb::xkb_context);
+pub struct Context(*mut ffi::xkb_context);
 
 impl Context {
     pub fn new() -> Self {
-        Self(unsafe { xkb::xkb_context_new(xkb::XKB_CONTEXT_NO_FLAGS) })
+        Self(unsafe { ffi::xkb_context_new(ffi::XKB_CONTEXT_NO_FLAGS) })
     }
 }
 
 impl Clone for Context {
     fn clone(&self) -> Self {
-        unsafe { Self(xkb::xkb_context_ref(self.0)) }
+        unsafe { Self(ffi::xkb_context_ref(self.0)) }
     }
 }
 
 impl Drop for Context {
     fn drop(&mut self) {
         unsafe {
-            xkb::xkb_context_unref(self.0);
+            ffi::xkb_context_unref(self.0);
         }
     }
 }

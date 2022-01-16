@@ -44,12 +44,12 @@ impl<Widget: self::Widget> Window<Widget> {
             let window = connection.generate_id()?;
             let screen = &connection.setup().roots[screen_num];
 
-            let event_mask = xproto::EventMask::EXPOSURE
-                | xproto::EventMask::KEY_PRESS
-                | xproto::EventMask::KEY_RELEASE
-                | xproto::EventMask::BUTTON_PRESS
+            let event_mask = xproto::EventMask::BUTTON_PRESS
                 | xproto::EventMask::BUTTON_RELEASE
                 | xproto::EventMask::ENTER_WINDOW
+                | xproto::EventMask::EXPOSURE
+                | xproto::EventMask::KEY_PRESS
+                | xproto::EventMask::KEY_RELEASE
                 | xproto::EventMask::LEAVE_WINDOW
                 | xproto::EventMask::PROPERTY_CHANGE
                 | xproto::EventMask::STRUCTURE_NOTIFY;

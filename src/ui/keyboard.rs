@@ -3,7 +3,7 @@ use serde::ser;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::ffi::CString;
 use std::fmt;
-use std::ops::BitOr;
+use std::ops::{BitOr, BitOrAssign};
 use std::str;
 use x11rb::protocol::xproto;
 
@@ -13,7 +13,6 @@ use super::xkbcommon_sys as xkb;
 pub struct KeyEvent {
     pub keysym: Keysym,
     pub modifiers: Modifiers,
-    pub state: KeyState,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -164,6 +163,67 @@ impl Modifiers {
         caps_lock: false,
         num_lock: true,
     };
+
+    pub fn without_locks(&self) -> Self {
+        Self {
+            control: self.control,
+            shift: self.shift,
+            alt: self.alt,
+            super_: self.super_,
+            caps_lock: false,
+            num_lock: false,
+        }
+    }
+}
+
+impl From<u16> for Modifiers {
+    fn from(mod_mask: u16) -> Self {
+        let mut modifiers = Modifiers::NONE;
+        if (mod_mask & u16::from(xproto::ModMask::CONTROL)) != 0 {
+            modifiers |= Modifiers::CONTROL;
+        }
+        if (mod_mask & u16::from(xproto::ModMask::SHIFT)) != 0 {
+            modifiers |= Modifiers::SHIFT;
+        }
+        if (mod_mask & u16::from(xproto::ModMask::M1)) != 0 {
+            modifiers |= Modifiers::ALT;
+        }
+        if (mod_mask & u16::from(xproto::ModMask::M4)) != 0 {
+            modifiers |= Modifiers::SUPER;
+        }
+        if (mod_mask & u16::from(xproto::ModMask::LOCK)) != 0 {
+            modifiers |= Modifiers::CAPS_LOCK;
+        }
+        if (mod_mask & u16::from(xproto::ModMask::M2)) != 0 {
+            modifiers |= Modifiers::NUM_LOCK;
+        }
+        modifiers
+    }
+}
+
+impl From<Modifiers> for u16 {
+    fn from(modifiers: Modifiers) -> Self {
+        let mut mod_mask = 0;
+        if modifiers.control {
+            mod_mask |= u16::from(xproto::ModMask::CONTROL);
+        }
+        if modifiers.shift {
+            mod_mask |= u16::from(xproto::ModMask::SHIFT);
+        }
+        if modifiers.alt {
+            mod_mask |= u16::from(xproto::ModMask::M1);
+        }
+        if modifiers.super_ {
+            mod_mask |= u16::from(xproto::ModMask::M4);
+        }
+        if modifiers.caps_lock {
+            mod_mask |= u16::from(xproto::ModMask::LOCK);
+        }
+        if modifiers.num_lock {
+            mod_mask |= u16::from(xproto::ModMask::M2);
+        }
+        mod_mask
+    }
 }
 
 impl Default for Modifiers {
@@ -184,5 +244,16 @@ impl BitOr for Modifiers {
             caps_lock: self.caps_lock || rhs.caps_lock,
             num_lock: self.num_lock || rhs.num_lock,
         }
+    }
+}
+
+impl BitOrAssign for Modifiers {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.control |= rhs.control;
+        self.shift |= rhs.shift;
+        self.alt |= rhs.alt;
+        self.super_ |= rhs.super_;
+        self.caps_lock |= rhs.caps_lock;
+        self.num_lock |= rhs.num_lock;
     }
 }

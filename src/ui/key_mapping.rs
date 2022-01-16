@@ -10,12 +10,12 @@ pub struct KeyInterpreter {
 }
 
 impl KeyInterpreter {
-    pub fn new(key_mappings: Vec<KeyMapping>) -> Self {
+    pub fn new(key_mappings: impl Iterator<Item = KeyMapping>) -> Self {
         let mut command_table: HashMap<(Keysym, Modifiers), Vec<Command>> = HashMap::new();
         for key_mapping in key_mappings {
             command_table.insert(
-                (key_mapping.keysym, key_mapping.modifiers),
-                key_mapping.commands.clone(),
+                (key_mapping.keysym, key_mapping.modifiers.without_locks()),
+                key_mapping.commands,
             );
         }
         Self { command_table }
@@ -23,7 +23,7 @@ impl KeyInterpreter {
 
     pub fn eval(&self, key: Keysym, modifiers: Modifiers) -> &[Command] {
         self.command_table
-            .get(&(key, modifiers))
+            .get(&(key, modifiers.without_locks()))
             .map(|commands| commands.as_slice())
             .unwrap_or_default()
     }
@@ -44,5 +44,13 @@ impl KeyMapping {
             modifiers,
             commands,
         }
+    }
+
+    pub fn modifiers(&self) -> Modifiers {
+        self.modifiers
+    }
+
+    pub fn keysym(&self) -> Keysym {
+        self.keysym
     }
 }

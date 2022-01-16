@@ -205,9 +205,8 @@ impl Widget for TrayContainer {
 
             {
                 let values = xproto::ConfigureWindowAux::new()
-                    .x(position.x)
-                    .y(position.y
-                        - (((old_size.height as i32 - new_size.height as i32) / 2) as i32))
+                    .x(position.x + ((old_size.width as i32 - new_size.width as i32) / 2))
+                    .y(position.y + ((old_size.height as i32 - new_size.height as i32) / 2))
                     .height(new_size.height)
                     .width(new_size.width);
 

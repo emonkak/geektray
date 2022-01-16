@@ -1,4 +1,4 @@
-use anyhow::Context as _;
+use anyhow::{anyhow, Context as _};
 use libdbus_sys as dbus;
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
@@ -13,13 +13,13 @@ use x11rb::wrapper::ConnectionExt as _;
 use x11rb::xcb_ffi::XCBConnection;
 
 use crate::command::Command;
-use crate::config::Config;
+use crate::config::{Config, WindowConfig};
 use crate::event_loop::{Event, EventLoop};
 use crate::graphics::{FontDescription, PhysicalPoint, PhysicalSize, Size};
 use crate::tray_container::TrayContainer;
 use crate::tray_manager::{SystemTrayOrientation, TrayEvent, TrayManager};
 use crate::ui::xkb;
-use crate::ui::{ControlFlow, KeyInterpreter, KeyState, Window};
+use crate::ui::{ControlFlow, KeyInterpreter, KeyState, Modifiers, Window};
 use crate::utils;
 
 #[derive(Debug)]
@@ -38,7 +38,9 @@ impl App {
         let (connection, screen_num) = XCBConnection::connect(None)?;
         let connection = Rc::new(connection);
 
-        let atoms = Atoms::new(connection.as_ref())?.reply()?;
+        let atoms = Atoms::new(connection.as_ref())?
+            .reply()
+            .context("intern atoms")?;
 
         let font = FontDescription::new(
             config.ui.font.family.clone(),
@@ -46,6 +48,7 @@ impl App {
             config.ui.font.weight.into(),
             config.ui.font.stretch,
         );
+
         let tray_container = TrayContainer::new(Rc::new(config.ui), Rc::new(font));
 
         let window = Window::new(
@@ -57,92 +60,19 @@ impl App {
                 height: 0.0,
             },
             get_window_position,
-        )?;
+        )
+        .context("create window")?;
 
-        connection
-            .change_property32(
-                xproto::PropMode::REPLACE,
-                window.id(),
-                atoms.WM_PROTOCOLS,
-                xproto::AtomEnum::ATOM,
-                &[
-                    atoms._NET_WM_PING,
-                    atoms._NET_WM_SYNC_REQUEST,
-                    atoms.WM_DELETE_WINDOW,
-                ],
-            )?
-            .check()?;
-
-        {
-            connection
-                .change_property8(
-                    xproto::PropMode::REPLACE,
-                    window.id(),
-                    xproto::AtomEnum::WM_NAME,
-                    xproto::AtomEnum::STRING,
-                    config.window.name.as_bytes(),
-                )?
-                .check()?;
-            connection
-                .change_property8(
-                    xproto::PropMode::REPLACE,
-                    window.id(),
-                    atoms._NET_WM_NAME,
-                    atoms.UTF8_STRING,
-                    config.window.name.as_bytes(),
-                )?
-                .check()?;
-        }
-
-        {
-            let class_string = format!(
-                "{}\0{}",
-                config.window.class.as_ref(),
-                config.window.class.as_ref()
-            );
-            connection
-                .change_property8(
-                    xproto::PropMode::REPLACE,
-                    window.id(),
-                    xproto::AtomEnum::WM_CLASS,
-                    xproto::AtomEnum::STRING,
-                    class_string.as_bytes(),
-                )?
-                .check()?;
-        }
-
-        connection
-            .change_property32(
-                xproto::PropMode::REPLACE,
-                window.id(),
-                atoms._NET_WM_WINDOW_TYPE,
-                xproto::AtomEnum::ATOM,
-                &[atoms._NET_WM_WINDOW_TYPE_DIALOG],
-            )?
-            .check()?;
-
-        if config.window.sticky {
-            connection
-                .change_property32(
-                    xproto::PropMode::REPLACE,
-                    window.id(),
-                    atoms._NET_WM_STATE,
-                    xproto::AtomEnum::ATOM,
-                    &[atoms._NET_WM_STATE_STICKY],
-                )?
-                .check()?;
-        }
-
-        connection
-            .xkb_use_extension(1, 0)?
-            .reply()
-            .context("init xkb extension")?;
+        configure_window(&connection, window.id(), config.window, &atoms)?;
 
         let tray_manager = TrayManager::new(
             connection.clone(),
             screen_num,
             SystemTrayOrientation::VERTICAL,
         )?;
+
+        setup_xkb_extension(&connection)?;
+
         let keyboard_state = {
             let context = xkb::Context::new();
             let device_id = xkb::DeviceId::core_keyboard(&connection)
@@ -151,7 +81,40 @@ impl App {
                 .context("create a keymap from a device")?;
             xkb::State::from_keymap(keymap)
         };
-        let key_interpreter = KeyInterpreter::new(config.keys);
+
+        {
+            let screen = &connection.setup().roots[screen_num];
+            for key in &config.global_keys {
+                let keycode = keyboard_state
+                    .lookup_keycode(key.keysym())
+                    .context("lookup keycode")?;
+                let modifiers = key.modifiers().without_locks();
+                for modifiers in [
+                    modifiers,
+                    modifiers | Modifiers::CAPS_LOCK,
+                    modifiers | Modifiers::NUM_LOCK,
+                    modifiers | Modifiers::CAPS_LOCK | Modifiers::NUM_LOCK,
+                ] {
+                    connection
+                        .grab_key(
+                            true,
+                            screen.root,
+                            modifiers,
+                            keycode as u8,
+                            xproto::GrabMode::ASYNC,
+                            xproto::GrabMode::ASYNC,
+                        )?
+                        .check()
+                        .context("grab key")?;
+                }
+            }
+        }
+
+        let key_mappings = config
+            .keys
+            .into_iter()
+            .chain(config.global_keys.into_iter());
+        let key_interpreter = KeyInterpreter::new(key_mappings);
 
         Ok(Self {
             connection,
@@ -220,16 +183,23 @@ impl App {
 
         match event {
             KeyPress(event) => {
-                self.keyboard_state
-                    .update(event.detail as u32, KeyState::Down);
+                if event.event != event.root {
+                    self.keyboard_state
+                        .update_key(event.detail as u32, KeyState::Down);
+                }
             }
             KeyRelease(event) => {
-                self.keyboard_state
-                    .update(event.detail as u32, KeyState::Up);
-                let event = self
-                    .keyboard_state
-                    .key_event(event.detail as u32, KeyState::Up);
-                let commands = self.key_interpreter.eval(event.keysym, event.modifiers);
+                let (keysym, modifiers) = if event.event != event.root {
+                    self.keyboard_state
+                        .update_key(event.detail as u32, KeyState::Up);
+                    let event = self.keyboard_state.key_event(event.detail as u32);
+                    (event.keysym, event.modifiers)
+                } else {
+                    let keysym = self.keyboard_state.get_keysym(event.detail as u32);
+                    let modifiers = Modifiers::from(event.state);
+                    (keysym, modifiers)
+                };
+                let commands = self.key_interpreter.eval(keysym, modifiers);
                 for command in commands {
                     if !run_command(
                         &self.connection,
@@ -275,6 +245,7 @@ impl App {
                     self.window.hide()?;
                 }
             }
+            XkbStateNotify(event) => self.keyboard_state.update_mask(event),
             _ => {}
         }
 
@@ -325,6 +296,118 @@ impl Drop for App {
             ManuallyDrop::drop(&mut self.window);
         }
     }
+}
+
+fn configure_window(
+    connection: &XCBConnection,
+    window: xproto::Window,
+    config: WindowConfig,
+    atoms: &Atoms,
+) -> anyhow::Result<()> {
+    connection
+        .change_property32(
+            xproto::PropMode::REPLACE,
+            window,
+            atoms.WM_PROTOCOLS,
+            xproto::AtomEnum::ATOM,
+            &[
+                atoms._NET_WM_PING,
+                atoms._NET_WM_SYNC_REQUEST,
+                atoms.WM_DELETE_WINDOW,
+            ],
+        )?
+        .check()
+        .context("set WM_PROTOCOLS property")?;
+
+    {
+        connection
+            .change_property8(
+                xproto::PropMode::REPLACE,
+                window,
+                xproto::AtomEnum::WM_NAME,
+                xproto::AtomEnum::STRING,
+                config.name.as_bytes(),
+            )?
+            .check()
+            .context("set WM_NAME property")?;
+        connection
+            .change_property8(
+                xproto::PropMode::REPLACE,
+                window,
+                atoms._NET_WM_NAME,
+                atoms.UTF8_STRING,
+                config.name.as_bytes(),
+            )?
+            .check()
+            .context("set _NET_WM_NAME property")?;
+    }
+
+    {
+        let class_string = format!("{}\0{}", config.class.as_ref(), config.class.as_ref());
+        connection
+            .change_property8(
+                xproto::PropMode::REPLACE,
+                window,
+                xproto::AtomEnum::WM_CLASS,
+                xproto::AtomEnum::STRING,
+                class_string.as_bytes(),
+            )?
+            .check()
+            .context("set WM_CLASS property")?;
+    }
+
+    connection
+        .change_property32(
+            xproto::PropMode::REPLACE,
+            window,
+            atoms._NET_WM_WINDOW_TYPE,
+            xproto::AtomEnum::ATOM,
+            &[atoms._NET_WM_WINDOW_TYPE_DIALOG],
+        )?
+        .check()
+        .context("set _NET_WM_WINDOW_TYPE property")?;
+
+    if config.sticky {
+        connection
+            .change_property32(
+                xproto::PropMode::REPLACE,
+                window,
+                atoms._NET_WM_STATE,
+                xproto::AtomEnum::ATOM,
+                &[atoms._NET_WM_STATE_STICKY],
+            )?
+            .check()
+            .context("set _NET_WM_STATE property")?;
+    }
+
+    Ok(())
+}
+
+fn setup_xkb_extension(connection: &XCBConnection) -> anyhow::Result<()> {
+    let reply = connection
+        .xkb_use_extension(1, 0)?
+        .reply()
+        .context("init xkb extension")?;
+    if !reply.supported {
+        anyhow!("xkb extension not supported.");
+    }
+
+    {
+        let values = x11rb::protocol::xkb::SelectEventsAux::new();
+        connection
+            .xkb_select_events(
+                protocol::xkb::ID::USE_CORE_KBD.into(), // device_spec
+                0u16,                                   // clear
+                protocol::xkb::EventType::STATE_NOTIFY, // select_all
+                0u16,                                   // affect_map
+                0u16,                                   // map
+                &values,                                // details
+            )?
+            .check()
+            .context("select xkb events")?;
+    }
+
+    Ok(())
 }
 
 fn run_command(
@@ -419,8 +502,8 @@ fn get_window_position(
 ) -> PhysicalPoint {
     let screen = &connection.setup().roots[screen_num];
     PhysicalPoint {
-        x: (screen.width_in_pixels as f64 / 2.0 - size.width as f64 / 2.0) as i32,
-        y: (screen.height_in_pixels as f64 / 2.0 - size.height as f64 / 2.0) as i32,
+        x: (screen.width_in_pixels as i32 - size.width as i32) / 2,
+        y: (screen.height_in_pixels as i32 - size.height as i32) / 2,
     }
 }
 

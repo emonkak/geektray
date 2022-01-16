@@ -230,5 +230,18 @@
                 }
             ]
         }
+    ],
+    "global_keys": [
+        {
+            "keysym": "grave",
+            "modifiers": {
+                "super": true
+            },
+            "commands": [
+                {
+                    "type": "ShowWindow"
+                }
+            ]
+        }
     ]
 }

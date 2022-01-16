@@ -12,6 +12,7 @@ pub struct Config {
     pub window: WindowConfig,
     pub ui: UiConfig,
     pub keys: Vec<KeyMapping>,
+    pub global_keys: Vec<KeyMapping>,
 }
 
 impl Default for Config {
@@ -127,6 +128,11 @@ impl Default for Config {
                     vec![Command::HideWindow],
                 ),
             ],
+            global_keys: vec![KeyMapping::new(
+                xkb::XKB_KEY_Escape,
+                Modifiers::SUPER,
+                vec![Command::ShowWindow],
+            )],
         }
     }
 }
