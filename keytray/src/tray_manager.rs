@@ -10,7 +10,6 @@ use x11rb::protocol::xproto;
 use x11rb::protocol::xproto::ConnectionExt;
 use x11rb::wrapper::ConnectionExt as _;
 
-use crate::utils;
 use crate::xembed::{XEmbedInfo, XEmbedMessage};
 
 const SYSTEM_TRAY_REQUEST_DOCK: u32 = 0;
@@ -472,14 +471,24 @@ fn get_xembed_info<Connection: self::Connection>(
     window: xproto::Window,
     atoms: &Atoms,
 ) -> Result<Option<XEmbedInfo>, ReplyError> {
-    let xembed_info =
-        utils::get_fixed_property::<_, u32, 2>(connection, window, atoms._XEMBED_INFO)?.map(
-            |data| XEmbedInfo {
-                version: data[0],
-                flags: data[1],
-            },
-        );
-    Ok(xembed_info)
+    let reply = connection
+        .get_property(
+            false,
+            window,
+            atoms._XEMBED_INFO,
+            xproto::AtomEnum::ANY,
+            0,
+            2,
+        )?
+        .reply()?;
+    if let Some(data) = reply.value32().map(|iter| iter.collect::<Vec<_>>()).filter(|data| data.len() == 2) {
+        Ok(Some(XEmbedInfo {
+            version: data[0],
+            flags: data[1],
+        }))
+    } else {
+        Ok(None)
+    }
 }
 
 fn send_xembed_message<Connection: self::Connection>(

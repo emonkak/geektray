@@ -19,7 +19,6 @@ use crate::config::{Config, WindowConfig};
 use crate::hotkey::HotkeyInterpreter;
 use crate::tray_container::TrayContainer;
 use crate::tray_manager::{SystemTrayOrientation, TrayEvent, TrayManager};
-use crate::utils;
 
 #[derive(Debug)]
 pub struct App {
@@ -424,39 +423,47 @@ fn get_window_title<Connection: self::Connection>(
     window: xproto::Window,
     atoms: &Atoms,
 ) -> Result<Option<String>, ReplyError> {
-    if let Some(title) = utils::get_variable_property(
-        connection,
-        window,
-        atoms._NET_WM_NAME,
-        atoms.UTF8_STRING,
-        256,
-    )?
-    .and_then(|bytes| String::from_utf8(bytes).ok())
+    let reply = connection
+        .get_property(
+            false,
+            window,
+            atoms._NET_WM_NAME,
+            atoms.UTF8_STRING,
+            0,
+            256 / 4
+        )?
+        .reply()?;
+    if let Some(title) = reply.value8().and_then(|bytes| String::from_utf8(bytes.collect()).ok())
     {
         return Ok(Some(title));
     }
 
-    if let Some(title) = utils::get_variable_property(
-        connection,
-        window,
-        xproto::AtomEnum::WM_NAME.into(),
-        xproto::AtomEnum::STRING.into(),
-        256,
-    )?
-    .and_then(|bytes| String::from_utf8(bytes).ok())
+    let reply = connection
+        .get_property(
+            false,
+            window,
+            xproto::AtomEnum::WM_NAME,
+            xproto::AtomEnum::STRING,
+            0,
+            256 / 4
+        )?
+        .reply()?;
+    if let Some(title) = reply.value8().and_then(|bytes| String::from_utf8(bytes.collect()).ok())
     {
         return Ok(Some(title));
     }
 
-    if let Some(class_name) = utils::get_variable_property(
-        connection,
-        window,
-        xproto::AtomEnum::WM_CLASS.into(),
-        xproto::AtomEnum::STRING.into(),
-        256,
-    )?
-    .and_then(null_terminated_bytes_to_string)
-    {
+    let reply = connection
+        .get_property(
+            false,
+            window,
+            xproto::AtomEnum::WM_CLASS,
+            xproto::AtomEnum::STRING,
+            0,
+            256 / 4
+        )?
+        .reply()?;
+    if let Some(class_name) = reply.value8().and_then(|bytes| null_terminated_bytes_to_string(bytes.collect())) {
         return Ok(Some(class_name));
     }
 
