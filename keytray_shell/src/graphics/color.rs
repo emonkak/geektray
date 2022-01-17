@@ -5,7 +5,7 @@ use std::fmt;
 use std::num;
 use std::str::FromStr;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Color {
     red: u8,
     green: u8,
@@ -83,38 +83,32 @@ impl FromStr for Color {
             return Err(ColorParseError::MissingPrefix);
         }
 
-        let s = &s[1..];
-
-        let (red, green, blue, alpha) = match s.len() {
-            6 => {
-                let red =
-                    u8::from_str_radix(&s[0..=1], 16).map_err(ColorParseError::ParseIntError)?;
-                let green =
-                    u8::from_str_radix(&s[2..=3], 16).map_err(ColorParseError::ParseIntError)?;
-                let blue =
-                    u8::from_str_radix(&s[4..=5], 16).map_err(ColorParseError::ParseIntError)?;
-                (red, green, blue, u8::MAX)
+        match s.len() {
+            7 => {
+                let red = u8::from_str_radix(&s[1..=2], 16)?;
+                let green = u8::from_str_radix(&s[3..=4], 16)?;
+                let blue = u8::from_str_radix(&s[5..=6], 16)?;
+                Ok(Self {
+                    red,
+                    green,
+                    blue,
+                    alpha: u8::MAX,
+                })
             }
-            8 => {
-                let red =
-                    u8::from_str_radix(&s[0..=1], 16).map_err(ColorParseError::ParseIntError)?;
-                let green =
-                    u8::from_str_radix(&s[2..=3], 16).map_err(ColorParseError::ParseIntError)?;
-                let blue =
-                    u8::from_str_radix(&s[4..=5], 16).map_err(ColorParseError::ParseIntError)?;
-                let alpha =
-                    u8::from_str_radix(&s[6..=7], 16).map_err(ColorParseError::ParseIntError)?;
-                (red, green, blue, alpha)
+            9 => {
+                let red = u8::from_str_radix(&s[1..=2], 16)?;
+                let green = u8::from_str_radix(&s[3..=4], 16)?;
+                let blue = u8::from_str_radix(&s[5..=6], 16)?;
+                let alpha = u8::from_str_radix(&s[7..=8], 16)?;
+                Ok(Self {
+                    red,
+                    green,
+                    blue,
+                    alpha,
+                })
             }
-            len => return Err(ColorParseError::InvalidLength(len).into()),
-        };
-
-        Ok(Self {
-            red,
-            green,
-            blue,
-            alpha,
-        })
+            len => Err(ColorParseError::InvalidLength(len)),
+        }
     }
 }
 
@@ -125,11 +119,19 @@ pub enum ColorParseError {
     ParseIntError(num::ParseIntError),
 }
 
+impl From<num::ParseIntError> for ColorParseError {
+    fn from(error: num::ParseIntError) -> Self {
+        ColorParseError::ParseIntError(error)
+    }
+}
+
 impl fmt::Display for ColorParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::MissingPrefix => f.write_str("Missing leading '#' descriptor"),
-            Self::InvalidLength(len) => write!(f, "Invalid length, expected 6 or 8, got {}", len),
+            Self::InvalidLength(len) => {
+                write!(f, "Expected string of length 6 or 8, but got {}", len)
+            }
             Self::ParseIntError(error) => error.fmt(f),
         }
     }
@@ -169,5 +171,146 @@ impl Serialize for Color {
         S: Serializer,
     {
         serializer.serialize_str(&format! {"{}", self})
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_from_str() {
+        assert_eq!(
+            Color::from_str("#000000"),
+            Ok(Color {
+                red: 0x00,
+                green: 0x00,
+                blue: 0x00,
+                alpha: 0xff
+            })
+        );
+        assert_eq!(
+            Color::from_str("#ff0000"),
+            Ok(Color {
+                red: 0xff,
+                green: 0x00,
+                blue: 0x00,
+                alpha: 0xff
+            })
+        );
+        assert_eq!(
+            Color::from_str("#00ff00"),
+            Ok(Color {
+                red: 0x00,
+                green: 0xff,
+                blue: 0x00,
+                alpha: 0xff
+            })
+        );
+        assert_eq!(
+            Color::from_str("#0000ff"),
+            Ok(Color {
+                red: 0x00,
+                green: 0x00,
+                blue: 0xff,
+                alpha: 0xff
+            })
+        );
+        assert_eq!(
+            Color::from_str("#ffffff"),
+            Ok(Color {
+                red: 0xff,
+                green: 0xff,
+                blue: 0xff,
+                alpha: 0xff
+            })
+        );
+
+        assert_eq!(
+            Color::from_str("#00000000"),
+            Ok(Color {
+                red: 0x00,
+                green: 0x00,
+                blue: 0x00,
+                alpha: 0x00
+            })
+        );
+        assert_eq!(
+            Color::from_str("#ff000000"),
+            Ok(Color {
+                red: 0xff,
+                green: 0x00,
+                blue: 0x00,
+                alpha: 0x00
+            })
+        );
+        assert_eq!(
+            Color::from_str("#00ff0000"),
+            Ok(Color {
+                red: 0x00,
+                green: 0xff,
+                blue: 0x00,
+                alpha: 0x00
+            })
+        );
+        assert_eq!(
+            Color::from_str("#0000ff00"),
+            Ok(Color {
+                red: 0x00,
+                green: 0x00,
+                blue: 0xff,
+                alpha: 0x00
+            })
+        );
+        assert_eq!(
+            Color::from_str("#000000ff"),
+            Ok(Color {
+                red: 0x00,
+                green: 0x00,
+                blue: 0x00,
+                alpha: 0xff
+            })
+        );
+        assert_eq!(
+            Color::from_str("#ffffffff"),
+            Ok(Color {
+                red: 0xff,
+                green: 0xff,
+                blue: 0xff,
+                alpha: 0xff
+            })
+        );
+
+        assert_eq!(
+            Color::from_str("#12345678"),
+            Ok(Color {
+                red: 0x12,
+                green: 0x34,
+                blue: 0x56,
+                alpha: 0x78
+            })
+        );
+        assert_eq!(
+            Color::from_str("#abcdef"),
+            Ok(Color {
+                red: 0xab,
+                green: 0xcd,
+                blue: 0xef,
+                alpha: 0xff
+            })
+        );
+
+        assert_eq!(
+            Color::from_str("12345678"),
+            Err(ColorParseError::MissingPrefix)
+        );
+        assert_eq!(
+            Color::from_str("#12345"),
+            Err(ColorParseError::InvalidLength(6))
+        );
+        assert!(matches!(
+            Color::from_str("#abcdefgh"),
+            Err(ColorParseError::ParseIntError(_))
+        ));
     }
 }
