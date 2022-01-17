@@ -86,20 +86,20 @@ commands = [ { type = "SelectPreviousItem" } ]
 
 [[hotkeys]]
 keysym = "l"
-commands = [ { type = "ClickMouseButton", params = "Left" } ]
+commands = [ { type = "ClickMouseButton", params = "Left" }, { type = "HideWindow" } ]
 
 [[hotkeys]]
 keysym = "Return"
-commands = [ { type = "ClickMouseButton", params = "Left" } ]
+commands = [ { type = "ClickMouseButton", params = "Left" }, { type = "HideWindow" } ]
 
 [[hotkeys]]
 keysym = "h"
-commands = [ { type = "ClickMouseButton", params = "Right" } ]
+commands = [ { type = "ClickMouseButton", params = "Right" }, { type = "HideWindow" } ]
 
 [[hotkeys]]
 keysym = "Return"
 modifiers = { shift = true }
-commands = [ { type = "ClickMouseButton", params = "Left" } ]
+commands = [ { type = "ClickMouseButton", params = "Right" }, { type = "HideWindow" } ]
 
 [[hotkeys]]
 keysym = "q"

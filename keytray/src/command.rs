@@ -7,6 +7,7 @@ pub enum Command {
     HideWindow,
     ShowWindow,
     ToggleWindow,
+    DeselectItem,
     SelectItem(usize),
     SelectNextItem,
     SelectPreviousItem,

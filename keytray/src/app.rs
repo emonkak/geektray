@@ -379,8 +379,7 @@ fn run_command(
         Command::HideWindow => {
             if window.is_mapped() {
                 window.hide()?;
-                let effect = window.widget_mut().select_item(None);
-                window.apply_effect(effect).map(|_| true)
+                Ok(true)
             } else {
                 Ok(false)
             }
@@ -398,14 +397,16 @@ fn run_command(
         Command::ToggleWindow => {
             if window.is_mapped() {
                 window.hide()?;
-                let effect = window.widget_mut().select_item(None);
-                window.apply_effect(effect).map(|_| true)
             } else {
                 let position = get_window_position(connection, screen_num, window.size());
                 window.move_position(position)?;
                 window.show()?;
-                Ok(true)
             }
+            Ok(true)
+        }
+        Command::DeselectItem => {
+            let effect = window.widget_mut().select_item(None);
+            window.apply_effect(effect)
         }
         Command::SelectItem(index) => {
             let effect = window.widget_mut().select_item(Some(index));
