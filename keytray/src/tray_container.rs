@@ -1,6 +1,7 @@
 use keytray_shell::event::MouseButton;
 use keytray_shell::graphics::{
-    FontDescription, PhysicalPoint, PhysicalSize, Point, Rect, RenderContext, Size,
+    FontDescription, HorizontalAlign, PhysicalPoint, PhysicalSize, Point, Rect, RenderContext,
+    Size, Text, VerticalAlign,
 };
 use keytray_shell::window::{Effect, Layout, Widget};
 use std::rc::Rc;
@@ -136,13 +137,32 @@ impl Widget for TrayContainer {
             );
         }
 
-        for (index, (tray_item, (child_position, child_layout))) in self
-            .tray_items
-            .iter()
-            .zip(layout.children.iter())
-            .enumerate()
-        {
-            tray_item.render(*child_position, child_layout, index, context);
+        if self.tray_items.len() > 0 {
+            for (index, (tray_item, (child_position, child_layout))) in self
+                .tray_items
+                .iter()
+                .zip(layout.children.iter())
+                .enumerate()
+            {
+                tray_item.render(*child_position, child_layout, index, context);
+            }
+        } else {
+            context.render_text(
+                self.config.window_foreground,
+                Text {
+                    content: "No tray items found",
+                    font_description: &self.font,
+                    font_size: self.config.font_size,
+                    horizontal_align: HorizontalAlign::Center,
+                    vertical_align: VerticalAlign::Middle,
+                },
+                Rect {
+                    x: position.x + self.config.container_padding,
+                    y: position.y,
+                    width: layout.size.width - (self.config.container_padding * 2.0),
+                    height: layout.size.height,
+                },
+            );
         }
     }
 

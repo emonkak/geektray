@@ -128,7 +128,7 @@ impl Widget for TrayItem {
             Rect {
                 x: position.x + (self.config.icon_size + self.config.item_padding * 2.0),
                 y: position.y,
-                width: layout.size.width - (self.config.icon_size + self.config.item_padding * 2.0),
+                width: layout.size.width - (self.config.icon_size + self.config.item_padding * 3.0),
                 height: layout.size.height,
             },
         );
