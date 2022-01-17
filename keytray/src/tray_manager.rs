@@ -221,7 +221,7 @@ impl<Connection: self::Connection> TrayManager<Connection> {
                 }
             }
             DestroyNotify(event) => match self.status {
-                TrayStatus::Pending(window) if event.event == window => {
+                TrayStatus::Pending(window) if event.window == window => {
                     self.broadcast_manager_message()?;
                     None
                 }
