@@ -60,7 +60,7 @@ impl TrayContainer {
             self.tray_items.remove(index);
             Effect::RequestLayout
         } else {
-            Effect::Success
+            Effect::Failure
         }
     }
 
