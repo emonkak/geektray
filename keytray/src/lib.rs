@@ -8,7 +8,6 @@ pub mod app;
 pub mod config;
 
 mod command;
-mod event_loop;
 mod hotkey;
 mod tray_container;
 mod tray_item;

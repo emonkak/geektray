@@ -1,4 +1,3 @@
-use keytray_shell::event::ControlFlow;
 use nix;
 use nix::sys::epoll;
 use nix::sys::signal;
@@ -106,4 +105,10 @@ impl<Connection> Drop for EventLoop<Connection> {
 pub enum Event {
     X11Event(protocol::Event),
     Signal(signalfd::siginfo),
+}
+
+#[derive(Debug)]
+pub enum ControlFlow {
+    Continue,
+    Break,
 }

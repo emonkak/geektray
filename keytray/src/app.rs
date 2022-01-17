@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Context as _};
-use keytray_shell::event::{ControlFlow, KeyState, Modifiers};
+use keytray_shell::event::{ControlFlow, Event, EventLoop, KeyState, Modifiers};
 use keytray_shell::graphics::{FontDescription, PhysicalPoint, PhysicalSize, Size};
 use keytray_shell::window::Window;
 use keytray_shell::xkb;
@@ -16,7 +16,6 @@ use x11rb::xcb_ffi::XCBConnection;
 
 use crate::command::Command;
 use crate::config::{Config, WindowConfig};
-use crate::event_loop::{Event, EventLoop};
 use crate::hotkey::HotkeyInterpreter;
 use crate::tray_container::TrayContainer;
 use crate::tray_manager::{SystemTrayOrientation, TrayEvent, TrayManager};
