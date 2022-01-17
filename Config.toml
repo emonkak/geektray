@@ -76,7 +76,7 @@ keysym = "k"
 commands = [ { type = "SelectPreviousItem" } ]
 
 [[hotkeys]]
-keysym = "Down"
+keysym = "Up"
 commands = [ { type = "SelectPreviousItem" } ]
 
 [[hotkeys]]
@@ -112,4 +112,4 @@ commands = [ { type = "HideWindow" } ]
 [[global_hotkeys]]
 keysym = "grave"
 modifiers = { super = true }
-commands = [ { type = "ShowWindow" } ]
+commands = [ { type = "ToggleWindow" } ]

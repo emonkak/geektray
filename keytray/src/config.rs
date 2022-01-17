@@ -132,7 +132,7 @@ impl Default for Config {
             global_hotkeys: vec![Hotkey::new(
                 xkb::XKB_KEY_grave,
                 Modifiers::SUPER,
-                vec![Command::ShowWindow],
+                vec![Command::ToggleWindow],
             )],
         }
     }

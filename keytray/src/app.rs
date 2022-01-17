@@ -385,19 +385,35 @@ fn run_command(
 ) -> Result<bool, ReplyError> {
     match command {
         Command::HideWindow => {
-            window.hide()?;
-            let effect = window.widget_mut().select_item(None);
-            window.apply_effect(effect).map(|_| true)
+            if window.is_mapped() {
+                window.hide()?;
+                let effect = window.widget_mut().select_item(None);
+                window.apply_effect(effect).map(|_| true)
+            } else {
+                Ok(false)
+            }
         }
         Command::ShowWindow => {
-            let position = get_window_position(connection, screen_num, window.size());
-            window.move_position(position)?;
-            window.show()?;
-            Ok(true)
+            if window.is_mapped() {
+                Ok(false)
+            } else {
+                let position = get_window_position(connection, screen_num, window.size());
+                window.move_position(position)?;
+                window.show()?;
+                Ok(true)
+            }
         }
         Command::ToggleWindow => {
-            window.toggle()?;
-            Ok(true)
+            if window.is_mapped() {
+                window.hide()?;
+                let effect = window.widget_mut().select_item(None);
+                window.apply_effect(effect).map(|_| true)
+            } else {
+                let position = get_window_position(connection, screen_num, window.size());
+                window.move_position(position)?;
+                window.show()?;
+                Ok(true)
+            }
         }
         Command::SelectItem(index) => {
             let effect = window.widget_mut().select_item(Some(index));

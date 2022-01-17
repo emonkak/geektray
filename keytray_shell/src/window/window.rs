@@ -95,6 +95,10 @@ impl<Widget: self::Widget> Window<Widget> {
         self.size
     }
 
+    pub fn is_mapped(&self) -> bool {
+        self.is_mapped
+    }
+
     pub fn widget(&self) -> &Widget {
         &self.widget
     }
@@ -113,14 +117,6 @@ impl<Widget: self::Widget> Window<Widget> {
         self.connection.unmap_window(self.window)?.check()?;
         self.connection.flush()?;
         Ok(())
-    }
-
-    pub fn toggle(&self) -> Result<(), ReplyError> {
-        if self.is_mapped {
-            self.hide()
-        } else {
-            self.show()
-        }
     }
 
     pub fn move_position(&self, position: PhysicalPoint) -> Result<(), ReplyError> {
