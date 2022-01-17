@@ -16,7 +16,7 @@ impl Rect {
         }
     }
 
-    pub fn snap(self) -> PhysicalRect {
+    pub fn snap(&self) -> PhysicalRect {
         PhysicalRect {
             x: self.x.round() as i32,
             y: self.y.round() as i32,

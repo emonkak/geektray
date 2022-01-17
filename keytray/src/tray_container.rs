@@ -1,6 +1,6 @@
 use keytray_shell::event::MouseButton;
 use keytray_shell::graphics::{
-    FontDescription, PhysicalPoint, PhysicalSize, Point, RenderContext, Size,
+    FontDescription, PhysicalPoint, PhysicalSize, Point, Rect, RenderContext, Size,
 };
 use keytray_shell::window::{Effect, Layout, Widget};
 use std::rc::Rc;
@@ -127,12 +127,20 @@ impl TrayContainer {
 impl Widget for TrayContainer {
     fn render(
         &self,
-        _position: Point,
+        position: Point,
         layout: &Layout,
         _index: usize,
         context: &mut RenderContext,
     ) {
         context.clear(self.config.window_background);
+
+        if self.config.border_size > 0.0 {
+            context.stroke_border(
+                self.config.border_color,
+                self.config.border_size,
+                Rect::new(position, layout.size),
+            );
+        }
 
         for (index, (tray_item, (child_position, child_layout))) in self
             .tray_items
@@ -153,8 +161,8 @@ impl Widget for TrayContainer {
         let mut children = Vec::with_capacity(self.tray_items.len());
 
         let container_inset = Size {
-            width: container_size.width - self.config.container_padding * 2.0,
-            height: container_size.height - self.config.container_padding * 2.0,
+            width: container_size.width - (self.config.container_padding * 2.0 + self.config.border_size * 2.0),
+            height: container_size.height - (self.config.container_padding * 2.0 + self.config.border_size * 2.0),
         };
 
         for (index, tray_item) in self.tray_items.iter().enumerate() {

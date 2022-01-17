@@ -345,34 +345,32 @@ fn configure_window(
             window,
             atoms._NET_WM_WINDOW_TYPE,
             xproto::AtomEnum::ATOM,
-            &[atoms._NET_WM_WINDOW_TYPE_DIALOG],
+            &[atoms._NET_WM_WINDOW_TYPE_DOCK],
         )?
         .check()
         .context("set _NET_WM_WINDOW_TYPE property")?;
 
-    if config.sticky {
-        connection
-            .change_property32(
-                xproto::PropMode::REPLACE,
-                window,
-                atoms._NET_WM_STATE,
-                xproto::AtomEnum::ATOM,
-                &[atoms._NET_WM_STATE_ABOVE, atoms._NET_WM_STATE_STICKY],
-            )?
-            .check()
-            .context("set _NET_WM_STATE property")?;
+    connection
+        .change_property32(
+            xproto::PropMode::REPLACE,
+            window,
+            atoms._NET_WM_STATE,
+            xproto::AtomEnum::ATOM,
+            &[atoms._NET_WM_STATE_ABOVE, atoms._NET_WM_STATE_STICKY],
+        )?
+        .check()
+        .context("set _NET_WM_STATE property")?;
 
-        connection
-            .change_property32(
-                xproto::PropMode::REPLACE,
-                window,
-                atoms._NET_WM_DESKTOP,
-                xproto::AtomEnum::CARDINAL,
-                &[0xffffffff],
-            )?
-            .check()
-            .context("set _NET_WM_DESKTOP property")?;
-    }
+    connection
+        .change_property32(
+            xproto::PropMode::REPLACE,
+            window,
+            atoms._NET_WM_DESKTOP,
+            xproto::AtomEnum::CARDINAL,
+            &[0xffffffff],
+        )?
+        .check()
+        .context("set _NET_WM_DESKTOP property")?;
 
     Ok(())
 }
@@ -561,6 +559,6 @@ x11rb::atom_manager! {
         _NET_WM_STATE_STICKY,
         _NET_WM_SYNC_REQUEST,
         _NET_WM_WINDOW_TYPE,
-        _NET_WM_WINDOW_TYPE_DIALOG,
+        _NET_WM_WINDOW_TYPE_DOCK,
     }
 }

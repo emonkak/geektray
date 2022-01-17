@@ -220,6 +220,25 @@ impl RenderContext {
         }
     }
 
+    pub fn stroke_border(&mut self, color: Color, border_size: f64, bounds: Rect) {
+        let [r, g, b, a] = color.to_f64_rgba();
+
+        unsafe {
+            cairo::cairo_save(self.cairo);
+            cairo::cairo_rectangle(
+                self.cairo,
+                bounds.x + (border_size / 2.0),
+                bounds.y + (border_size / 2.0),
+                bounds.width - border_size,
+                bounds.height - border_size,
+            );
+            cairo::cairo_set_source_rgba(self.cairo, r, g, b, a);
+            cairo::cairo_set_line_width(self.cairo, border_size);
+            cairo::cairo_stroke(self.cairo);
+            cairo::cairo_restore(self.cairo);
+        }
+    }
+
     pub fn render_text(&mut self, color: Color, text: Text, bounds: Rect) {
         let mut font_description = text.font_description.clone();
         font_description.set_font_size(text.font_size * pango::PANGO_SCALE as f64);

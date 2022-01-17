@@ -144,7 +144,6 @@ pub struct WindowConfig {
     pub name: Cow<'static, str>,
     pub class: Cow<'static, str>,
     pub initial_width: f64,
-    pub sticky: bool,
 }
 
 impl Default for WindowConfig {
@@ -153,7 +152,6 @@ impl Default for WindowConfig {
             name: Cow::Borrowed("KeyTray"),
             class: Cow::Borrowed("KeyTray"),
             initial_width: 480.0,
-            sticky: true,
         }
     }
 }
@@ -167,6 +165,8 @@ pub struct UiConfig {
     pub icon_size: f64,
     pub item_corner_radius: f64,
     pub show_index: bool,
+    pub border_size: f64,
+    pub border_color: Color,
     pub font_family: FontFamily,
     pub font_weight: FontWeight,
     pub font_style: FontStyle,
@@ -194,6 +194,8 @@ impl Default for UiConfig {
             item_corner_radius: 4.0,
             icon_size: 24.0,
             show_index: true,
+            border_size: 2.0,
+            border_color: Color::from_rgb(0x1c95e6),
             font_family: FontFamily::default(),
             font_weight: FontWeight::default(),
             font_style: FontStyle::default(),
