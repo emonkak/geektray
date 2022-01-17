@@ -9,12 +9,6 @@ use x11rb::protocol::xproto;
 
 use crate::xkbcommon_sys as ffi;
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct KeyEvent {
-    pub keysym: Keysym,
-    pub modifiers: Modifiers,
-}
-
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Keysym(xproto::Keysym);
 

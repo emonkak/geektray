@@ -5,7 +5,7 @@ use x11rb::protocol::xkb;
 use x11rb::protocol::xkb::ConnectionExt as _;
 use x11rb::xcb_ffi::XCBConnection;
 
-use crate::event::{KeyEvent, KeyState, Keysym, Modifiers};
+use crate::event::{KeyState, Keysym, Modifiers};
 use crate::xkbcommon_sys as ffi;
 
 #[derive(Debug)]
@@ -43,9 +43,8 @@ impl State {
         Keysym::from(unsafe { ffi::xkb_state_key_get_one_sym(self.state, keycode) })
     }
 
-    pub fn key_event(&self, keycode: u32) -> KeyEvent {
-        let keysym = self.get_keysym(keycode);
-        let modifiers = array::IntoIter::new([
+    pub fn get_modifiers(&self) -> Modifiers {
+        array::IntoIter::new([
             (self.mod_indices.control, Modifiers::CONTROL),
             (self.mod_indices.alt, Modifiers::ALT),
             (self.mod_indices.shift, Modifiers::SHIFT),
@@ -63,9 +62,7 @@ impl State {
             } else {
                 acc
             }
-        });
-
-        KeyEvent { keysym, modifiers }
+        })
     }
 
     pub fn update_key(&self, keycode: u32, state: KeyState) {

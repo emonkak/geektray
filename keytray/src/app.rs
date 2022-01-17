@@ -168,8 +168,9 @@ impl App {
                 let (keysym, modifiers) = if event.event != event.root {
                     self.keyboard_state
                         .update_key(event.detail as u32, KeyState::Up);
-                    let event = self.keyboard_state.key_event(event.detail as u32);
-                    (event.keysym, event.modifiers)
+                    let keysym = self.keyboard_state.get_keysym(event.detail as u32);
+                    let modifiers = self.keyboard_state.get_modifiers();
+                    (keysym, modifiers)
                 } else {
                     let keysym = self.keyboard_state.get_keysym(event.detail as u32);
                     let modifiers = Modifiers::from(event.state);
