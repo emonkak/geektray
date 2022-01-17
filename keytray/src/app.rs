@@ -140,7 +140,6 @@ impl App {
         self.tray_manager
             .acquire_tray_selection()
             .context("acquire tray selection")?;
-        self.window.show().context("show window")?;
 
         event_loop.run(|event, _event_loop, control_flow| match event {
             Event::X11Event(event) => {
@@ -346,7 +345,7 @@ fn configure_window(
             window,
             atoms._NET_WM_WINDOW_TYPE,
             xproto::AtomEnum::ATOM,
-            &[atoms._NET_WM_WINDOW_TYPE_DOCK],
+            &[atoms._NET_WM_WINDOW_TYPE_DIALOG],
         )?
         .check()
         .context("set _NET_WM_WINDOW_TYPE property")?;
@@ -562,6 +561,6 @@ x11rb::atom_manager! {
         _NET_WM_STATE_STICKY,
         _NET_WM_SYNC_REQUEST,
         _NET_WM_WINDOW_TYPE,
-        _NET_WM_WINDOW_TYPE_DOCK,
+        _NET_WM_WINDOW_TYPE_DIALOG,
     }
 }

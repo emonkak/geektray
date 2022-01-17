@@ -54,7 +54,9 @@ impl<Widget: self::Widget> Window<Widget> {
                 | xproto::EventMask::PROPERTY_CHANGE
                 | xproto::EventMask::STRUCTURE_NOTIFY;
 
-            let values = xproto::CreateWindowAux::new().event_mask(event_mask);
+            let values = xproto::CreateWindowAux::new()
+                .event_mask(event_mask)
+                .override_redirect(1);
 
             connection
                 .create_window(
@@ -230,9 +232,22 @@ impl<Widget: self::Widget> Window<Widget> {
                 *control_flow = ControlFlow::Break;
             }
             MapNotify(event) if event.window == self.window => {
+                let screen = &self.connection.setup().roots[self.screen_num];
+                self.connection
+                    .grab_keyboard(
+                        true,
+                        screen.root,
+                        x11rb::CURRENT_TIME,
+                        xproto::GrabMode::ASYNC,
+                        xproto::GrabMode::ASYNC,
+                    )?;
+                self.connection.flush()?;
                 self.is_mapped = true;
             }
             UnmapNotify(event) if event.window == self.window => {
+                self.connection
+                    .ungrab_keyboard(x11rb::CURRENT_TIME)?;
+                self.connection.flush()?;
                 self.is_mapped = false;
             }
             _ => {}
