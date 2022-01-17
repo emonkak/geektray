@@ -197,11 +197,11 @@ impl App {
                     || event.atom == u32::from(xproto::AtomEnum::WM_CLASS)
                     || event.atom == self.atoms._NET_WM_NAME =>
             {
-                if self.window.widget().contains_window(event.window) {
+                if let Some(tray_item) = self.window.widget_mut().get_item_mut(event.window) {
                     let title =
                         get_window_title(self.connection.as_ref(), event.window, &self.atoms)?
                             .unwrap_or_default();
-                    let effect = self.window.widget_mut().change_title(event.window, title);
+                    let effect = tray_item.change_title(title);
                     self.window.apply_effect(effect)?;
                 }
             }

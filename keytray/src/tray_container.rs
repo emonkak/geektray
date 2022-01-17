@@ -30,11 +30,10 @@ impl TrayContainer {
         }
     }
 
-    pub fn contains_window(&self, window: xproto::Window) -> bool {
+    pub fn get_item_mut(&mut self, window: xproto::Window) -> Option<&mut TrayItem> {
         self.tray_items
-            .iter()
+            .iter_mut()
             .find(|tray_item| tray_item.window() == window)
-            .is_some()
     }
 
     pub fn add_tray_item(&mut self, window: xproto::Window, title: String) -> Effect {
@@ -60,18 +59,6 @@ impl TrayContainer {
             }
             self.tray_items.remove(index);
             Effect::RequestLayout
-        } else {
-            Effect::Success
-        }
-    }
-
-    pub fn change_title(&mut self, window: xproto::Window, title: String) -> Effect {
-        if let Some(tray_item) = self
-            .tray_items
-            .iter_mut()
-            .find(|tray_item| tray_item.window() == window)
-        {
-            tray_item.change_title(title)
         } else {
             Effect::Success
         }
