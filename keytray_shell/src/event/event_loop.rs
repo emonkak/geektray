@@ -1,8 +1,8 @@
+use nix;
 use nix::sys::epoll;
 use nix::sys::signal;
 use nix::sys::signalfd;
 use nix::unistd;
-use nix;
 use std::io;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
