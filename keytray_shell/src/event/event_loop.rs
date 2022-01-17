@@ -1,8 +1,9 @@
-use nix;
 use nix::sys::epoll;
 use nix::sys::signal;
 use nix::sys::signalfd;
 use nix::unistd;
+use nix;
+use std::io;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::rc::Rc;
 use x11rb::connection::Connection;
@@ -19,7 +20,7 @@ pub struct EventLoop<Connection> {
 }
 
 impl<Connection: self::Connection + AsRawFd> EventLoop<Connection> {
-    pub fn new(connection: Rc<Connection>) -> anyhow::Result<Self> {
+    pub fn new(connection: Rc<Connection>) -> io::Result<Self> {
         let epoll_fd = epoll::epoll_create()?;
         let signal_fd = {
             let mut mask = signalfd::SigSet::empty();

@@ -6,7 +6,6 @@ use keytray_shell::xkb;
 use std::mem::ManuallyDrop;
 use std::rc::Rc;
 use x11rb::connection::Connection;
-use x11rb::errors::ReplyError;
 use x11rb::protocol;
 use x11rb::protocol::xkb::ConnectionExt as _;
 use x11rb::protocol::xproto;
@@ -134,15 +133,24 @@ impl App {
     }
 
     pub fn run(&mut self) -> anyhow::Result<()> {
-        let mut event_loop = EventLoop::new(self.connection.clone())?;
+        let mut event_loop =
+            EventLoop::new(self.connection.clone()).context("create event loop")?;
 
-        self.tray_manager.acquire_tray_selection()?;
-        self.window.show()?;
+        self.tray_manager
+            .acquire_tray_selection()
+            .context("acquire tray selection")?;
+        self.window.show().context("show window")?;
 
         event_loop.run(|event, _event_loop, control_flow| match event {
             Event::X11Event(event) => {
-                if let Ok(Some(event)) = self.tray_manager.process_event(self.window.id(), &event) {
-                    self.on_tray_event(&event, control_flow)?;
+                match self.tray_manager.process_event(self.window.id(), &event) {
+                    Ok(Some(event)) => {
+                        self.on_tray_event(&event, control_flow)?;
+                    }
+                    Ok(None) => {}
+                    Err(_error) => {
+                        // TODO: log error
+                    }
                 }
                 self.window.on_event(&event, control_flow)?;
                 self.on_x11_event(&event, control_flow)?;
@@ -152,9 +160,7 @@ impl App {
                 *control_flow = ControlFlow::Break;
                 Ok(())
             }
-        })?;
-
-        Ok(())
+        })
     }
 
     fn on_x11_event(
@@ -381,11 +387,11 @@ fn run_command(
     screen_num: usize,
     window: &mut Window<TrayContainer>,
     command: Command,
-) -> Result<bool, ReplyError> {
+) -> anyhow::Result<bool> {
     match command {
         Command::HideWindow => {
             if window.is_mapped() {
-                window.hide()?;
+                window.hide().context("hide window")?;
                 Ok(true)
             } else {
                 Ok(false)
@@ -396,40 +402,44 @@ fn run_command(
                 Ok(false)
             } else {
                 let position = get_window_position(connection, screen_num, window.size());
-                window.move_position(position)?;
-                window.show()?;
+                window
+                    .move_position(position)
+                    .context("move window position")?;
+                window.show().context("show window")?;
                 Ok(true)
             }
         }
         Command::ToggleWindow => {
             if window.is_mapped() {
-                window.hide()?;
+                window.hide().context("hide window")?;
             } else {
                 let position = get_window_position(connection, screen_num, window.size());
-                window.move_position(position)?;
-                window.show()?;
+                window
+                    .move_position(position)
+                    .context("move window position")?;
+                window.show().context("show window")?;
             }
             Ok(true)
         }
         Command::DeselectItem => {
             let effect = window.widget_mut().select_item(None);
-            window.apply_effect(effect)
+            Ok(window.apply_effect(effect)?)
         }
         Command::SelectItem(index) => {
             let effect = window.widget_mut().select_item(Some(index));
-            window.apply_effect(effect)
+            Ok(window.apply_effect(effect)?)
         }
         Command::SelectNextItem => {
             let effect = window.widget_mut().select_next_item();
-            window.apply_effect(effect)
+            Ok(window.apply_effect(effect)?)
         }
         Command::SelectPreviousItem => {
             let effect = window.widget_mut().select_previous_item();
-            window.apply_effect(effect)
+            Ok(window.apply_effect(effect)?)
         }
         Command::ClickMouseButton(button) => {
             let effect = window.widget_mut().click_selected_item(button);
-            window.apply_effect(effect)
+            Ok(window.apply_effect(effect)?)
         }
     }
 }
@@ -438,7 +448,7 @@ fn get_window_title<Connection: self::Connection>(
     connection: &Connection,
     window: xproto::Window,
     atoms: &Atoms,
-) -> Result<Option<String>, ReplyError> {
+) -> anyhow::Result<Option<String>> {
     let reply = connection
         .get_property(
             false,
@@ -447,7 +457,8 @@ fn get_window_title<Connection: self::Connection>(
             atoms.UTF8_STRING,
             0,
             256 / 4,
-        )?
+        )
+        .context("get _NET_WM_NAME property")?
         .reply()?;
     if let Some(title) = reply
         .value8()
@@ -464,7 +475,8 @@ fn get_window_title<Connection: self::Connection>(
             xproto::AtomEnum::STRING,
             0,
             256 / 4,
-        )?
+        )
+        .context("get WM_NAME property")?
         .reply()?;
     if let Some(title) = reply
         .value8()
@@ -481,7 +493,8 @@ fn get_window_title<Connection: self::Connection>(
             xproto::AtomEnum::STRING,
             0,
             256 / 4,
-        )?
+        )
+        .context("get WM_CLASS property")?
         .reply()?;
     if let Some(class_name) = reply
         .value8()
