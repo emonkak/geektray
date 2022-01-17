@@ -67,9 +67,7 @@ impl FontDescription {
 
 impl Clone for FontDescription {
     fn clone(&self) -> Self {
-        unsafe {
-            Self(pango::pango_font_description_copy(self.0))
-        }
+        unsafe { Self(pango::pango_font_description_copy(self.0)) }
     }
 }
 

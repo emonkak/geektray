@@ -481,7 +481,11 @@ fn get_xembed_info<Connection: self::Connection>(
             2,
         )?
         .reply()?;
-    if let Some(data) = reply.value32().map(|iter| iter.collect::<Vec<_>>()).filter(|data| data.len() == 2) {
+    if let Some(data) = reply
+        .value32()
+        .map(|iter| iter.collect::<Vec<_>>())
+        .filter(|data| data.len() == 2)
+    {
         Ok(Some(XEmbedInfo {
             version: data[0],
             flags: data[1],

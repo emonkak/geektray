@@ -33,7 +33,8 @@ pub struct App {
 
 impl App {
     pub fn new(config: Config) -> anyhow::Result<Self> {
-        let (connection, screen_num) = XCBConnection::connect(None).context("connect to X server")?;
+        let (connection, screen_num) =
+            XCBConnection::connect(None).context("connect to X server")?;
         let connection = Rc::new(connection);
 
         let atoms = Atoms::new(connection.as_ref())?
@@ -158,23 +159,14 @@ impl App {
 
         match event {
             KeyPress(event) => {
-                if event.event != event.root {
-                    self.keyboard_state
-                        .update_key(event.detail as u32, KeyState::Down);
-                }
+                self.keyboard_state
+                    .update_key(event.detail as u32, KeyState::Down);
             }
             KeyRelease(event) => {
-                let (keysym, modifiers) = if event.event != event.root {
-                    self.keyboard_state
-                        .update_key(event.detail as u32, KeyState::Up);
-                    let keysym = self.keyboard_state.get_keysym(event.detail as u32);
-                    let modifiers = self.keyboard_state.get_modifiers();
-                    (keysym, modifiers)
-                } else {
-                    let keysym = self.keyboard_state.get_keysym(event.detail as u32);
-                    let modifiers = Modifiers::from(event.state);
-                    (keysym, modifiers)
-                };
+                self.keyboard_state
+                    .update_key(event.detail as u32, KeyState::Up);
+                let keysym = self.keyboard_state.get_keysym(event.detail as u32);
+                let modifiers = self.keyboard_state.get_modifiers();
                 let commands = self.hotkey_interpreter.eval(keysym, modifiers);
                 for command in commands {
                     if !run_command(
@@ -446,10 +438,12 @@ fn get_window_title<Connection: self::Connection>(
             atoms._NET_WM_NAME,
             atoms.UTF8_STRING,
             0,
-            256 / 4
+            256 / 4,
         )?
         .reply()?;
-    if let Some(title) = reply.value8().and_then(|bytes| String::from_utf8(bytes.collect()).ok())
+    if let Some(title) = reply
+        .value8()
+        .and_then(|bytes| String::from_utf8(bytes.collect()).ok())
     {
         return Ok(Some(title));
     }
@@ -461,10 +455,12 @@ fn get_window_title<Connection: self::Connection>(
             xproto::AtomEnum::WM_NAME,
             xproto::AtomEnum::STRING,
             0,
-            256 / 4
+            256 / 4,
         )?
         .reply()?;
-    if let Some(title) = reply.value8().and_then(|bytes| String::from_utf8(bytes.collect()).ok())
+    if let Some(title) = reply
+        .value8()
+        .and_then(|bytes| String::from_utf8(bytes.collect()).ok())
     {
         return Ok(Some(title));
     }
@@ -476,10 +472,13 @@ fn get_window_title<Connection: self::Connection>(
             xproto::AtomEnum::WM_CLASS,
             xproto::AtomEnum::STRING,
             0,
-            256 / 4
+            256 / 4,
         )?
         .reply()?;
-    if let Some(class_name) = reply.value8().and_then(|bytes| null_terminated_bytes_to_string(bytes.collect())) {
+    if let Some(class_name) = reply
+        .value8()
+        .and_then(|bytes| null_terminated_bytes_to_string(bytes.collect()))
+    {
         return Ok(Some(class_name));
     }
 
