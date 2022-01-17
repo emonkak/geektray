@@ -1,3 +1,4 @@
+use keytray_shell::graphics::Color;
 use std::collections::hash_map;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -33,6 +34,7 @@ impl<Connection: self::Connection> TrayManager<Connection> {
         connection: Rc<Connection>,
         screen_num: usize,
         orientation: SystemTrayOrientation,
+        colors: SystemTrayColors,
     ) -> Result<Self, ReplyOrIdError> {
         let manager_window = connection.generate_id()?;
         let atoms = Atoms::new(connection.as_ref())?.reply()?;
@@ -82,6 +84,18 @@ impl<Connection: self::Connection> TrayManager<Connection> {
                     atoms._NET_SYSTEM_TRAY_VISUAL,
                     xproto::AtomEnum::VISUALID,
                     &[screen.root_visual],
+                )?
+                .check()?;
+
+            connection
+                .change_property(
+                    xproto::PropMode::REPLACE,
+                    manager_window,
+                    atoms._NET_SYSTEM_TRAY_COLORS,
+                    xproto::AtomEnum::CARDINAL,
+                    32,
+                    12,
+                    colors.as_bytes(),
                 )?
                 .check()?;
         }
@@ -342,6 +356,55 @@ impl SystemTrayOrientation {
     pub const VERTICAL: Self = Self(1);
 }
 
+#[repr(C)]
+#[derive(Debug)]
+pub struct SystemTrayColors {
+    normal: [u32; 3],
+    error: [u32; 3],
+    warning: [u32; 3],
+    success: [u32; 3],
+}
+
+impl SystemTrayColors {
+    pub fn new(normal: Color, success: Color, warning: Color, error: Color) -> SystemTrayColors {
+        let normal_components = normal.to_u16_rgba();
+        let success_components = success.to_u16_rgba();
+        let warning_components = warning.to_u16_rgba();
+        let error_components = error.to_u16_rgba();
+        SystemTrayColors {
+            normal: [
+                normal_components[0] as u32,
+                normal_components[1] as u32,
+                normal_components[2] as u32,
+            ],
+            success: [
+                success_components[0] as u32,
+                success_components[1] as u32,
+                success_components[2] as u32,
+            ],
+            warning: [
+                warning_components[0] as u32,
+                warning_components[1] as u32,
+                warning_components[2] as u32,
+            ],
+            error: [
+                error_components[0] as u32,
+                error_components[1] as u32,
+                error_components[2] as u32,
+            ],
+        }
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        unsafe {
+            std::slice::from_raw_parts(
+                (self as *const Self) as *const u8,
+                std::mem::size_of::<Self>(),
+            )
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum TrayEvent {
     TrayIconAdded(xproto::Window),
@@ -524,6 +587,7 @@ fn send_xembed_message<Connection: self::Connection>(
 x11rb::atom_manager! {
     Atoms: AtomsCookie {
         MANAGER,
+        _NET_SYSTEM_TRAY_COLORS,
         _NET_SYSTEM_TRAY_MESSAGE_DATA,
         _NET_SYSTEM_TRAY_OPCODE,
         _NET_SYSTEM_TRAY_ORIENTATION,

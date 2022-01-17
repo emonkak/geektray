@@ -18,7 +18,7 @@ use crate::command::Command;
 use crate::config::{Config, WindowConfig};
 use crate::hotkey::HotkeyInterpreter;
 use crate::tray_container::TrayContainer;
-use crate::tray_manager::{SystemTrayOrientation, TrayEvent, TrayManager};
+use crate::tray_manager::{SystemTrayColors, SystemTrayOrientation, TrayEvent, TrayManager};
 
 #[derive(Debug)]
 pub struct App {
@@ -41,6 +41,12 @@ impl App {
             .reply()
             .context("intern atoms")?;
 
+        let systemtray_colors = SystemTrayColors::new(
+            config.ui.normal_item_foreground,
+            config.ui.selected_item_foreground,
+            config.ui.selected_item_foreground,
+            config.ui.selected_item_foreground,
+        );
         let font = FontDescription::new(
             config.ui.font_family.clone(),
             config.ui.font_style,
@@ -68,6 +74,7 @@ impl App {
             connection.clone(),
             screen_num,
             SystemTrayOrientation::VERTICAL,
+            systemtray_colors,
         )?;
 
         setup_xkb_extension(&connection)?;

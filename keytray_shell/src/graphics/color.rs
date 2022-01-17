@@ -43,7 +43,15 @@ impl Color {
         }
     }
 
-    pub fn into_f64_components(self) -> [f64; 4] {
+    pub fn to_u16_rgba(&self) -> [u16; 4] {
+        let r = self.red as u16;
+        let g = self.green as u16;
+        let b = self.blue as u16;
+        let a = self.alpha as u16;
+        [r << 8 | r, g << 8 | g, b << 8 | b, a << 8 | a]
+    }
+
+    pub fn to_f64_rgba(&self) -> [f64; 4] {
         [
             self.red as f64 / u8::MAX as f64,
             self.green as f64 / u8::MAX as f64,

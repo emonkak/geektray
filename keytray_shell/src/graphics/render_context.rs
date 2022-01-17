@@ -127,7 +127,7 @@ impl RenderContext {
 
     pub fn clear(&mut self, color: Color) {
         unsafe {
-            let [r, g, b, a] = color.into_f64_components();
+            let [r, g, b, a] = color.to_f64_rgba();
             cairo::cairo_save(self.cairo);
             cairo::cairo_rectangle(
                 self.cairo,
@@ -143,7 +143,7 @@ impl RenderContext {
     }
 
     pub fn fill_rectange(&mut self, color: Color, bounds: Rect) {
-        let [r, g, b, a] = color.into_f64_components();
+        let [r, g, b, a] = color.to_f64_rgba();
 
         unsafe {
             cairo::cairo_save(self.cairo);
@@ -167,7 +167,7 @@ impl RenderContext {
 
         let curve_x = radius.width * ARC_TO_BEZIER;
         let curve_y = radius.height * ARC_TO_BEZIER;
-        let [r, g, b, a] = color.into_f64_components();
+        let [r, g, b, a] = color.to_f64_rgba();
 
         unsafe {
             cairo::cairo_save(self.cairo);
@@ -248,7 +248,7 @@ impl RenderContext {
             layout
         };
 
-        let [r, g, b, a] = color.into_f64_components();
+        let [r, g, b, a] = color.to_f64_rgba();
         let y_offset = unsafe {
             let mut width = 0;
             let mut height = 0;
