@@ -208,7 +208,8 @@ impl<Connection: self::Connection> TrayManager<Connection> {
                 self.register_tray_icon(embedder_window, event.window)?;
                 None
             }
-            ReparentNotify(event) => {
+            // Ignore from SUBSTRUCTURE_NOTIFY.
+            ReparentNotify(event) if event.event == event.window => {
                 if event.parent == embedder_window {
                     Some(TrayEvent::TrayIconAdded(event.window))
                 } else {
@@ -220,7 +221,7 @@ impl<Connection: self::Connection> TrayManager<Connection> {
                 }
             }
             DestroyNotify(event) => match self.status {
-                TrayStatus::Pending(window) if event.window == window => {
+                TrayStatus::Pending(window) if event.event == window => {
                     self.broadcast_manager_message()?;
                     None
                 }

@@ -103,14 +103,6 @@ fn main() -> anyhow::Result<()> {
         let event = connection.wait_for_event().context("get event")?;
 
         match event {
-            Event::Expose(event) => {
-                if event.window == window && event.count == 0 {
-                    connection
-                        .clear_area(true, window, 0, 0, 0, 0)?
-                        .check()
-                        .context("request redraw")?;
-                }
-            }
             Event::ButtonRelease(_) => {
                 notification_id += 1;
                 set_window_title(

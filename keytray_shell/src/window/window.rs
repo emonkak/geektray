@@ -11,7 +11,7 @@ use super::effect::Effect;
 use super::layout::Layout;
 use super::widget::Widget;
 use crate::event::ControlFlow;
-use crate::graphics::{PhysicalPoint, PhysicalSize, Point, RenderContext, Size};
+use crate::graphics::{PhysicalPoint, PhysicalRect, PhysicalSize, Point, RenderContext, Size};
 
 #[derive(Debug)]
 pub struct Window<Widget> {
@@ -93,8 +93,16 @@ impl<Widget: self::Widget> Window<Widget> {
         self.window
     }
 
+    pub fn position(&self) -> PhysicalPoint {
+        self.position
+    }
+
     pub fn size(&self) -> PhysicalSize {
         self.size
+    }
+
+    pub fn bounds(&self) -> PhysicalRect {
+        PhysicalRect::new(self.position, self.size)
     }
 
     pub fn is_mapped(&self) -> bool {
@@ -110,7 +118,20 @@ impl<Widget: self::Widget> Window<Widget> {
     }
 
     pub fn show(&self) -> Result<(), ReplyError> {
+        let values = xproto::ConfigureWindowAux::new().stack_mode(xproto::StackMode::ABOVE);
+        self.connection
+            .configure_window(self.window, &values)?
+            .check()?;
         self.connection.map_window(self.window)?.check()?;
+        self.connection.flush()?;
+        Ok(())
+    }
+
+    pub fn raise(&self) -> Result<(), ReplyError> {
+        let values = xproto::ConfigureWindowAux::new().stack_mode(xproto::StackMode::ABOVE);
+        self.connection
+            .configure_window(self.window, &values)?
+            .check()?;
         self.connection.flush()?;
         Ok(())
     }
@@ -233,20 +254,18 @@ impl<Widget: self::Widget> Window<Widget> {
             }
             MapNotify(event) if event.window == self.window => {
                 let screen = &self.connection.setup().roots[self.screen_num];
-                self.connection
-                    .grab_keyboard(
-                        true,
-                        screen.root,
-                        x11rb::CURRENT_TIME,
-                        xproto::GrabMode::ASYNC,
-                        xproto::GrabMode::ASYNC,
-                    )?;
+                self.connection.grab_keyboard(
+                    true,
+                    screen.root,
+                    x11rb::CURRENT_TIME,
+                    xproto::GrabMode::ASYNC,
+                    xproto::GrabMode::ASYNC,
+                )?;
                 self.connection.flush()?;
                 self.is_mapped = true;
             }
             UnmapNotify(event) if event.window == self.window => {
-                self.connection
-                    .ungrab_keyboard(x11rb::CURRENT_TIME)?;
+                self.connection.ungrab_keyboard(x11rb::CURRENT_TIME)?;
                 self.connection.flush()?;
                 self.is_mapped = false;
             }

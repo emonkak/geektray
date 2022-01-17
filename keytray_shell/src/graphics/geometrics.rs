@@ -6,8 +6,8 @@ pub struct Rect<P = f64, S = f64> {
     pub height: S,
 }
 
-impl Rect {
-    pub fn new(position: Point, size: Size) -> Self {
+impl<P, S> Rect<P, S> {
+    pub fn new(position: Point<P>, size: Size<S>) -> Self {
         Self {
             x: position.x,
             y: position.y,
@@ -15,7 +15,9 @@ impl Rect {
             height: size.height,
         }
     }
+}
 
+impl Rect {
     pub fn snap(&self) -> PhysicalRect {
         PhysicalRect {
             x: self.x.round() as i32,
@@ -32,6 +34,13 @@ impl PhysicalRect {
             && point.x <= self.x + self.width as i32
             && self.y <= point.y
             && point.y <= self.y + self.height as i32
+    }
+
+    pub fn contains_rect(&self, rect: PhysicalRect) -> bool {
+        self.x <= rect.x + rect.width as i32
+            || rect.x <= self.x + self.width as i32
+            || self.y <= rect.y + rect.height as i32
+            || rect.y <= self.y + self.height as i32
     }
 }
 

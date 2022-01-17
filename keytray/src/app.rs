@@ -141,6 +141,15 @@ impl App {
             .acquire_tray_selection()
             .context("acquire tray selection")?;
 
+        {
+            let screen = &self.connection.setup().roots[self.screen_num];
+            let values = xproto::ChangeWindowAttributesAux::new()
+                .event_mask(xproto::EventMask::SUBSTRUCTURE_NOTIFY);
+            self.connection
+                .change_window_attributes(screen.root, &values)?
+                .check()?;
+        }
+
         event_loop.run(|event, _event_loop, control_flow| match event {
             Event::X11Event(event) => {
                 match self.tray_manager.process_event(self.window.id(), &event) {
@@ -224,6 +233,13 @@ impl App {
                     self.window.request_redraw()?;
                 } else if protocol == self.atoms.WM_DELETE_WINDOW {
                     self.window.hide()?;
+                }
+            }
+            // only from SUBSTRUCTURE_NOTIFY
+            MapNotify(event) if event.event != event.window => {
+                if event.window != self.window.id() && !event.override_redirect {
+                    // It maybe hidden under other windows, so lift the window.
+                    self.window.raise()?;
                 }
             }
             XkbStateNotify(event) => self.keyboard_state.update_mask(event),

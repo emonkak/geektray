@@ -125,13 +125,7 @@ impl TrayContainer {
 }
 
 impl Widget for TrayContainer {
-    fn render(
-        &self,
-        position: Point,
-        layout: &Layout,
-        _index: usize,
-        context: &mut RenderContext,
-    ) {
+    fn render(&self, position: Point, layout: &Layout, _index: usize, context: &mut RenderContext) {
         context.clear(self.config.window_background);
 
         if self.config.border_size > 0.0 {
@@ -161,8 +155,10 @@ impl Widget for TrayContainer {
         let mut children = Vec::with_capacity(self.tray_items.len());
 
         let container_inset = Size {
-            width: container_size.width - (self.config.container_padding * 2.0 + self.config.border_size * 2.0),
-            height: container_size.height - (self.config.container_padding * 2.0 + self.config.border_size * 2.0),
+            width: container_size.width
+                - (self.config.container_padding * 2.0 + self.config.border_size * 2.0),
+            height: container_size.height
+                - (self.config.container_padding * 2.0 + self.config.border_size * 2.0),
         };
 
         for (index, tray_item) in self.tray_items.iter().enumerate() {
