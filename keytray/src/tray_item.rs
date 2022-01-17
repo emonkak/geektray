@@ -86,13 +86,13 @@ impl Widget for TrayItem {
     fn render(&self, position: Point, layout: &Layout, index: usize, context: &mut RenderContext) {
         let (bg_color, fg_color) = if self.is_selected {
             (
-                self.config.color.selected_item_background,
-                self.config.color.selected_item_foreground,
+                self.config.selected_item_background,
+                self.config.selected_item_foreground,
             )
         } else {
             (
-                self.config.color.normal_item_background,
-                self.config.color.normal_item_foreground,
+                self.config.normal_item_background,
+                self.config.normal_item_foreground,
             )
         };
 
@@ -120,7 +120,7 @@ impl Widget for TrayItem {
             Text {
                 content: &title,
                 font_description: &self.font,
-                font_size: self.config.font.size,
+                font_size: self.config.font_size,
                 horizontal_align: HorizontalAlign::Left,
                 vertical_align: VerticalAlign::Middle,
             },

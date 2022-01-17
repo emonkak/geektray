@@ -34,7 +34,7 @@ pub struct App {
 
 impl App {
     pub fn new(config: Config) -> anyhow::Result<Self> {
-        let (connection, screen_num) = XCBConnection::connect(None)?;
+        let (connection, screen_num) = XCBConnection::connect(None).context("connect to X server")?;
         let connection = Rc::new(connection);
 
         let atoms = Atoms::new(connection.as_ref())?
@@ -42,10 +42,10 @@ impl App {
             .context("intern atoms")?;
 
         let font = FontDescription::new(
-            config.ui.font.family.clone(),
-            config.ui.font.style,
-            config.ui.font.weight.into(),
-            config.ui.font.stretch,
+            config.ui.font_family.clone(),
+            config.ui.font_style,
+            config.ui.font_weight.into(),
+            config.ui.font_stretch,
         );
 
         let tray_container = TrayContainer::new(Rc::new(config.ui), Rc::new(font));

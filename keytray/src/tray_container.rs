@@ -145,7 +145,7 @@ impl Widget for TrayContainer {
         _index: usize,
         context: &mut RenderContext,
     ) {
-        context.clear(self.config.color.window_background);
+        context.clear(self.config.window_background);
 
         for (index, (tray_item, (child_position, child_layout))) in self
             .tray_items

@@ -1,5 +1,4 @@
-use serde::de;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::convert::TryFrom;
 use std::error;
@@ -10,9 +9,7 @@ use std::os::raw::*;
 use pango_sys as pango;
 
 #[derive(Debug)]
-pub struct FontDescription {
-    description: *mut pango::PangoFontDescription,
-}
+pub struct FontDescription(*mut pango::PangoFontDescription);
 
 impl FontDescription {
     pub fn new(
@@ -53,17 +50,17 @@ impl FontDescription {
             };
             pango::pango_font_description_set_stretch(description, stretch);
 
-            Self { description }
+            Self(description)
         }
     }
 
-    pub fn as_ptr(&self) -> *mut pango::PangoFontDescription {
-        self.description
+    pub fn as_mut_ptr(&self) -> *mut pango::PangoFontDescription {
+        self.0
     }
 
     pub fn set_font_size(&mut self, font_size: f64) {
         unsafe {
-            pango::pango_font_description_set_absolute_size(self.description, font_size);
+            pango::pango_font_description_set_absolute_size(self.0, font_size);
         }
     }
 }
@@ -71,8 +68,7 @@ impl FontDescription {
 impl Clone for FontDescription {
     fn clone(&self) -> Self {
         unsafe {
-            let description = pango::pango_font_description_copy(self.description);
-            Self { description }
+            Self(pango::pango_font_description_copy(self.0))
         }
     }
 }
@@ -80,7 +76,7 @@ impl Clone for FontDescription {
 impl Drop for FontDescription {
     fn drop(&mut self) {
         unsafe {
-            pango::pango_font_description_free(self.description);
+            pango::pango_font_description_free(self.0);
         }
     }
 }
@@ -126,7 +122,7 @@ impl Default for FontStyle {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Deserialize, Serialize)]
 pub struct FontWeight(u16);
 
 impl FontWeight {
@@ -153,67 +149,19 @@ impl TryFrom<u16> for FontWeight {
     }
 }
 
+impl From<FontWeight> for u16 {
+    fn from(font_weight: FontWeight) -> Self {
+        font_weight.0
+    }
+}
+
 impl Default for FontWeight {
     fn default() -> Self {
         Self::NORMAL
     }
 }
 
-impl<'de> Deserialize<'de> for FontWeight {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct Visitor;
-
-        impl<'de> serde::de::Visitor<'de> for Visitor {
-            type Value = FontWeight;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                write!(
-                    formatter,
-                    "an integer value from 1 to 1000 or string representing a font weight."
-                )
-            }
-
-            fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<Self::Value, E> {
-                match s {
-                    "Thin" => Ok(FontWeight::THIN),
-                    "ExtraLight" => Ok(FontWeight::EXTRA_LIGHT),
-                    "Light" => Ok(FontWeight::LIGHT),
-                    "Normal" => Ok(FontWeight::NORMAL),
-                    "Medium" => Ok(FontWeight::MEDIUM),
-                    "SemiBold" => Ok(FontWeight::SEMI_BOLD),
-                    "Bold" => Ok(FontWeight::BOLD),
-                    "ExtraBold" => Ok(FontWeight::EXTRA_BOLD),
-                    "Black" => Ok(FontWeight::BLACK),
-                    other => Err(de::Error::unknown_variant(
-                        other,
-                        &[
-                            "Thin",
-                            "ExtraLight",
-                            "Light",
-                            "Normal",
-                            "Medium",
-                            "SemiBold",
-                            "Bold",
-                            "ExtraBold",
-                            "Black",
-                        ],
-                    )),
-                }
-            }
-
-            fn visit_u16<E: serde::de::Error>(self, n: u16) -> Result<Self::Value, E> {
-                FontWeight::try_from(n).map_err(de::Error::custom)
-            }
-        }
-
-        deserializer.deserialize_any(Visitor)
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct InvalidWeight;
 
 impl fmt::Display for InvalidWeight {

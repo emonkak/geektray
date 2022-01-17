@@ -130,7 +130,7 @@ impl Default for Config {
                 ),
             ],
             global_hotkeys: vec![Hotkey::new(
-                xkb::XKB_KEY_Escape,
+                xkb::XKB_KEY_grave,
                 Modifiers::SUPER,
                 vec![Command::ShowWindow],
             )],
@@ -161,17 +161,22 @@ impl Default for WindowConfig {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(default)]
 pub struct UiConfig {
-    pub window_name: Cow<'static, str>,
-    pub window_class: Cow<'static, str>,
-    pub window_width: f64,
     pub container_padding: f64,
     pub item_padding: f64,
     pub item_gap: f64,
     pub icon_size: f64,
     pub item_corner_radius: f64,
-    pub font: FontConfig,
-    pub color: ColorConfig,
     pub show_index: bool,
+    pub font_family: FontFamily,
+    pub font_weight: FontWeight,
+    pub font_style: FontStyle,
+    pub font_stretch: FontStretch,
+    pub font_size: f64,
+    pub window_background: Color,
+    pub normal_item_background: Color,
+    pub normal_item_foreground: Color,
+    pub selected_item_background: Color,
+    pub selected_item_foreground: Color,
 }
 
 impl UiConfig {
@@ -183,55 +188,17 @@ impl UiConfig {
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
-            window_name: Cow::Borrowed("KeyTray"),
-            window_class: Cow::Borrowed("KeyTray"),
-            window_width: 480.0,
             container_padding: 8.0,
-            item_padding: 0.0,
+            item_padding: 8.0,
             item_gap: 8.0,
             item_corner_radius: 4.0,
             icon_size: 24.0,
-            font: FontConfig::default(),
-            color: ColorConfig::default(),
             show_index: true,
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(default)]
-pub struct FontConfig {
-    pub family: FontFamily,
-    pub weight: FontWeight,
-    pub style: FontStyle,
-    pub stretch: FontStretch,
-    pub size: f64,
-}
-
-impl Default for FontConfig {
-    fn default() -> Self {
-        Self {
-            family: FontFamily::default(),
-            weight: FontWeight::default(),
-            style: FontStyle::default(),
-            stretch: FontStretch::default(),
-            size: 12.0,
-        }
-    }
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct ColorConfig {
-    pub window_background: Color,
-    pub normal_item_background: Color,
-    pub normal_item_foreground: Color,
-    pub selected_item_background: Color,
-    pub selected_item_foreground: Color,
-}
-
-impl Default for ColorConfig {
-    fn default() -> Self {
-        Self {
+            font_family: FontFamily::default(),
+            font_weight: FontWeight::default(),
+            font_style: FontStyle::default(),
+            font_stretch: FontStretch::default(),
+            font_size: 12.0,
             window_background: Color::from_rgb(0x21272b),
             normal_item_background: Color::from_rgb(0x363f45),
             normal_item_foreground: Color::from_rgb(0xe8eaeb),

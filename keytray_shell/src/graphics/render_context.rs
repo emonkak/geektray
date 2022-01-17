@@ -238,7 +238,7 @@ impl RenderContext {
                     HorizontalAlign::Right => pango::PANGO_ALIGN_RIGHT,
                 },
             );
-            pango::pango_layout_set_font_description(layout, font_description.as_ptr());
+            pango::pango_layout_set_font_description(layout, font_description.as_mut_ptr());
             pango::pango_layout_set_text(
                 layout,
                 text.content.as_ptr() as *const c_char,
