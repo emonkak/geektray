@@ -62,7 +62,8 @@ impl TrayItem {
                 button_mask,
                 center,
                 center,
-            )
+            )?;
+            Ok(Effect::Success)
         }));
     }
 
@@ -197,7 +198,8 @@ impl Widget for TrayItem {
                                 button_mask,
                                 center,
                                 center,
-                            )
+                            )?;
+                            Ok(Effect::Success)
                         }));
                     }
                 }
@@ -208,6 +210,6 @@ impl Widget for TrayItem {
             _ => {}
         }
 
-        Effect::None
+        Effect::Success
     }
 }

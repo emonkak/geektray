@@ -158,25 +158,26 @@ impl<Widget: self::Widget> Window<Widget> {
 
         let mut redraw_requested = false;
         let mut layout_requested = false;
-        let mut result = false;
+        let mut result = true;
 
         loop {
             match current {
-                Effect::None => {}
+                Effect::Success => {}
+                Effect::Failure => {
+                    result = false;
+                }
                 Effect::Batch(effects) => {
                     pending_effects.extend(effects);
                 }
                 Effect::Action(action) => {
-                    action(self.connection.as_ref(), self.screen_num, self.window)?;
-                    result = true;
+                    current = action(self.connection.as_ref(), self.screen_num, self.window)?;
+                    continue;
                 }
                 Effect::RequestRedraw => {
                     redraw_requested = true;
-                    result = true;
                 }
                 Effect::RequestLayout => {
                     layout_requested = true;
-                    result = true;
                 }
             }
             if let Some(next) = pending_effects.pop_front() {

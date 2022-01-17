@@ -19,6 +19,6 @@ pub trait Widget {
     }
 
     fn on_event(&mut self, _event: &protocol::Event, _position: Point, _layout: &Layout) -> Effect {
-        Effect::None
+        Effect::Success
     }
 }
