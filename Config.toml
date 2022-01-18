@@ -2,6 +2,7 @@
 name = "KeyTray"
 class = "KeyTray"
 width = 480.0
+override_redirect = false
 
 [ui]
 container_padding = 8.0
@@ -10,7 +11,7 @@ item_gap = 8.0
 icon_size = 24.0
 item_corner_radius = 4.0
 show_index = true
-border_size = 2.0
+border_size = 0.0
 border_color = "#363f45"
 font_family = "Sans"
 font_weight = 400

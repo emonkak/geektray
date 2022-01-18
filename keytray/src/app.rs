@@ -37,20 +37,23 @@ impl App {
             XCBConnection::connect(None).context("connect to X server")?;
         let connection = Rc::new(connection);
 
+        setup_xkb_extension(&connection)?;
+
         let atoms = Atoms::new(connection.as_ref())?
             .reply()
             .context("intern atoms")?;
 
         let systemtray_colors = SystemTrayColors::new(
             config.ui.normal_item_foreground,
-            config.ui.selected_item_foreground,
-            config.ui.selected_item_foreground,
-            config.ui.selected_item_foreground,
+            config.ui.normal_item_foreground,
+            config.ui.normal_item_foreground,
+            config.ui.normal_item_foreground,
         );
+
         let font = FontDescription::new(
             config.ui.font_family.clone(),
             config.ui.font_style,
-            config.ui.font_weight.into(),
+            config.ui.font_weight,
             config.ui.font_stretch,
         );
 
@@ -64,6 +67,7 @@ impl App {
                 width: config.window.width,
                 height: 0.0,
             },
+            config.window.override_redirect,
             get_window_position,
         )
         .context("create window")?;
@@ -77,8 +81,6 @@ impl App {
             systemtray_colors,
         )?;
 
-        setup_xkb_extension(&connection)?;
-
         let keyboard_state = {
             let context = xkb::Context::new();
             let device_id = xkb::DeviceId::core_keyboard(&connection)
@@ -88,32 +90,11 @@ impl App {
             xkb::State::from_keymap(keymap)
         };
 
-        {
-            let screen = &connection.setup().roots[screen_num];
-            for key in &config.global_hotkeys {
-                let keycode = keyboard_state
-                    .lookup_keycode(key.keysym())
-                    .context("lookup keycode")?;
-                let modifiers = key.modifiers().without_locks();
-                for modifiers in [
-                    modifiers,
-                    modifiers | Modifiers::CAPS_LOCK,
-                    modifiers | Modifiers::NUM_LOCK,
-                    modifiers | Modifiers::CAPS_LOCK | Modifiers::NUM_LOCK,
-                ] {
-                    connection
-                        .grab_key(
-                            true,
-                            screen.root,
-                            modifiers,
-                            keycode as u8,
-                            xproto::GrabMode::ASYNC,
-                            xproto::GrabMode::ASYNC,
-                        )?
-                        .check()
-                        .context("grab key")?;
-                }
-            }
+        for key in &config.global_hotkeys {
+            let keycode = keyboard_state
+                .lookup_keycode(key.keysym())
+                .context("lookup keycode")?;
+            grab_key(&connection, screen_num, keycode, key.modifiers())?;
         }
 
         let all_hotkeys = config
@@ -141,7 +122,8 @@ impl App {
             .acquire_tray_selection()
             .context("acquire tray selection")?;
 
-        {
+        if self.window.override_redirect() {
+            // If `override_redirect` is enabled, we need to monitor mapping of other windows.
             let screen = &self.connection.setup().roots[self.screen_num];
             let values = xproto::ChangeWindowAttributesAux::new()
                 .event_mask(xproto::EventMask::SUBSTRUCTURE_NOTIFY);
@@ -235,9 +217,11 @@ impl App {
                     self.window.hide()?;
                 }
             }
-            // only from SUBSTRUCTURE_NOTIFY
-            MapNotify(event) if event.event != event.window => {
-                if event.window != self.window.id() && !event.override_redirect {
+            MapNotify(event) => {
+                if event.window != event.event // only from SUBSTRUCTURE_NOTIFY
+                    && event.window != self.window.id()
+                    && !event.override_redirect
+                {
                     // It maybe hidden under other windows, so lift the window.
                     self.window.raise()?;
                 }
@@ -361,7 +345,7 @@ fn configure_window(
             window,
             atoms._NET_WM_WINDOW_TYPE,
             xproto::AtomEnum::ATOM,
-            &[atoms._NET_WM_WINDOW_TYPE_DOCK],
+            &[atoms._NET_WM_WINDOW_TYPE_DIALOG],
         )?
         .check()
         .context("set _NET_WM_WINDOW_TYPE property")?;
@@ -415,6 +399,35 @@ fn setup_xkb_extension(connection: &XCBConnection) -> anyhow::Result<()> {
             .context("select xkb events")?;
     }
 
+    Ok(())
+}
+
+fn grab_key(
+    connection: &XCBConnection,
+    screen_num: usize,
+    keycode: u32,
+    modifiers: Modifiers,
+) -> anyhow::Result<()> {
+    let screen = &connection.setup().roots[screen_num];
+    let modifiers = modifiers.without_locks();
+    for modifiers in [
+        modifiers,
+        modifiers | Modifiers::CAPS_LOCK,
+        modifiers | Modifiers::NUM_LOCK,
+        modifiers | Modifiers::CAPS_LOCK | Modifiers::NUM_LOCK,
+    ] {
+        connection
+            .grab_key(
+                true,
+                screen.root,
+                modifiers,
+                keycode as u8,
+                xproto::GrabMode::ASYNC,
+                xproto::GrabMode::ASYNC,
+            )?
+            .check()
+            .context("grab key")?;
+    }
     Ok(())
 }
 
@@ -575,6 +588,6 @@ x11rb::atom_manager! {
         _NET_WM_STATE_STICKY,
         _NET_WM_SYNC_REQUEST,
         _NET_WM_WINDOW_TYPE,
-        _NET_WM_WINDOW_TYPE_DOCK,
+        _NET_WM_WINDOW_TYPE_DIALOG,
     }
 }

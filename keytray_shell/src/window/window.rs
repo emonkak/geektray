@@ -18,6 +18,7 @@ pub struct Window<Widget> {
     widget: Widget,
     connection: Rc<XCBConnection>,
     screen_num: usize,
+    override_redirect: bool,
     window: xproto::Window,
     position: PhysicalPoint,
     size: PhysicalSize,
@@ -31,6 +32,7 @@ impl<Widget: self::Widget> Window<Widget> {
         connection: Rc<XCBConnection>,
         screen_num: usize,
         initial_size: Size,
+        override_redirect: bool,
         get_position: GetPosition,
     ) -> Result<Self, ReplyOrIdError>
     where
@@ -56,7 +58,7 @@ impl<Widget: self::Widget> Window<Widget> {
 
             let values = xproto::CreateWindowAux::new()
                 .event_mask(event_mask)
-                .override_redirect(1);
+                .override_redirect(if override_redirect { 1 } else { 0 });
 
             connection
                 .create_window(
@@ -81,6 +83,7 @@ impl<Widget: self::Widget> Window<Widget> {
             widget,
             connection,
             screen_num,
+            override_redirect,
             window,
             position,
             size,
@@ -107,6 +110,10 @@ impl<Widget: self::Widget> Window<Widget> {
 
     pub fn is_mapped(&self) -> bool {
         self.is_mapped
+    }
+
+    pub fn override_redirect(&self) -> bool {
+        self.override_redirect
     }
 
     pub fn widget(&self) -> &Widget {
@@ -253,21 +260,26 @@ impl<Widget: self::Widget> Window<Widget> {
                 *control_flow = ControlFlow::Break;
             }
             MapNotify(event) if event.window == self.window => {
-                let screen = &self.connection.setup().roots[self.screen_num];
-                self.connection.grab_keyboard(
-                    true,
-                    screen.root,
-                    x11rb::CURRENT_TIME,
-                    xproto::GrabMode::ASYNC,
-                    xproto::GrabMode::ASYNC,
-                )?;
-                self.connection.flush()?;
                 self.is_mapped = true;
+                if self.override_redirect {
+                    self.grab_keyboard()?;
+                }
             }
             UnmapNotify(event) if event.window == self.window => {
-                self.connection.ungrab_keyboard(x11rb::CURRENT_TIME)?;
-                self.connection.flush()?;
                 self.is_mapped = false;
+                if self.override_redirect {
+                    self.ungrab_keyboard()?;
+                }
+            }
+            MapNotify(event) => {
+                if self.override_redirect
+                    && event.window != event.event // only from SUBSTRUCTURE_NOTIFY
+                    && event.window != self.window
+                    && !event.override_redirect
+                {
+                    // It maybe hidden under other windows, so lift the window.
+                    self.raise()?;
+                }
             }
             _ => {}
         }
@@ -288,6 +300,29 @@ impl<Widget: self::Widget> Window<Widget> {
 
         context.commit()?;
 
+        Ok(())
+    }
+
+    fn grab_keyboard(&self) -> Result<(), ReplyError> {
+        let screen = &self.connection.setup().roots[self.screen_num];
+        self.connection
+            .grab_keyboard(
+                true,
+                screen.root,
+                x11rb::CURRENT_TIME,
+                xproto::GrabMode::ASYNC,
+                xproto::GrabMode::ASYNC,
+            )?
+            .discard_reply_and_errors();
+        self.connection.flush()?;
+        Ok(())
+    }
+
+    fn ungrab_keyboard(&self) -> Result<(), ReplyError> {
+        self.connection
+            .ungrab_keyboard(x11rb::CURRENT_TIME)?
+            .check()?;
+        self.connection.flush()?;
         Ok(())
     }
 }
