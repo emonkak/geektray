@@ -38,9 +38,13 @@ impl TrayContainer {
     }
 
     pub fn add_tray_item(&mut self, window: xproto::Window, title: String) -> Effect {
-        let tray_item = TrayItem::new(window, title, self.config.clone(), self.font.clone());
-        self.tray_items.push(tray_item);
-        Effect::RequestLayout
+        if self.tray_items.iter().find(|tray_item| tray_item.window() == window).is_some() {
+            Effect::Failure
+        } else {
+            let tray_item = TrayItem::new(window, title, self.config.clone(), self.font.clone());
+            self.tray_items.push(tray_item);
+            Effect::RequestLayout
+        }
     }
 
     pub fn remove_tray_item(&mut self, window: xproto::Window) -> Effect {
