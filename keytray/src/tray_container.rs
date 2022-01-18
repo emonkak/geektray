@@ -211,8 +211,8 @@ impl Widget for TrayContainer {
         Effect::Action(Box::new(move |connection, _, window| {
             {
                 let mut size_hints = properties::WmSizeHints::new();
-                size_hints.min_size = Some((0, new_size.height as i32));
-                size_hints.max_size = Some((0, new_size.height as i32));
+                size_hints.min_size = Some((new_size.width as i32, new_size.height as i32));
+                size_hints.max_size = Some((new_size.width as i32, new_size.height as i32));
 
                 size_hints.set_normal_hints(connection, window)?.check()?;
             }

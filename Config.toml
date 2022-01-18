@@ -1,7 +1,7 @@
 [window]
 name = "KeyTray"
 class = "KeyTray"
-initial_width = 480.0
+width = 480.0
 
 [ui]
 container_padding = 8.0

@@ -61,7 +61,7 @@ impl App {
             connection.clone(),
             screen_num,
             Size {
-                width: config.window.initial_width,
+                width: config.window.width,
                 height: 0.0,
             },
             get_window_position,

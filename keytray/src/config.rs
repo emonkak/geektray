@@ -143,7 +143,7 @@ impl Default for Config {
 pub struct WindowConfig {
     pub name: Cow<'static, str>,
     pub class: Cow<'static, str>,
-    pub initial_width: f64,
+    pub width: f64,
 }
 
 impl Default for WindowConfig {
@@ -151,7 +151,7 @@ impl Default for WindowConfig {
         Self {
             name: Cow::Borrowed("KeyTray"),
             class: Cow::Borrowed("KeyTray"),
-            initial_width: 480.0,
+            width: 480.0,
         }
     }
 }
