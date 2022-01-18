@@ -68,7 +68,7 @@ impl App {
                 height: 0.0,
             },
             config.window.override_redirect,
-            get_window_position,
+            get_window_position_at_center,
         )
         .context("create window")?;
 
@@ -450,7 +450,7 @@ fn run_command(
             if window.is_mapped() {
                 Ok(false)
             } else {
-                let position = get_window_position(connection, screen_num, window.size());
+                let position = get_window_position_at_center(connection, screen_num, window.size());
                 window
                     .move_position(position)
                     .context("move window position")?;
@@ -462,7 +462,7 @@ fn run_command(
             if window.is_mapped() {
                 window.hide().context("hide window")?;
             } else {
-                let position = get_window_position(connection, screen_num, window.size());
+                let position = get_window_position_at_center(connection, screen_num, window.size());
                 window
                     .move_position(position)
                     .context("move window position")?;
@@ -512,6 +512,7 @@ fn get_window_title<Connection: self::Connection>(
     if let Some(title) = reply
         .value8()
         .and_then(|bytes| String::from_utf8(bytes.collect()).ok())
+        .filter(|title| !title.is_empty())
     {
         return Ok(Some(title));
     }
@@ -530,6 +531,7 @@ fn get_window_title<Connection: self::Connection>(
     if let Some(title) = reply
         .value8()
         .and_then(|bytes| String::from_utf8(bytes.collect()).ok())
+        .filter(|title| !title.is_empty())
     {
         return Ok(Some(title));
     }
@@ -548,6 +550,7 @@ fn get_window_title<Connection: self::Connection>(
     if let Some(class_name) = reply
         .value8()
         .and_then(|bytes| null_terminated_bytes_to_string(bytes.collect()))
+        .filter(|title| !title.is_empty())
     {
         return Ok(Some(class_name));
     }
@@ -555,7 +558,7 @@ fn get_window_title<Connection: self::Connection>(
     Ok(None)
 }
 
-fn get_window_position(
+fn get_window_position_at_center(
     connection: &XCBConnection,
     screen_num: usize,
     size: PhysicalSize,
