@@ -1,4 +1,5 @@
 use std::ops::Add;
+use std::time::Duration;
 use x11rb::errors::ReplyError;
 use x11rb::protocol::xproto;
 use x11rb::xcb_ffi::XCBConnection;
@@ -8,9 +9,29 @@ pub enum Effect {
     Success,
     Failure,
     Batch(Vec<Effect>),
+    Delay(Box<Effect>, Duration),
     Action(Box<dyn FnOnce(&XCBConnection, usize, xproto::Window) -> Result<Effect, ReplyError>>),
     RequestRedraw,
     RequestLayout,
+}
+
+impl Effect {
+    pub fn action<F>(action: F) -> Self
+    where
+        F: 'static + FnOnce(&XCBConnection, usize, xproto::Window) -> Result<Effect, ReplyError>
+    {
+        Self::Action(Box::new(action))
+    }
+
+    pub fn delay(self, timeout: Duration) -> Self {
+        Self::Delay(Box::new(self), timeout)
+    }
+}
+
+impl Default for Effect {
+    fn default() -> Self {
+        Self::Success
+    }
 }
 
 impl Add for Effect {

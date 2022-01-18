@@ -6,18 +6,18 @@ use std::os::raw::*;
 use std::rc::Rc;
 use x11rb::connection::Connection;
 use x11rb::errors::{ReplyError, ReplyOrIdError};
-use x11rb::protocol::xproto;
 use x11rb::protocol::xproto::ConnectionExt as _;
+use x11rb::protocol::xproto;
 use x11rb::x11_utils::Serialize as _;
 use x11rb::xcb_ffi::XCBConnection;
 
+use crate::window::Effect;
 use super::color::Color;
 use super::geometrics::{PhysicalSize, Rect, Size};
 use super::text::{HorizontalAlign, Text, VerticalAlign};
 
 pub struct RenderContext {
     connection: Rc<XCBConnection>,
-    screen_num: usize,
     window: xproto::Window,
     bounds: PhysicalSize,
     pixmap: xproto::Pixmap,
@@ -25,8 +25,7 @@ pub struct RenderContext {
     cairo: *mut cairo::cairo_t,
     cairo_surface: *mut cairo::cairo_surface_t,
     pango: *mut pango::PangoContext,
-    scheduled_actions:
-        Vec<Box<dyn FnOnce(&XCBConnection, usize, xproto::Window) -> Result<(), ReplyError>>>,
+    pending_effects: Vec<Effect>,
 }
 
 impl RenderContext {
@@ -82,7 +81,6 @@ impl RenderContext {
 
         Ok(Self {
             connection,
-            screen_num,
             window,
             bounds,
             pixmap,
@@ -90,11 +88,11 @@ impl RenderContext {
             cairo_surface,
             cairo,
             pango,
-            scheduled_actions: Vec::new(),
+            pending_effects: Vec::new(),
         })
     }
 
-    pub fn commit(&mut self) -> Result<(), ReplyError> {
+    pub fn commit(&mut self) -> Result<Effect, ReplyError> {
         unsafe {
             cairo::cairo_surface_flush(self.cairo_surface);
         }
@@ -111,18 +109,11 @@ impl RenderContext {
                 self.bounds.height as u16,
             )?
             .check()?;
-        for action in self.scheduled_actions.drain(..) {
-            action(self.connection.as_ref(), self.screen_num, self.window)?;
-        }
-        self.connection.flush()?;
-        Ok(())
+        Ok(self.pending_effects.drain(..).fold(Effect::Success, |acc, effect| acc + effect))
     }
 
-    pub fn schedule_action<F>(&mut self, action: F)
-    where
-        F: 'static + FnOnce(&XCBConnection, usize, xproto::Window) -> Result<(), ReplyError>,
-    {
-        self.scheduled_actions.push(Box::new(action));
+    pub fn push_effect(&mut self, effect: Effect) {
+        self.pending_effects.push(effect)
     }
 
     pub fn clear(&mut self, color: Color) {

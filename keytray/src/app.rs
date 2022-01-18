@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Context as _};
-use keytray_shell::event::{ControlFlow, Event, EventLoop, KeyState, Modifiers};
+use keytray_shell::event::{ControlFlow, Event, EventLoop, EventLoopContext, KeyState, Modifiers};
 use keytray_shell::graphics::{FontDescription, PhysicalPoint, PhysicalSize, Size};
 use keytray_shell::window::Window;
 use keytray_shell::xkb;
@@ -20,7 +20,6 @@ use crate::hotkey::HotkeyInterpreter;
 use crate::tray_container::TrayContainer;
 use crate::tray_manager::{SystemTrayColors, SystemTrayOrientation, TrayEvent, TrayManager};
 
-#[derive(Debug)]
 pub struct App {
     connection: Rc<XCBConnection>,
     screen_num: usize,
@@ -132,31 +131,38 @@ impl App {
                 .check()?;
         }
 
-        event_loop.run(|event, _event_loop, control_flow| match event {
-            Event::X11Event(event) => {
-                match self.tray_manager.process_event(self.window.id(), &event) {
-                    Ok(Some(event)) => {
-                        self.on_tray_event(&event, control_flow)?;
+        event_loop.run(|event, context, control_flow| {
+            self.window.on_event(&event, context, control_flow)?;
+
+            match event {
+                Event::X11Event(event) => {
+                    match self.tray_manager.process_event(self.window.id(), &event) {
+                        Ok(Some(event)) => {
+                            self.on_tray_event(&event, context, control_flow)?;
+                        }
+                        Ok(None) => {}
+                        Err(_error) => {
+                            // TODO: log error
+                        }
                     }
-                    Ok(None) => {}
-                    Err(_error) => {
-                        // TODO: log error
-                    }
+                    self.on_x11_event(&event, context, control_flow)?;
+                    Ok(())
                 }
-                self.window.on_event(&event, control_flow)?;
-                self.on_x11_event(&event, control_flow)?;
-                Ok(())
+                Event::Timer(_timer) => Ok(()),
+                Event::Signal(_signal) => {
+                    *control_flow = ControlFlow::Break;
+                    Ok(())
+                }
             }
-            Event::Signal(_) => {
-                *control_flow = ControlFlow::Break;
-                Ok(())
-            }
-        })
+        })?;
+
+        Ok(())
     }
 
     fn on_x11_event(
         &mut self,
         event: &protocol::Event,
+        context: &mut EventLoopContext,
         _control_flow: &mut ControlFlow,
     ) -> anyhow::Result<()> {
         use protocol::Event::*;
@@ -178,6 +184,7 @@ impl App {
                         self.screen_num,
                         &mut self.window,
                         *command,
+                        context,
                     )? {
                         break;
                     }
@@ -193,7 +200,7 @@ impl App {
                         get_window_title(self.connection.as_ref(), event.window, &self.atoms)?
                             .unwrap_or_default();
                     let effect = tray_item.change_title(title);
-                    self.window.apply_effect(effect)?;
+                    self.window.apply_effect(effect, context)?;
                 }
             }
             ClientMessage(event)
@@ -236,6 +243,7 @@ impl App {
     fn on_tray_event(
         &mut self,
         event: &TrayEvent,
+        context: &mut EventLoopContext,
         control_flow: &mut ControlFlow,
     ) -> anyhow::Result<()> {
         match event {
@@ -246,11 +254,11 @@ impl App {
                 let title = get_window_title(self.connection.as_ref(), *icon_window, &self.atoms)?
                     .unwrap_or_default();
                 let effect = self.window.widget_mut().add_tray_item(*icon_window, title);
-                self.window.apply_effect(effect)?;
+                self.window.apply_effect(effect, context)?;
             }
             TrayEvent::TrayIconRemoved(icon_window) => {
                 let effect = self.window.widget_mut().remove_tray_item(*icon_window);
-                self.window.apply_effect(effect)?;
+                self.window.apply_effect(effect, context)?;
             }
             TrayEvent::SelectionCleared => {
                 *control_flow = ControlFlow::Break;
@@ -436,6 +444,7 @@ fn run_command(
     screen_num: usize,
     window: &mut Window<TrayContainer>,
     command: Command,
+    context: &mut EventLoopContext,
 ) -> anyhow::Result<bool> {
     match command {
         Command::HideWindow => {
@@ -472,23 +481,23 @@ fn run_command(
         }
         Command::DeselectItem => {
             let effect = window.widget_mut().select_item(None);
-            Ok(window.apply_effect(effect)?)
+            Ok(window.apply_effect(effect, context)?)
         }
         Command::SelectItem(index) => {
             let effect = window.widget_mut().select_item(Some(index));
-            Ok(window.apply_effect(effect)?)
+            Ok(window.apply_effect(effect, context)?)
         }
         Command::SelectNextItem => {
             let effect = window.widget_mut().select_next_item();
-            Ok(window.apply_effect(effect)?)
+            Ok(window.apply_effect(effect, context)?)
         }
         Command::SelectPreviousItem => {
             let effect = window.widget_mut().select_previous_item();
-            Ok(window.apply_effect(effect)?)
+            Ok(window.apply_effect(effect, context)?)
         }
         Command::ClickMouseButton(button) => {
             let effect = window.widget_mut().click_selected_item(button);
-            Ok(window.apply_effect(effect)?)
+            Ok(window.apply_effect(effect, context)?)
         }
     }
 }

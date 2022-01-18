@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 use x11rb::connection::Connection;
 use x11rb::errors::{ReplyError, ReplyOrIdError};
@@ -10,10 +10,9 @@ use x11rb::xcb_ffi::XCBConnection;
 use super::effect::Effect;
 use super::layout::Layout;
 use super::widget::Widget;
-use crate::event::ControlFlow;
+use crate::event::{ControlFlow, Event, EventLoopContext, TimerId};
 use crate::graphics::{PhysicalPoint, PhysicalRect, PhysicalSize, Point, RenderContext, Size};
 
-#[derive(Debug)]
 pub struct Window<Widget> {
     widget: Widget,
     connection: Rc<XCBConnection>,
@@ -24,6 +23,7 @@ pub struct Window<Widget> {
     size: PhysicalSize,
     layout: Layout,
     is_mapped: bool,
+    delayed_effects: HashMap<TimerId, Effect>,
 }
 
 impl<Widget: self::Widget> Window<Widget> {
@@ -89,6 +89,7 @@ impl<Widget: self::Widget> Window<Widget> {
             size,
             layout,
             is_mapped: false,
+            delayed_effects: HashMap::new(),
         })
     }
 
@@ -166,13 +167,13 @@ impl<Widget: self::Widget> Window<Widget> {
         Ok(())
     }
 
-    pub fn recalculate_layout(&mut self) -> Result<(), ReplyError> {
+    pub fn recalculate_layout(&mut self, context: &mut EventLoopContext) -> Result<(), ReplyError> {
         self.layout = self.widget.layout(self.size.unsnap());
         let size = self.layout.size.snap();
 
         if self.size != size {
             let effect = self.widget.on_change_layout(self.position, self.size, size);
-            self.apply_effect(effect)?;
+            self.apply_effect(effect, context)?;
         } else {
             self.request_redraw()?;
         }
@@ -182,7 +183,11 @@ impl<Widget: self::Widget> Window<Widget> {
         Ok(())
     }
 
-    pub fn apply_effect(&mut self, effect: Effect) -> Result<bool, ReplyError> {
+    pub fn apply_effect(
+        &mut self,
+        effect: Effect,
+        context: &mut EventLoopContext,
+    ) -> Result<bool, ReplyError> {
         let mut pending_effects = VecDeque::new();
         let mut current = effect;
 
@@ -198,6 +203,10 @@ impl<Widget: self::Widget> Window<Widget> {
                 }
                 Effect::Batch(effects) => {
                     pending_effects.extend(effects);
+                }
+                Effect::Delay(effect, timeout) => {
+                    let timer_id = context.request_timeout(timeout)?;
+                    self.delayed_effects.insert(timer_id, *effect);
                 }
                 Effect::Action(action) => {
                     current = action(self.connection.as_ref(), self.screen_num, self.window)?;
@@ -218,7 +227,7 @@ impl<Widget: self::Widget> Window<Widget> {
         }
 
         if layout_requested {
-            self.recalculate_layout()?;
+            self.recalculate_layout(context)?;
         } else if redraw_requested {
             self.request_redraw()?;
         }
@@ -228,19 +237,38 @@ impl<Widget: self::Widget> Window<Widget> {
 
     pub fn on_event(
         &mut self,
+        event: &Event,
+        context: &mut EventLoopContext,
+        control_flow: &mut ControlFlow,
+    ) -> Result<(), ReplyOrIdError> {
+        match event {
+            Event::X11Event(event) => self.on_x11_event(event, context, control_flow),
+            Event::Timer(timer) => {
+                if let Some(effect) = self.delayed_effects.remove(&timer.id) {
+                    self.apply_effect(effect, context)?;
+                }
+                Ok(())
+            }
+            Event::Signal(_) => Ok(()),
+        }
+    }
+
+    fn on_x11_event(
+        &mut self,
         event: &protocol::Event,
+        context: &mut EventLoopContext,
         control_flow: &mut ControlFlow,
     ) -> Result<(), ReplyOrIdError> {
         use protocol::Event::*;
 
         if get_window_from_event(&event) == Some(self.window) {
             let effect = self.widget.on_event(event, Point::ZERO, &self.layout);
-            self.apply_effect(effect)?;
+            self.apply_effect(effect, context)?;
         }
 
         match event {
             Expose(event) if event.window == self.window && event.count == 0 => {
-                self.redraw()?;
+                self.redraw(context)?;
             }
             ConfigureNotify(event) if event.window == self.window => {
                 self.position = PhysicalPoint {
@@ -253,7 +281,7 @@ impl<Widget: self::Widget> Window<Widget> {
                 };
                 if self.size != size {
                     self.size = size;
-                    self.recalculate_layout()?;
+                    self.recalculate_layout(context)?;
                 }
             }
             DestroyNotify(event) if event.window == self.window => {
@@ -287,8 +315,8 @@ impl<Widget: self::Widget> Window<Widget> {
         Ok(())
     }
 
-    fn redraw(&mut self) -> Result<(), ReplyOrIdError> {
-        let mut context = RenderContext::new(
+    fn redraw(&mut self, context: &mut EventLoopContext) -> Result<(), ReplyOrIdError> {
+        let mut render_context = RenderContext::new(
             self.connection.clone(),
             self.screen_num,
             self.window,
@@ -296,9 +324,13 @@ impl<Widget: self::Widget> Window<Widget> {
         )?;
 
         self.widget
-            .render(Point::ZERO, &self.layout, 0, &mut context);
+            .render(Point::ZERO, &self.layout, 0, &mut render_context);
 
-        context.commit()?;
+        let effect = render_context.commit()?;
+
+        self.apply_effect(effect, context)?;
+
+        self.connection.flush()?;
 
         Ok(())
     }

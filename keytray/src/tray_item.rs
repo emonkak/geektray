@@ -139,16 +139,15 @@ impl Widget for TrayItem {
                 .x((position.x + self.config.item_padding) as i32)
                 .y((position.y + self.config.item_padding) as i32)
                 .width(self.config.icon_size as u32)
-                .height(self.config.icon_size as u32)
-                .stack_mode(xproto::StackMode::ABOVE);
+                .height(self.config.icon_size as u32);
 
-            context.schedule_action(move |connection, _, _| {
+            context.push_effect(Effect::action(move |connection, _, _| {
                 // without check() calling, because window maybe already destoryed.
                 connection.configure_window(window, &values)?;
                 connection.map_window(window)?;
                 connection.clear_area(true, window, 0, 0, 0, 0)?;
-                Ok(())
-            });
+                Ok(Effect::Success)
+            }));
         }
     }
 
