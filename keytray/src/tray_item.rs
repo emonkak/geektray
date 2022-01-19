@@ -7,15 +7,14 @@ use keytray_shell::window::{Effect, Layout, Widget};
 use std::rc::Rc;
 use x11rb::protocol;
 use x11rb::protocol::xproto;
-use x11rb::protocol::xproto::ConnectionExt as _;
 
 use crate::config::UiConfig;
+use crate::tray_manager::TrayIcon;
 use crate::utils;
 
 #[derive(Debug)]
 pub struct TrayItem {
-    window: xproto::Window,
-    title: String,
+    icon: TrayIcon,
     is_selected: bool,
     is_pressed: bool,
     config: Rc<UiConfig>,
@@ -24,14 +23,12 @@ pub struct TrayItem {
 
 impl TrayItem {
     pub fn new(
-        window: xproto::Window,
-        title: String,
+        icon: TrayIcon,
         config: Rc<UiConfig>,
         font: Rc<FontDescription>,
     ) -> Self {
         Self {
-            window,
-            title,
+            icon,
             is_selected: false,
             is_pressed: false,
             config,
@@ -40,12 +37,17 @@ impl TrayItem {
     }
 
     pub fn window(&self) -> xproto::Window {
-        self.window
+        self.icon.window
+    }
+
+    pub fn update_icon(&mut self, icon: TrayIcon) -> Effect {
+        self.icon = icon;
+        Effect::RequestRedraw
     }
 
     pub fn click_item(&mut self, button: MouseButton) -> Effect {
         let center = (self.config.icon_size / 2.0) as i16;
-        let window = self.window;
+        let window = self.icon.window;
         let (button, button_mask) = match button {
             MouseButton::Left => (xproto::ButtonIndex::M1, xproto::ButtonMask::M1),
             MouseButton::Right => (xproto::ButtonIndex::M3, xproto::ButtonMask::M3),
@@ -65,11 +67,6 @@ impl TrayItem {
             )?;
             Ok(Effect::Success)
         }));
-    }
-
-    pub fn change_title(&mut self, title: String) -> Effect {
-        self.title = title;
-        Effect::RequestRedraw
     }
 
     pub fn select_item(&mut self) -> Effect {
@@ -98,7 +95,7 @@ impl Widget for TrayItem {
         };
 
         if self.config.item_corner_radius > 0.0 {
-            context.fill_rounded_rectange(
+            context.rounded_rectangle(
                 bg_color,
                 Rect::new(position, layout.size),
                 Size {
@@ -107,16 +104,16 @@ impl Widget for TrayItem {
                 },
             );
         } else {
-            context.fill_rectange(bg_color, Rect::new(position, layout.size));
+            context.rectangle(bg_color, Rect::new(position, layout.size));
         }
 
         let title = if self.config.show_index {
-            format!("{}. {}", index + 1, self.title)
+            format!("{}. {}", index + 1, self.icon.title)
         } else {
-            self.title.clone()
+            self.icon.title.clone()
         };
 
-        context.render_text(
+        context.text(
             fg_color,
             Text {
                 content: &title,
@@ -133,21 +130,13 @@ impl Widget for TrayItem {
             },
         );
 
-        {
-            let window = self.window;
-            let values = xproto::ConfigureWindowAux::new()
-                .x((position.x + self.config.item_padding) as i32)
-                .y((position.y + self.config.item_padding) as i32)
-                .width(self.config.icon_size as u32)
-                .height(self.config.icon_size as u32);
-
-            context.push_effect(Effect::action(move |connection, _, _| {
-                // without check() calling, because window maybe already destoryed.
-                connection.configure_window(window, &values)?;
-                connection.map_window(window)?;
-                connection.clear_area(true, window, 0, 0, 0, 0)?;
-                Ok(Effect::Success)
-            }));
+        if let Some(image) = self.icon.image {
+            context.render_image(image, Rect {
+                x: position.x + self.config.item_padding,
+                y: position.y + self.config.item_padding,
+                width: self.config.icon_size,
+                height: self.config.icon_size,
+            });
         }
     }
 
@@ -185,7 +174,7 @@ impl Widget for TrayItem {
                     self.is_pressed = false;
                     if bounds.snap().contains(pointer_position) {
                         let center = (self.config.icon_size / 2.0) as i16;
-                        let window = self.window;
+                        let window = self.icon.window;
                         let button = event.detail;
                         let button_mask = event.state.into();
                         return Effect::Action(Box::new(move |connection, screen_num, _| {

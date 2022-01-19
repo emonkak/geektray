@@ -13,13 +13,13 @@ use x11rb::xcb_ffi::XCBConnection;
 
 use crate::window::Effect;
 use super::color::Color;
-use super::geometrics::{PhysicalSize, Rect, Size};
+use super::geometrics::{PhysicalSize, Rect, Size, Point};
 use super::text::{HorizontalAlign, Text, VerticalAlign};
 
 pub struct RenderContext {
     connection: Rc<XCBConnection>,
     window: xproto::Window,
-    bounds: PhysicalSize,
+    size: PhysicalSize,
     pixmap: xproto::Pixmap,
     gc: xproto::Gcontext,
     cairo: *mut cairo::cairo_t,
@@ -33,7 +33,7 @@ impl RenderContext {
         connection: Rc<XCBConnection>,
         screen_num: usize,
         window: xproto::Window,
-        bounds: PhysicalSize,
+        size: PhysicalSize,
     ) -> Result<Self, ReplyOrIdError> {
         let screen = &connection.setup().roots[screen_num];
 
@@ -43,8 +43,8 @@ impl RenderContext {
                 screen.root_depth,
                 pixmap,
                 window,
-                bounds.width as u16,
-                bounds.height as u16,
+                size.width as u16,
+                size.height as u16,
             )?
             .check()?;
         let gc = connection.generate_id()?;
@@ -72,8 +72,8 @@ impl RenderContext {
                 connection.get_raw_xcb_connection().cast(),
                 pixmap,
                 visual.as_ptr() as *mut cairo::xcb_visualtype_t,
-                bounds.width as i32,
-                bounds.height as i32,
+                size.width as i32,
+                size.height as i32,
             )
         };
         let cairo = unsafe { cairo::cairo_create(cairo_surface) };
@@ -82,7 +82,7 @@ impl RenderContext {
         Ok(Self {
             connection,
             window,
-            bounds,
+            size,
             pixmap,
             gc,
             cairo_surface,
@@ -105,11 +105,27 @@ impl RenderContext {
                 0,
                 0,
                 0,
-                self.bounds.width as u16,
-                self.bounds.height as u16,
+                self.size.width as u16,
+                self.size.height as u16,
             )?
             .check()?;
         Ok(self.pending_effects.drain(..).fold(Effect::Success, |acc, effect| acc + effect))
+    }
+
+    pub fn render_image(&self, pixmap: xproto::Pixmap, bounds: Rect) {
+        self.connection
+            .copy_area(
+                pixmap,
+                self.pixmap,
+                self.gc,
+                0,
+                0,
+                bounds.x as i16,
+                bounds.y as i16,
+                bounds.width as u16,
+                bounds.height as u16,
+            )
+            .ok();
     }
 
     pub fn push_effect(&mut self, effect: Effect) {
@@ -117,23 +133,10 @@ impl RenderContext {
     }
 
     pub fn clear(&mut self, color: Color) {
-        unsafe {
-            let [r, g, b, a] = color.to_f64_rgba();
-            cairo::cairo_save(self.cairo);
-            cairo::cairo_rectangle(
-                self.cairo,
-                0.0,
-                0.0,
-                self.bounds.width as f64,
-                self.bounds.height as f64,
-            );
-            cairo::cairo_set_source_rgba(self.cairo, r, g, b, a);
-            cairo::cairo_fill(self.cairo);
-            cairo::cairo_restore(self.cairo);
-        }
+        self.rectangle(color, Rect::new(Point::ZERO, self.size.unsnap()));
     }
 
-    pub fn fill_rectange(&mut self, color: Color, bounds: Rect) {
+    pub fn rectangle(&self, color: Color, bounds: Rect) {
         let [r, g, b, a] = color.to_f64_rgba();
 
         unsafe {
@@ -145,7 +148,7 @@ impl RenderContext {
         }
     }
 
-    pub fn fill_rounded_rectange(&mut self, color: Color, bounds: Rect, mut radius: Size) {
+    pub fn rounded_rectangle(&self, color: Color, bounds: Rect, mut radius: Size) {
         // Reference: https://www.cairographics.org/cookbook/roundedrectangles/ (Method B)
         const ARC_TO_BEZIER: f64 = 0.55228475;
 
@@ -211,7 +214,7 @@ impl RenderContext {
         }
     }
 
-    pub fn stroke_border(&mut self, color: Color, border_size: f64, bounds: Rect) {
+    pub fn stroke(&self, color: Color, bounds: Rect, border_size: f64) {
         let [r, g, b, a] = color.to_f64_rgba();
 
         unsafe {
@@ -230,7 +233,7 @@ impl RenderContext {
         }
     }
 
-    pub fn render_text(&mut self, color: Color, text: Text, bounds: Rect) {
+    pub fn text(&self, color: Color, text: Text, bounds: Rect) {
         let mut font_description = text.font_description.clone();
         font_description.set_font_size(text.font_size * pango::PANGO_SCALE as f64);
 

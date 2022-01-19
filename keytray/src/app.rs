@@ -38,16 +38,27 @@ impl App {
 
         setup_xkb_extension(&connection)?;
 
-        let atoms = Atoms::new(connection.as_ref())?
-            .reply()
-            .context("intern atoms")?;
-
         let systemtray_colors = SystemTrayColors::new(
             config.ui.normal_item_foreground,
             config.ui.normal_item_foreground,
             config.ui.normal_item_foreground,
             config.ui.normal_item_foreground,
         );
+
+        let tray_manager = TrayManager::new(
+            connection.clone(),
+            screen_num,
+            SystemTrayOrientation::VERTICAL,
+            systemtray_colors,
+            Size {
+                width: config.ui.icon_size,
+                height: config.ui.icon_size,
+            }.snap(),
+        )?;
+
+        let atoms = Atoms::new(connection.as_ref())?
+            .reply()
+            .context("intern atoms")?;
 
         let font = FontDescription::new(
             config.ui.font_family.clone(),
@@ -72,13 +83,6 @@ impl App {
         .context("create window")?;
 
         configure_window(&connection, window.id(), config.window, &atoms)?;
-
-        let tray_manager = TrayManager::new(
-            connection.clone(),
-            screen_num,
-            SystemTrayOrientation::VERTICAL,
-            systemtray_colors,
-        )?;
 
         let keyboard_state = {
             let context = xkb::Context::new();
@@ -136,9 +140,9 @@ impl App {
 
             match event {
                 Event::X11Event(event) => {
-                    match self.tray_manager.process_event(self.window.id(), &event) {
+                    match self.tray_manager.process_event(&event) {
                         Ok(Some(event)) => {
-                            self.on_tray_event(&event, context, control_flow)?;
+                            self.on_tray_event(event, context, control_flow)?;
                         }
                         Ok(None) => {}
                         Err(_error) => {
@@ -190,19 +194,6 @@ impl App {
                     }
                 }
             }
-            PropertyNotify(event)
-                if event.atom == u32::from(xproto::AtomEnum::WM_NAME)
-                    || event.atom == u32::from(xproto::AtomEnum::WM_CLASS)
-                    || event.atom == self.atoms._NET_WM_NAME =>
-            {
-                if let Some(tray_item) = self.window.widget_mut().get_item_mut(event.window) {
-                    let title =
-                        get_window_title(self.connection.as_ref(), event.window, &self.atoms)?
-                            .unwrap_or_default();
-                    let effect = tray_item.change_title(title);
-                    self.window.apply_effect(effect, context)?;
-                }
-            }
             ClientMessage(event)
                 if event.type_ == self.atoms.WM_PROTOCOLS && event.format == 32 =>
             {
@@ -242,7 +233,7 @@ impl App {
 
     fn on_tray_event(
         &mut self,
-        event: &TrayEvent,
+        event: TrayEvent,
         context: &mut EventLoopContext,
         control_flow: &mut ControlFlow,
     ) -> anyhow::Result<()> {
@@ -250,14 +241,16 @@ impl App {
             TrayEvent::MessageReceived(_icon_window, _message) => {
                 // TODO: Handle balloon message
             }
-            TrayEvent::TrayIconAdded(icon_window) => {
-                let title = get_window_title(self.connection.as_ref(), *icon_window, &self.atoms)?
-                    .unwrap_or_default();
-                let effect = self.window.widget_mut().add_tray_item(*icon_window, title);
+            TrayEvent::TrayIconAdded(icon) => {
+                let effect = self.window.widget_mut().add_tray_item(icon);
                 self.window.apply_effect(effect, context)?;
             }
-            TrayEvent::TrayIconRemoved(icon_window) => {
-                let effect = self.window.widget_mut().remove_tray_item(*icon_window);
+            TrayEvent::TrayIconUpdated(icon) => {
+                let effect = self.window.widget_mut().update_tray_item(icon);
+                self.window.apply_effect(effect, context)?;
+            }
+            TrayEvent::TrayIconRemoved(icon) => {
+                let effect = self.window.widget_mut().remove_tray_item(icon.window);
                 self.window.apply_effect(effect, context)?;
             }
             TrayEvent::SelectionCleared => {
@@ -502,71 +495,6 @@ fn run_command(
     }
 }
 
-fn get_window_title<Connection: self::Connection>(
-    connection: &Connection,
-    window: xproto::Window,
-    atoms: &Atoms,
-) -> anyhow::Result<Option<String>> {
-    let reply = connection
-        .get_property(
-            false,
-            window,
-            atoms._NET_WM_NAME,
-            atoms.UTF8_STRING,
-            0,
-            256 / 4,
-        )
-        .context("get _NET_WM_NAME property")?
-        .reply()?;
-    if let Some(title) = reply
-        .value8()
-        .and_then(|bytes| String::from_utf8(bytes.collect()).ok())
-        .filter(|title| !title.is_empty())
-    {
-        return Ok(Some(title));
-    }
-
-    let reply = connection
-        .get_property(
-            false,
-            window,
-            xproto::AtomEnum::WM_NAME,
-            xproto::AtomEnum::STRING,
-            0,
-            256 / 4,
-        )
-        .context("get WM_NAME property")?
-        .reply()?;
-    if let Some(title) = reply
-        .value8()
-        .and_then(|bytes| String::from_utf8(bytes.collect()).ok())
-        .filter(|title| !title.is_empty())
-    {
-        return Ok(Some(title));
-    }
-
-    let reply = connection
-        .get_property(
-            false,
-            window,
-            xproto::AtomEnum::WM_CLASS,
-            xproto::AtomEnum::STRING,
-            0,
-            256 / 4,
-        )
-        .context("get WM_CLASS property")?
-        .reply()?;
-    if let Some(class_name) = reply
-        .value8()
-        .and_then(|bytes| null_terminated_bytes_to_string(bytes.collect()))
-        .filter(|title| !title.is_empty())
-    {
-        return Ok(Some(class_name));
-    }
-
-    Ok(None)
-}
-
 fn get_window_position_at_center(
     connection: &XCBConnection,
     screen_num: usize,
@@ -577,13 +505,6 @@ fn get_window_position_at_center(
         x: (screen.width_in_pixels as i32 - size.width as i32) / 2,
         y: (screen.height_in_pixels as i32 - size.height as i32) / 2,
     }
-}
-
-fn null_terminated_bytes_to_string(mut bytes: Vec<u8>) -> Option<String> {
-    if let Some(null_position) = bytes.iter().position(|c| *c == 0) {
-        bytes.resize(null_position, 0);
-    }
-    String::from_utf8(bytes).ok()
 }
 
 x11rb::atom_manager! {

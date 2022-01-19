@@ -12,6 +12,7 @@ use x11rb::protocol::xproto::ConnectionExt as _;
 
 use crate::config::UiConfig;
 use crate::tray_item::TrayItem;
+use crate::tray_manager::TrayIcon;
 
 #[derive(Debug)]
 pub struct TrayContainer {
@@ -31,24 +32,30 @@ impl TrayContainer {
         }
     }
 
-    pub fn get_item_mut(&mut self, window: xproto::Window) -> Option<&mut TrayItem> {
-        self.tray_items
-            .iter_mut()
-            .find(|tray_item| tray_item.window() == window)
-    }
-
-    pub fn add_tray_item(&mut self, window: xproto::Window, title: String) -> Effect {
+    pub fn add_tray_item(&mut self, icon: TrayIcon) -> Effect {
         if self
             .tray_items
             .iter()
-            .find(|tray_item| tray_item.window() == window)
+            .find(|tray_item| tray_item.window() == icon.window)
             .is_some()
         {
             Effect::Failure
         } else {
-            let tray_item = TrayItem::new(window, title, self.config.clone(), self.font.clone());
+            let tray_item = TrayItem::new(icon, self.config.clone(), self.font.clone());
             self.tray_items.push(tray_item);
             Effect::RequestLayout
+        }
+    }
+
+    pub fn update_tray_item(&mut self, icon: TrayIcon) -> Effect {
+        if let Some(tray_item) = self
+            .tray_items
+            .iter_mut()
+            .find(|tray_item| tray_item.window() == icon.window)
+        {
+            tray_item.update_icon(icon)
+        } else {
+            Effect::Failure
         }
     }
 
@@ -136,13 +143,13 @@ impl TrayContainer {
 
 impl Widget for TrayContainer {
     fn render(&self, position: Point, layout: &Layout, _index: usize, context: &mut RenderContext) {
-        context.clear(self.config.window_background);
+        context.rectangle(self.config.window_background, Rect::new(position, layout.size));
 
         if self.config.border_size > 0.0 {
-            context.stroke_border(
+            context.stroke(
                 self.config.border_color,
-                self.config.border_size,
                 Rect::new(position, layout.size),
+                self.config.border_size,
             );
         }
 
@@ -156,7 +163,7 @@ impl Widget for TrayContainer {
                 tray_item.render(*child_position, child_layout, index, context);
             }
         } else {
-            context.render_text(
+            context.text(
                 self.config.window_foreground,
                 Text {
                     content: "No tray items found",
