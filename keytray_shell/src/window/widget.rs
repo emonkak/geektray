@@ -2,7 +2,8 @@ use x11rb::protocol;
 
 use super::effect::Effect;
 use super::layout::Layout;
-use crate::graphics::{PhysicalPoint, PhysicalSize, Point, RenderContext, Size};
+use crate::geometrics::{PhysicalPoint, PhysicalSize, Point, Size};
+use crate::graphics::RenderContext;
 
 pub trait Widget {
     fn render(&self, position: Point, layout: &Layout, index: usize, context: &mut RenderContext);

@@ -1,4 +1,4 @@
-use crate::graphics::{Point, Size};
+use crate::geometrics::{Point, Size};
 
 #[derive(Clone, Debug, Default)]
 pub struct Layout {

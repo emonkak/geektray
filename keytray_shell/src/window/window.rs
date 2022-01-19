@@ -11,7 +11,8 @@ use super::effect::Effect;
 use super::layout::Layout;
 use super::widget::Widget;
 use crate::event::{ControlFlow, Event, EventLoopContext, TimerId};
-use crate::graphics::{PhysicalPoint, PhysicalRect, PhysicalSize, Point, RenderContext, Size};
+use crate::geometrics::{PhysicalPoint, PhysicalRect, PhysicalSize, Point, Size};
+use crate::graphics::{RenderContext, RenderError};
 
 pub struct Window<Widget> {
     widget: Widget,
@@ -62,7 +63,7 @@ impl<Widget: self::Widget> Window<Widget> {
 
             connection
                 .create_window(
-                    screen.root_depth,
+                    x11rb::COPY_DEPTH_FROM_PARENT,
                     window,
                     screen.root,
                     position.x as i16,
@@ -240,7 +241,7 @@ impl<Widget: self::Widget> Window<Widget> {
         event: &Event,
         context: &mut EventLoopContext,
         control_flow: &mut ControlFlow,
-    ) -> Result<(), ReplyOrIdError> {
+    ) -> Result<(), RenderError> {
         match event {
             Event::X11Event(event) => self.on_x11_event(event, context, control_flow),
             Event::Timer(timer) => {
@@ -258,7 +259,7 @@ impl<Widget: self::Widget> Window<Widget> {
         event: &protocol::Event,
         context: &mut EventLoopContext,
         control_flow: &mut ControlFlow,
-    ) -> Result<(), ReplyOrIdError> {
+    ) -> Result<(), RenderError> {
         use protocol::Event::*;
 
         if get_window_from_event(&event) == Some(self.window) {
@@ -268,7 +269,7 @@ impl<Widget: self::Widget> Window<Widget> {
 
         match event {
             Expose(event) if event.window == self.window && event.count == 0 => {
-                self.redraw(context)?;
+                self.redraw()?;
             }
             ConfigureNotify(event) if event.window == self.window => {
                 self.position = PhysicalPoint {
@@ -315,7 +316,7 @@ impl<Widget: self::Widget> Window<Widget> {
         Ok(())
     }
 
-    fn redraw(&mut self, context: &mut EventLoopContext) -> Result<(), ReplyOrIdError> {
+    fn redraw(&mut self) -> Result<(), RenderError> {
         let mut render_context = RenderContext::new(
             self.connection.clone(),
             self.screen_num,
@@ -326,9 +327,7 @@ impl<Widget: self::Widget> Window<Widget> {
         self.widget
             .render(Point::ZERO, &self.layout, 0, &mut render_context);
 
-        let effect = render_context.commit()?;
-
-        self.apply_effect(effect, context)?;
+        render_context.commit()?;
 
         self.connection.flush()?;
 

@@ -1,9 +1,9 @@
+use nix;
 use nix::sys::epoll;
 use nix::sys::signal;
 use nix::sys::signalfd;
 use nix::sys::timerfd;
 use nix::unistd;
-use nix;
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::io;
@@ -168,8 +168,7 @@ impl EventLoopContext {
                     timerfd::TimerSetTimeFlags::empty(),
                 )?;
             }
-            _ => {
-            }
+            _ => {}
         }
         let id = self.next_timer_id();
         let timer = Timer { deadline, id };

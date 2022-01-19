@@ -58,7 +58,7 @@ fn create_window(
 
     connection
         .create_window(
-            screen.root_depth,
+            x11rb::COPY_DEPTH_FROM_PARENT,
             window,
             screen.root,
             0,

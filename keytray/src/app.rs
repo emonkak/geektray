@@ -1,9 +1,9 @@
 use anyhow::{anyhow, Context as _};
 use keytray_shell::event::{ControlFlow, Event, EventLoop, EventLoopContext, KeyState, Modifiers};
-use keytray_shell::graphics::{FontDescription, PhysicalPoint, PhysicalSize, Size};
+use keytray_shell::geometrics::{PhysicalPoint, PhysicalSize, Size};
+use keytray_shell::graphics::FontDescription;
 use keytray_shell::window::Window;
 use keytray_shell::xkb;
-use std::mem::ManuallyDrop;
 use std::process;
 use std::rc::Rc;
 use x11rb::connection::Connection;
@@ -24,8 +24,8 @@ pub struct App {
     connection: Rc<XCBConnection>,
     screen_num: usize,
     atoms: Atoms,
-    window: ManuallyDrop<Window<TrayContainer>>,
-    tray_manager: ManuallyDrop<TrayManager<XCBConnection>>,
+    window: Window<TrayContainer>,
+    tray_manager: TrayManager<XCBConnection>,
     keyboard_state: xkb::State,
     hotkey_interpreter: HotkeyInterpreter,
 }
@@ -38,22 +38,21 @@ impl App {
 
         setup_xkb_extension(&connection)?;
 
-        let systemtray_colors = SystemTrayColors::new(
-            config.ui.normal_item_foreground,
-            config.ui.normal_item_foreground,
-            config.ui.normal_item_foreground,
-            config.ui.normal_item_foreground,
-        );
-
         let tray_manager = TrayManager::new(
             connection.clone(),
             screen_num,
             SystemTrayOrientation::VERTICAL,
-            systemtray_colors,
+            SystemTrayColors::new(
+                config.ui.normal_item_foreground,
+                config.ui.normal_item_foreground,
+                config.ui.normal_item_foreground,
+                config.ui.normal_item_foreground,
+            ),
             Size {
                 width: config.ui.icon_size,
                 height: config.ui.icon_size,
-            }.snap(),
+            }
+            .snap(),
         )?;
 
         let atoms = Atoms::new(connection.as_ref())?
@@ -67,7 +66,7 @@ impl App {
             config.ui.font_stretch,
         );
 
-        let tray_container = TrayContainer::new(Rc::new(config.ui), Rc::new(font));
+        let tray_container = TrayContainer::new(Rc::new(config.ui), font.clone());
 
         let window = Window::new(
             tray_container,
@@ -110,8 +109,8 @@ impl App {
             connection,
             screen_num,
             atoms,
-            window: ManuallyDrop::new(window),
-            tray_manager: ManuallyDrop::new(tray_manager),
+            window,
+            tray_manager,
             keyboard_state,
             hotkey_interpreter,
         })
@@ -145,8 +144,8 @@ impl App {
                             self.on_tray_event(event, context, control_flow)?;
                         }
                         Ok(None) => {}
-                        Err(_error) => {
-                            // TODO: log error
+                        Err(error) => {
+                            println!("{}", error);
                         }
                     }
                     self.on_x11_event(&event, context, control_flow)?;
@@ -259,15 +258,6 @@ impl App {
         }
 
         Ok(())
-    }
-}
-
-impl Drop for App {
-    fn drop(&mut self) {
-        unsafe {
-            ManuallyDrop::drop(&mut self.tray_manager);
-            ManuallyDrop::drop(&mut self.window);
-        }
     }
 }
 

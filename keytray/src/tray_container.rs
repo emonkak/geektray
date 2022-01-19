@@ -1,7 +1,7 @@
 use keytray_shell::event::MouseButton;
+use keytray_shell::geometrics::{PhysicalPoint, PhysicalSize, Point, Rect, Size};
 use keytray_shell::graphics::{
-    FontDescription, HorizontalAlign, PhysicalPoint, PhysicalSize, Point, Rect, RenderContext,
-    Size, Text, VerticalAlign,
+    FontDescription, HorizontalAlign, RenderContext, RenderOp, Text, VerticalAlign,
 };
 use keytray_shell::window::{Effect, Layout, Widget};
 use std::rc::Rc;
@@ -19,11 +19,11 @@ pub struct TrayContainer {
     tray_items: Vec<TrayItem>,
     selected_index: Option<usize>,
     config: Rc<UiConfig>,
-    font: Rc<FontDescription>,
+    font: FontDescription,
 }
 
 impl TrayContainer {
-    pub fn new(config: Rc<UiConfig>, font: Rc<FontDescription>) -> TrayContainer {
+    pub fn new(config: Rc<UiConfig>, font: FontDescription) -> TrayContainer {
         Self {
             tray_items: Vec::new(),
             selected_index: None,
@@ -41,7 +41,7 @@ impl TrayContainer {
         {
             Effect::Failure
         } else {
-            let tray_item = TrayItem::new(icon, self.config.clone(), self.font.clone());
+            let tray_item = TrayItem::new(icon, self.font.clone(), self.config.clone());
             self.tray_items.push(tray_item);
             Effect::RequestLayout
         }
@@ -55,7 +55,9 @@ impl TrayContainer {
         {
             tray_item.update_icon(icon)
         } else {
-            Effect::Failure
+            let tray_item = TrayItem::new(icon, self.font.clone(), self.config.clone());
+            self.tray_items.push(tray_item);
+            Effect::RequestLayout
         }
     }
 
@@ -143,14 +145,17 @@ impl TrayContainer {
 
 impl Widget for TrayContainer {
     fn render(&self, position: Point, layout: &Layout, _index: usize, context: &mut RenderContext) {
-        context.rectangle(self.config.window_background, Rect::new(position, layout.size));
+        context.push(RenderOp::Rect(
+            self.config.window_background,
+            Rect::new(position, layout.size),
+        ));
 
         if self.config.border_size > 0.0 {
-            context.stroke(
+            context.push(RenderOp::Stroke(
                 self.config.border_color,
                 Rect::new(position, layout.size),
                 self.config.border_size,
-            );
+            ));
         }
 
         if self.tray_items.len() > 0 {
@@ -163,22 +168,22 @@ impl Widget for TrayContainer {
                 tray_item.render(*child_position, child_layout, index, context);
             }
         } else {
-            context.text(
+            context.push(RenderOp::Text(
                 self.config.window_foreground,
-                Text {
-                    content: "No tray items found",
-                    font_description: &self.font,
-                    font_size: self.config.font_size,
-                    horizontal_align: HorizontalAlign::Center,
-                    vertical_align: VerticalAlign::Middle,
-                },
                 Rect {
                     x: position.x + self.config.container_padding,
                     y: position.y,
                     width: layout.size.width - (self.config.container_padding * 2.0),
                     height: layout.size.height,
                 },
-            );
+                Text {
+                    content: "No tray items found".into(),
+                    font_description: self.font.clone(),
+                    font_size: self.config.font_size,
+                    horizontal_align: HorizontalAlign::Center,
+                    vertical_align: VerticalAlign::Middle,
+                },
+            ));
         }
     }
 

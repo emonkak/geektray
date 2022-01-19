@@ -18,7 +18,7 @@ pub enum Effect {
 impl Effect {
     pub fn action<F>(action: F) -> Self
     where
-        F: 'static + FnOnce(&XCBConnection, usize, xproto::Window) -> Result<Effect, ReplyError>
+        F: 'static + FnOnce(&XCBConnection, usize, xproto::Window) -> Result<Effect, ReplyError>,
     {
         Self::Action(Box::new(action))
     }

@@ -1,9 +1,11 @@
+use std::borrow::Cow;
+
 use super::font::FontDescription;
 
-#[derive(Clone, Copy, Debug)]
-pub struct Text<'a> {
-    pub content: &'a str,
-    pub font_description: &'a FontDescription,
+#[derive(Clone, Debug)]
+pub struct Text {
+    pub content: Cow<'static, str>,
+    pub font_description: FontDescription,
     pub font_size: f64,
     pub horizontal_align: HorizontalAlign,
     pub vertical_align: VerticalAlign,

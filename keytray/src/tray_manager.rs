@@ -1,17 +1,18 @@
-use keytray_shell::graphics::{Color, PhysicalSize};
-use std::collections::HashMap;
+use keytray_shell::geometrics::PhysicalSize;
+use keytray_shell::graphics::Color;
 use std::collections::hash_map;
+use std::collections::HashMap;
 use std::mem;
 use std::rc::Rc;
 use std::str;
 use std::time::Duration;
 use x11rb::connection::Connection;
 use x11rb::errors::{ReplyError, ReplyOrIdError};
-use x11rb::protocol::composite::ConnectionExt as _;
-use x11rb::protocol::composite;
-use x11rb::protocol::xproto::ConnectionExt as _;
-use x11rb::protocol::xproto;
 use x11rb::protocol;
+use x11rb::protocol::composite;
+use x11rb::protocol::composite::ConnectionExt as _;
+use x11rb::protocol::xproto;
+use x11rb::protocol::xproto::ConnectionExt as _;
 use x11rb::wrapper::ConnectionExt as _;
 
 use crate::xembed::{XEmbedInfo, XEmbedMessage};
@@ -53,23 +54,43 @@ impl<C: Connection> TrayManager<C> {
 
         {
             let screen = &connection.setup().roots[screen_num];
-            let values =
-                xproto::CreateWindowAux::new()
-                    .event_mask(xproto::EventMask::PROPERTY_CHANGE)
-                    .override_redirect(1);
+
+            let visual = screen
+                .allowed_depths
+                .iter()
+                .filter(|depth| depth.depth == 32)
+                .flat_map(|depth| depth.visuals.iter())
+                .find(|visual| visual.class == xproto::VisualClass::TRUE_COLOR)
+                .unwrap();
+
+            let colormap = connection.generate_id()?;
+            connection
+                .create_colormap(
+                    xproto::ColormapAlloc::NONE,
+                    colormap,
+                    screen.root,
+                    visual.visual_id,
+                )?
+                .check()?;
+
+            let values = xproto::CreateWindowAux::new()
+                .event_mask(xproto::EventMask::PROPERTY_CHANGE)
+                .colormap(colormap)
+                .border_pixel(screen.white_pixel)
+                .override_redirect(1);
 
             connection
                 .create_window(
-                    0,
+                    32,
                     container_window,
                     screen.root,
-                    0, // x
-                    0, // y
-                    icon_size.width as u16, // width
-                    icon_size.height as u16, // height
-                    0, // border_width
+                    0,
+                    0,
+                    icon_size.width as u16,
+                    icon_size.height as u16,
+                    0,
                     xproto::WindowClass::INPUT_OUTPUT,
-                    x11rb::COPY_FROM_PARENT,
+                    visual.visual_id,
                     &values,
                 )?
                 .check()?;
@@ -90,7 +111,7 @@ impl<C: Connection> TrayManager<C> {
                     container_window,
                     atoms._NET_SYSTEM_TRAY_VISUAL,
                     xproto::AtomEnum::VISUALID,
-                    &[screen.root_visual],
+                    &[visual.visual_id],
                 )?
                 .check()?;
 
@@ -131,6 +152,8 @@ impl<C: Connection> TrayManager<C> {
             .reply()?;
         let previous_selection_owner = selection_owner_reply.owner;
 
+        self.connection.map_window(self.container_window)?.check()?;
+
         self.connection
             .set_selection_owner(
                 self.container_window,
@@ -163,11 +186,10 @@ impl<C: Connection> TrayManager<C> {
         use protocol::Event::*;
 
         let response = match event {
-            Expose(event) if event.count == 0 => {
-                self.embedded_icons.get(&event.window).map(|icon| {
-                    TrayEvent::TrayIconUpdated(icon.clone())
-                })
-            }
+            Expose(event) if event.count == 0 => self
+                .embedded_icons
+                .get(&event.window)
+                .map(|icon| TrayEvent::TrayIconUpdated(icon.clone())),
             ClientMessage(event) if event.type_ == self.atoms._NET_SYSTEM_TRAY_OPCODE => {
                 let data = event.data.as_data32();
                 let opcode = data[1];
@@ -210,11 +232,7 @@ impl<C: Connection> TrayManager<C> {
             {
                 for (_, icon) in mem::take(&mut self.embedded_icons) {
                     if icon.xembed_info.is_mapped() {
-                        release_embedding(
-                            self.connection.as_ref(),
-                            self.screen_num,
-                            icon.window,
-                        )?;
+                        release_embedding(self.connection.as_ref(), self.screen_num, icon.window)?;
                     }
                 }
                 self.status = TrayStatus::Unmanaged;
@@ -241,13 +259,12 @@ impl<C: Connection> TrayManager<C> {
             // Ignore from SUBSTRUCTURE_NOTIFY.
             ReparentNotify(event) if event.event == event.window => {
                 if event.parent == self.container_window {
-                    self.embedded_icons.get(&event.window).map(|icon| {
-                        TrayEvent::TrayIconAdded(icon.clone())
-                    })
+                    self.embedded_icons
+                        .get(&event.window)
+                        .map(|icon| TrayEvent::TrayIconAdded(icon.clone()))
                 } else {
-                    self.unregister_tray_icon(event.window).map(|icon| {
-                        TrayEvent::TrayIconRemoved(icon)
-                    })
+                    self.unregister_tray_icon(event.window)
+                        .map(|icon| TrayEvent::TrayIconRemoved(icon))
                 }
             }
             DestroyNotify(event) => match self.status {
@@ -255,11 +272,9 @@ impl<C: Connection> TrayManager<C> {
                     self.broadcast_manager_message()?;
                     None
                 }
-                _ => {
-                    self.unregister_tray_icon(event.window).map(|icon| {
-                        TrayEvent::TrayIconRemoved(icon)
-                    })
-                }
+                _ => self
+                    .unregister_tray_icon(event.window)
+                    .map(|icon| TrayEvent::TrayIconRemoved(icon)),
             },
             _ => None,
         };
@@ -271,11 +286,7 @@ impl<C: Connection> TrayManager<C> {
         if matches!(self.status, TrayStatus::Managed) {
             for (_, icon) in mem::take(&mut self.embedded_icons) {
                 if icon.xembed_info.is_mapped() {
-                    release_embedding(
-                        self.connection.as_ref(),
-                        self.screen_num,
-                        icon.window,
-                    )?;
+                    release_embedding(self.connection.as_ref(), self.screen_num, icon.window)?;
                 }
             }
 
@@ -293,26 +304,22 @@ impl<C: Connection> TrayManager<C> {
         Ok(())
     }
 
-    fn register_tray_icon(
-        &mut self,
-        icon_window: xproto::Window,
-    ) -> Result<(), ReplyOrIdError> {
+    fn register_tray_icon(&mut self, icon_window: xproto::Window) -> Result<(), ReplyOrIdError> {
         if let Some(xembed_info) = self.get_xembed_info(icon_window)? {
             match self.embedded_icons.entry(icon_window) {
                 hash_map::Entry::Occupied(mut entry) => {
-                    let old_xembed_info = mem::replace(&mut entry.get_mut().xembed_info, xembed_info);
+                    let old_xembed_info =
+                        mem::replace(&mut entry.get_mut().xembed_info, xembed_info);
                     match (old_xembed_info.is_mapped(), xembed_info.is_mapped()) {
                         (false, true) => {
-                            let pixmap = begin_embedding(
+                            begin_embedding(
                                 self.connection.as_ref(),
                                 self.container_window,
                                 icon_window,
                                 self.icon_size,
                             )?;
-                            entry.get_mut().image = Some(pixmap);
                         }
                         (true, false) => {
-                            entry.get_mut().image = None;
                             release_embedding(
                                 self.connection.as_ref(),
                                 self.screen_num,
@@ -331,23 +338,23 @@ impl<C: Connection> TrayManager<C> {
                         xembed_info.version,
                         &self.atoms,
                     )?;
-                    let image = if xembed_info.is_mapped() {
-                        let pixmap = begin_embedding(
+                    if xembed_info.is_mapped() {
+                        begin_embedding(
                             self.connection.as_ref(),
                             self.container_window,
                             icon_window,
                             self.icon_size,
                         )?;
-                        Some(pixmap)
                     } else {
                         wait_for_embedding(self.connection.as_ref(), icon_window)?;
-                        None
                     };
-                    let title = get_window_title(self.connection.as_ref(), icon_window, &self.atoms)?.unwrap_or_default();
+                    let title =
+                        get_window_title(self.connection.as_ref(), icon_window, &self.atoms)?
+                            .unwrap_or_default();
                     entry.insert(TrayIcon {
                         window: icon_window,
+                        container_window: self.container_window,
                         title,
-                        image,
                         xembed_info,
                     });
                 }
@@ -388,7 +395,8 @@ impl<C: Connection> TrayManager<C> {
     }
 
     fn get_xembed_info(&self, target: xproto::Window) -> Result<Option<XEmbedInfo>, ReplyError> {
-        let reply = self.connection
+        let reply = self
+            .connection
             .get_property(
                 false,
                 target,
@@ -423,8 +431,8 @@ impl<C: Connection> Drop for TrayManager<C> {
 #[derive(Debug, Clone)]
 pub struct TrayIcon {
     pub window: xproto::Window,
+    pub container_window: xproto::Window,
     pub title: String,
-    pub image: Option<xproto::Pixmap>,
     pub xembed_info: XEmbedInfo,
 }
 
@@ -554,7 +562,7 @@ fn begin_embedding<C: Connection>(
     container_window: xproto::Window,
     icon_window: xproto::Window,
     icon_size: PhysicalSize,
-) -> Result<xproto::Pixmap, ReplyOrIdError> {
+) -> Result<(), ReplyOrIdError> {
     {
         let values = xproto::ChangeWindowAttributesAux::new().event_mask(Some(
             (xproto::EventMask::PROPERTY_CHANGE | xproto::EventMask::STRUCTURE_NOTIFY).into(),
@@ -576,46 +584,24 @@ fn begin_embedding<C: Connection>(
         .reparent_window(icon_window, container_window, 0, 0)?
         .check()?;
 
-    // {
-    //     let values = xproto::ConfigureWindowAux::new()
-    //         .stack_mode(xproto::StackMode::BELOW);
-    //     connection
-    //         .configure_window(self.container_window, &values)?
-    //         .check()?;
-    // }
-
-    connection
-        .map_window(container_window)?
-        .check()?;
-
     {
         let values = xproto::ConfigureWindowAux::new()
             .width(icon_size.width)
             .height(icon_size.height)
             .stack_mode(xproto::StackMode::ABOVE);
-        connection
-            .configure_window(icon_window, &values)?
-            .check()?;
+        connection.configure_window(icon_window, &values)?.check()?;
     }
 
-    connection
-        .map_window(icon_window)?
-        .check()?;
-
-    let pixmap = connection.generate_id()?;
-
-    connection
-        .composite_name_window_pixmap(icon_window, pixmap)?
-        .check()?;
+    connection.map_window(icon_window)?.check()?;
 
     connection.flush()?;
 
-    Ok(pixmap)
+    Ok(())
 }
 
 fn wait_for_embedding<C: Connection>(
     connection: &C,
-    icon_window: xproto::Window
+    icon_window: xproto::Window,
 ) -> Result<(), ReplyError> {
     {
         let values =
@@ -646,10 +632,6 @@ fn release_embedding<C: Connection>(
     }
 
     connection
-        .composite_release_overlay_window(icon_window)?
-        .check()?;
-
-    connection
         .reparent_window(icon_window, screen.root, 0, 0)?
         .check()?;
 
@@ -668,22 +650,27 @@ fn send_xembed_message<C: Connection>(
     xembed_version: u32,
     atoms: &Atoms,
 ) -> Result<(), ReplyError> {
-let event = xproto::ClientMessageEvent::new(
-    32,
-    icon_window,
-    atoms._XEMBED,
-    [
-        x11rb::CURRENT_TIME,
-        xembed_message.into(),
-        container_window,
-        xembed_version,
-        0,
-    ],
-);
+    let event = xproto::ClientMessageEvent::new(
+        32,
+        icon_window,
+        atoms._XEMBED,
+        [
+            x11rb::CURRENT_TIME,
+            xembed_message.into(),
+            container_window,
+            xembed_version,
+            0,
+        ],
+    );
 
-connection
-    .send_event(false, icon_window, xproto::EventMask::STRUCTURE_NOTIFY, event)?
-    .check()
+    connection
+        .send_event(
+            false,
+            icon_window,
+            xproto::EventMask::STRUCTURE_NOTIFY,
+            event,
+        )?
+        .check()
 }
 
 fn get_window_title<C: Connection>(
