@@ -23,7 +23,13 @@ pub struct TrayContainer {
 }
 
 impl TrayContainer {
-    pub fn new(config: Rc<UiConfig>, font: FontDescription) -> TrayContainer {
+    pub fn new(config: Rc<UiConfig>) -> TrayContainer {
+        let font = FontDescription::new(
+            config.font_family.clone(),
+            config.font_style,
+            config.font_weight,
+            config.font_stretch,
+        );
         Self {
             tray_items: Vec::new(),
             selected_index: None,

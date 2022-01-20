@@ -5,10 +5,12 @@ authors = ["Shota Nozaki <emonkak@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-anyhow = "1.0.52"
-nix = "0.23.1"
-serde = { version = "1.0.133", features = ["derive"] }
-toml = "0.5.8"
+anyhow = "1.0"
+simple_logger = "2.0"
+log = "0.4"
+nix = "0.23"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.5"
 x11rb = { version = "0.9", features = ["allow-unsafe-code", "composite", "damage", "render", "xkb"] }
 
 [dependencies.keytray_shell]

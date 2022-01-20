@@ -24,6 +24,7 @@ use crate::geometrics::{PhysicalSize, Rect, Size};
 pub struct RenderContext {
     connection: Rc<XCBConnection>,
     window: xproto::Window,
+    screen_num: usize,
     size: PhysicalSize,
     pixmap: xproto::Pixmap,
     gc: xproto::Gcontext,
@@ -89,6 +90,7 @@ impl RenderContext {
         Ok(Self {
             connection,
             window,
+            screen_num,
             size,
             pixmap,
             gc,
@@ -115,6 +117,9 @@ impl RenderContext {
                 RenderOp::Text(color, bounds, text) => self.text(color, bounds, text),
                 RenderOp::CompositeWindow(window, bounds) => {
                     self.composite_window(window, bounds)?;
+                }
+                RenderOp::Action(action) => {
+                    action(self.connection.as_ref(), self.screen_num, self.window)?;
                 }
             }
         }
@@ -146,6 +151,16 @@ impl RenderContext {
 
     fn composite_window(&self, window: xproto::Window, bounds: Rect) -> Result<(), RenderError> {
         let pixmap = self.connection.generate_id()?;
+
+        if let Err(_) = self
+            .connection
+            .composite_name_window_pixmap(window, pixmap)?
+            .check()
+        {
+            // Window is probably hidden.
+            return Ok(());
+        }
+
         let src_picture = self.connection.generate_id()?;
         let dest_picture = self.connection.generate_id()?;
 
@@ -156,10 +171,6 @@ impl RenderContext {
             .visual;
         let pictformat = get_pictformat_from_visual(self.connection.as_ref(), visual)?
             .ok_or(RenderError::PictFormatNotFound)?;
-
-        self.connection
-            .composite_name_window_pixmap(window, pixmap)?
-            .check()?;
 
         {
             let values = render::CreatePictureAux::new();
@@ -357,13 +368,13 @@ impl Drop for RenderContext {
     }
 }
 
-#[derive(Debug, Clone)]
 pub enum RenderOp {
     Rect(Color, Rect),
     RoundedRect(Color, Rect, Size),
     Stroke(Color, Rect, f64),
     Text(Color, Rect, Text),
     CompositeWindow(xproto::Window, Rect),
+    Action(Box<dyn FnOnce(&XCBConnection, usize, xproto::Window) -> Result<(), ReplyError>>),
 }
 
 #[derive(Debug)]

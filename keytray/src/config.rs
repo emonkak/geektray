@@ -67,6 +67,7 @@ impl Default for Config {
                     Modifiers::NONE,
                     vec![Command::SelectItem(8)],
                 ),
+                Hotkey::new(xkb::XKB_KEY_0, Modifiers::NONE, vec![Command::DeselectItem]),
                 Hotkey::new(
                     xkb::XKB_KEY_j,
                     Modifiers::NONE,

@@ -7,6 +7,7 @@ use keytray_shell::window::{Effect, Layout, Widget};
 use std::rc::Rc;
 use x11rb::protocol;
 use x11rb::protocol::xproto;
+use x11rb::protocol::xproto::ConnectionExt as _;
 
 use crate::config::UiConfig;
 use crate::tray_manager::TrayIcon;
@@ -102,10 +103,9 @@ impl Widget for TrayItem {
         context.push(RenderOp::Text(
             fg_color,
             Rect {
-                x: position.x + (self.icon.size().width + self.config.item_padding * 2.0),
+                x: position.x + (self.config.icon_size + self.config.item_padding * 2.0),
                 y: position.y,
-                width: layout.size.width
-                    - (self.icon.size().width + self.config.item_padding * 3.0),
+                width: layout.size.width - (self.config.icon_size + self.config.item_padding * 3.0),
                 height: layout.size.height,
             },
             Text {
@@ -117,16 +117,35 @@ impl Widget for TrayItem {
             },
         ));
 
-        context.push(RenderOp::CompositeWindow(
-            self.icon.window(),
-            Rect::new(
-                Point {
-                    x: position.x + self.config.item_padding,
-                    y: position.y + self.config.item_padding,
-                },
-                self.icon.size(),
-            ),
-        ));
+        let bounds = Rect::new(
+            Point {
+                x: position.x + self.config.item_padding,
+                y: position.y + self.config.item_padding,
+            },
+            Size {
+                width: self.config.icon_size,
+                height: self.config.icon_size,
+            },
+        );
+
+        let icon_window = self.icon.window();
+
+        context.push(RenderOp::Action(Box::new(move |connection, _, _| {
+            {
+                let values = xproto::ConfigureWindowAux::new()
+                    .x(bounds.x as i32)
+                    .y(bounds.y as i32)
+                    .width(bounds.width as u32)
+                    .height(bounds.height as u32);
+                connection.configure_window(icon_window, &values)?.check()?;
+            }
+
+            connection.map_window(icon_window)?.check()?;
+
+            Ok(())
+        })));
+
+        context.push(RenderOp::CompositeWindow(self.icon.window(), bounds));
     }
 
     fn layout(&self, container_size: Size) -> Layout {

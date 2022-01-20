@@ -32,6 +32,9 @@ impl<Widget: self::Widget> Window<Widget> {
         widget: Widget,
         connection: Rc<XCBConnection>,
         screen_num: usize,
+        depth: u8,
+        visual_id: xproto::Visualid,
+        colormap: xproto::Colormap,
         initial_size: Size,
         override_redirect: bool,
         get_position: GetPosition,
@@ -59,11 +62,13 @@ impl<Widget: self::Widget> Window<Widget> {
 
             let values = xproto::CreateWindowAux::new()
                 .event_mask(event_mask)
+                .colormap(colormap)
+                .border_pixel(screen.black_pixel)
                 .override_redirect(if override_redirect { 1 } else { 0 });
 
             connection
                 .create_window(
-                    x11rb::COPY_DEPTH_FROM_PARENT,
+                    depth,
                     window,
                     screen.root,
                     position.x as i16,
@@ -72,7 +77,7 @@ impl<Widget: self::Widget> Window<Widget> {
                     size.height as u16,
                     0, // border_width
                     xproto::WindowClass::INPUT_OUTPUT,
-                    x11rb::COPY_FROM_PARENT,
+                    visual_id,
                     &values,
                 )?
                 .check()?;
@@ -127,10 +132,12 @@ impl<Widget: self::Widget> Window<Widget> {
     }
 
     pub fn show(&self) -> Result<(), ReplyError> {
-        let values = xproto::ConfigureWindowAux::new().stack_mode(xproto::StackMode::ABOVE);
-        self.connection
-            .configure_window(self.window, &values)?
-            .check()?;
+        {
+            let values = xproto::ConfigureWindowAux::new().stack_mode(xproto::StackMode::ABOVE);
+            self.connection
+                .configure_window(self.window, &values)?
+                .check()?;
+        }
         self.connection.map_window(self.window)?.check()?;
         self.connection.flush()?;
         Ok(())
@@ -268,46 +275,58 @@ impl<Widget: self::Widget> Window<Widget> {
         }
 
         match event {
-            Expose(event) if event.window == self.window && event.count == 0 => {
-                self.redraw()?;
-            }
-            ConfigureNotify(event) if event.window == self.window => {
-                self.position = PhysicalPoint {
-                    x: event.x as i32,
-                    y: event.y as i32,
-                };
-                let size = PhysicalSize {
-                    width: event.width as u32,
-                    height: event.height as u32,
-                };
-                if self.size != size {
-                    self.size = size;
-                    self.recalculate_layout(context)?;
+            Expose(event) => {
+                if event.window == self.window && event.count == 0 {
+                    self.redraw()?;
                 }
             }
-            DestroyNotify(event) if event.window == self.window => {
-                *control_flow = ControlFlow::Break;
-            }
-            MapNotify(event) if event.window == self.window => {
-                self.is_mapped = true;
-                if self.override_redirect {
-                    self.grab_keyboard()?;
+            ConfigureNotify(event) => {
+                if event.window == event.event && event.window == self.window {
+                    self.position = PhysicalPoint {
+                        x: event.x as i32,
+                        y: event.y as i32,
+                    };
+                    let size = PhysicalSize {
+                        width: event.width as u32,
+                        height: event.height as u32,
+                    };
+                    if self.size != size {
+                        self.size = size;
+                        self.recalculate_layout(context)?;
+                    }
                 }
             }
-            UnmapNotify(event) if event.window == self.window => {
-                self.is_mapped = false;
-                if self.override_redirect {
-                    self.ungrab_keyboard()?;
+            DestroyNotify(event) => {
+                if event.window == event.event && event.window == self.window {
+                    *control_flow = ControlFlow::Break;
                 }
             }
             MapNotify(event) => {
-                if self.override_redirect
-                    && event.window != event.event // only from SUBSTRUCTURE_NOTIFY
-                    && event.window != self.window
-                    && !event.override_redirect
-                {
-                    // It maybe hidden under other windows, so lift the window.
-                    self.raise()?;
+                if event.window == event.event {
+                    // from STRUCTURE_NOTIFY
+                    if event.window == self.window {
+                        self.is_mapped = true;
+                        if self.override_redirect {
+                            self.grab_keyboard()?;
+                        }
+                    }
+                } else {
+                    // from SUBSTRUCTURE_NOTIFY
+                    if event.window != self.window
+                        && !event.override_redirect
+                        && self.override_redirect
+                    {
+                        // It maybe hidden under other windows, so lift the window.
+                        self.raise()?;
+                    }
+                }
+            }
+            UnmapNotify(event) => {
+                if event.window == event.event && event.window == self.window {
+                    self.is_mapped = false;
+                    if self.override_redirect {
+                        self.ungrab_keyboard()?;
+                    }
                 }
             }
             _ => {}

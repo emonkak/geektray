@@ -8,6 +8,7 @@ edition = "2018"
 anyhow = "1.0.52"
 cairo-sys-rs = { version = "0.14.9", features = ["xcb"] }
 gobject-sys = "0.14"
+log = "0.4"
 nix = "0.23.1"
 pango-sys = "0.14"
 pangocairo-sys = "0.14"

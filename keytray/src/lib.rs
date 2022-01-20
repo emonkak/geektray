@@ -1,9 +1,3 @@
-extern crate keytray_shell;
-extern crate nix;
-extern crate serde;
-extern crate toml;
-extern crate x11rb;
-
 mod app;
 mod command;
 mod config;

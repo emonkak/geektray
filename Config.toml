@@ -62,6 +62,10 @@ keysym = "9"
 commands = [ { type = "SelectItem", params = 8 } ]
 
 [[hotkeys]]
+keysym = "0"
+commands = [ { type = "DeselectItem" } ]
+
+[[hotkeys]]
 keysym = "j"
 commands = [ { type = "SelectNextItem" } ]
 

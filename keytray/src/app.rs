@@ -1,9 +1,9 @@
 use anyhow::{anyhow, Context as _};
 use keytray_shell::event::{ControlFlow, Event, EventLoop, EventLoopContext, KeyState, Modifiers};
 use keytray_shell::geometrics::{PhysicalPoint, PhysicalSize, Size};
-use keytray_shell::graphics::FontDescription;
 use keytray_shell::window::Window;
 use keytray_shell::xkb;
+use std::mem::ManuallyDrop;
 use std::process;
 use std::rc::Rc;
 use x11rb::connection::Connection;
@@ -25,8 +25,8 @@ pub struct App {
     connection: Rc<XCBConnection>,
     screen_num: usize,
     atoms: Atoms,
-    window: Window<TrayContainer>,
-    tray_manager: TrayManager<XCBConnection>,
+    window: ManuallyDrop<Window<TrayContainer>>,
+    tray_manager: ManuallyDrop<TrayManager<XCBConnection>>,
     keyboard_state: xkb::State,
     hotkey_interpreter: HotkeyInterpreter,
 }
@@ -41,9 +41,28 @@ impl App {
 
         setup_damage_extension(&connection)?;
 
+        let screen = &connection.setup().roots[screen_num];
+        let visual = find_visual_from_screen(screen, 32, xproto::VisualClass::TRUE_COLOR)
+            .context("find 32 bit true color visual")?;
+        let colormap = connection.generate_id()?;
+
+        connection
+            .create_colormap(
+                xproto::ColormapAlloc::NONE,
+                colormap,
+                screen.root,
+                visual.visual_id,
+            )?
+            .check()?;
+
+        let atoms = Atoms::new(connection.as_ref())?
+            .reply()
+            .context("intern atoms")?;
+
         let tray_manager = TrayManager::new(
             connection.clone(),
             screen_num,
+            visual.visual_id,
             SystemTrayOrientation::VERTICAL,
             SystemTrayColors::new(
                 config.ui.normal_item_foreground,
@@ -51,29 +70,15 @@ impl App {
                 config.ui.normal_item_foreground,
                 config.ui.normal_item_foreground,
             ),
-            Size {
-                width: config.ui.icon_size,
-                height: config.ui.icon_size,
-            },
         )?;
 
-        let atoms = Atoms::new(connection.as_ref())?
-            .reply()
-            .context("intern atoms")?;
-
-        let font = FontDescription::new(
-            config.ui.font_family.clone(),
-            config.ui.font_style,
-            config.ui.font_weight,
-            config.ui.font_stretch,
-        );
-
-        let tray_container = TrayContainer::new(Rc::new(config.ui), font.clone());
-
         let window = Window::new(
-            tray_container,
+            TrayContainer::new(Rc::new(config.ui)),
             connection.clone(),
             screen_num,
+            32,
+            visual.visual_id,
+            colormap,
             Size {
                 width: config.window.width,
                 height: 0.0,
@@ -111,8 +116,8 @@ impl App {
             connection,
             screen_num,
             atoms,
-            window,
-            tray_manager,
+            window: ManuallyDrop::new(window),
+            tray_manager: ManuallyDrop::new(tray_manager),
             keyboard_state,
             hotkey_interpreter,
         })
@@ -121,10 +126,6 @@ impl App {
     pub fn run(&mut self) -> anyhow::Result<()> {
         let mut event_loop =
             EventLoop::new(self.connection.clone()).context("create event loop")?;
-
-        self.tray_manager
-            .acquire_tray_selection()
-            .context("acquire tray selection")?;
 
         if self.window.override_redirect() {
             // If `override_redirect` is enabled, we need to monitor mapping of other windows.
@@ -136,18 +137,22 @@ impl App {
                 .check()?;
         }
 
+        self.tray_manager
+            .acquire_tray_selection()
+            .context("acquire tray selection")?;
+
         event_loop.run(|event, context, control_flow| {
             self.window.on_event(&event, context, control_flow)?;
 
             match event {
                 Event::X11Event(event) => {
-                    match self.tray_manager.process_event(&event) {
+                    match self.tray_manager.process_event(&event, self.window.id()) {
                         Ok(Some(event)) => {
                             self.on_tray_event(event, context, control_flow)?;
                         }
                         Ok(None) => {}
                         Err(error) => {
-                            println!("{}", error);
+                            log::error!("Tray error: {}", error);
                         }
                     }
                     self.on_x11_event(&event, context, control_flow)?;
@@ -216,15 +221,6 @@ impl App {
                     self.window.hide()?;
                 }
             }
-            MapNotify(event) => {
-                if event.window != event.event // only from SUBSTRUCTURE_NOTIFY
-                    && event.window != self.window.id()
-                    && !event.override_redirect
-                {
-                    // It maybe hidden under other windows, so lift the window.
-                    self.window.raise()?;
-                }
-            }
             XkbStateNotify(event) => self.keyboard_state.update_mask(event),
             _ => {}
         }
@@ -260,6 +256,15 @@ impl App {
         }
 
         Ok(())
+    }
+}
+
+impl Drop for App {
+    fn drop(&mut self) {
+        unsafe {
+            ManuallyDrop::drop(&mut self.tray_manager);
+            ManuallyDrop::drop(&mut self.window);
+        }
     }
 }
 
@@ -508,6 +513,19 @@ fn get_window_position_at_center(
         x: (screen.width_in_pixels as i32 - size.width as i32) / 2,
         y: (screen.height_in_pixels as i32 - size.height as i32) / 2,
     }
+}
+
+fn find_visual_from_screen(
+    screen: &xproto::Screen,
+    depth: u8,
+    visual_class: xproto::VisualClass,
+) -> Option<&xproto::Visualtype> {
+    screen
+        .allowed_depths
+        .iter()
+        .filter(|visualdepth| visualdepth.depth == depth)
+        .flat_map(|visualdepth| visualdepth.visuals.iter())
+        .find(|visualtype| visualtype.class == visual_class)
 }
 
 x11rb::atom_manager! {

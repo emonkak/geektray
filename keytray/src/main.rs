@@ -1,6 +1,8 @@
 extern crate keytray;
+extern crate simple_logger;
 
 use anyhow::Context as _;
+use simple_logger::SimpleLogger;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -8,6 +10,7 @@ use std::path::{Path, PathBuf};
 use keytray::{App, Config};
 
 fn main() -> anyhow::Result<()> {
+    SimpleLogger::new().init().unwrap();
     let config = match get_config_path() {
         Some(config_path) if config_path.exists() => load_config(config_path).unwrap(),
         _ => Config::default(),
