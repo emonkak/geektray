@@ -10,11 +10,14 @@ use std::path::{Path, PathBuf};
 use keytray::{App, Config};
 
 fn main() -> anyhow::Result<()> {
-    SimpleLogger::new().init().unwrap();
     let config = match get_config_path() {
         Some(config_path) if config_path.exists() => load_config(config_path).unwrap(),
         _ => Config::default(),
     };
+    SimpleLogger::new()
+        .with_level(config.log_level.into())
+        .init()
+        .context("init logger")?;
     let mut app = App::new(config)?;
     app.run()?;
     Ok(())
@@ -24,7 +27,7 @@ fn get_config_path() -> Option<PathBuf> {
     env::var("XDG_CONFIG_HOME")
         .map(|config_dir| Path::new(&config_dir).to_path_buf())
         .or_else(|_| env::var("HOME").map(|home_dir| Path::new(&home_dir).join(".config")))
-        .map(|config_dir| config_dir.join("keytray").join("Config.toml"))
+        .map(|config_dir| config_dir.join("keytray").join("config.toml"))
         .ok()
 }
 

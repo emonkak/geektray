@@ -1,8 +1,10 @@
 use keytray_shell::event::{Modifiers, MouseButton};
 use keytray_shell::graphics::{Color, FontFamily, FontStretch, FontStyle, FontWeight};
 use keytray_shell::xkbcommon_sys as xkb;
-use serde::{Deserialize, Serialize};
+use serde::de;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Cow;
+use std::str::FromStr as _;
 
 use crate::command::Command;
 use crate::hotkey::Hotkey;
@@ -10,6 +12,7 @@ use crate::hotkey::Hotkey;
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Config {
+    pub log_level: LogLevel,
     pub window: WindowConfig,
     pub ui: UiConfig,
     pub hotkeys: Vec<Hotkey>,
@@ -19,6 +22,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            log_level: LogLevel(log::LevelFilter::Error),
             window: WindowConfig::default(),
             ui: UiConfig::default(),
             hotkeys: vec![
@@ -211,6 +215,37 @@ impl Default for UiConfig {
             normal_item_foreground: Color::from_rgb(0xe8eaeb),
             selected_item_background: Color::from_rgb(0x1c95e6),
             selected_item_foreground: Color::from_rgb(0xe8eaeb),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LogLevel(log::LevelFilter);
+
+impl From<LogLevel> for log::LevelFilter {
+    fn from(log_level: LogLevel) -> Self {
+        log_level.0
+    }
+}
+
+impl Serialize for LogLevel {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.0.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for LogLevel {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match log::LevelFilter::from_str(&s) {
+            Ok(level_filter) => Ok(LogLevel(level_filter)),
+            Err(error) => Err(de::Error::custom(error)),
         }
     }
 }
