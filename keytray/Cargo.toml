@@ -9,7 +9,7 @@ anyhow = "1.0.52"
 nix = "0.23.1"
 serde = { version = "1.0.133", features = ["derive"] }
 toml = "0.5.8"
-x11rb = { version = "0.9", features = ["allow-unsafe-code", "composite", "render", "xkb"] }
+x11rb = { version = "0.9", features = ["allow-unsafe-code", "composite", "damage", "render", "xkb"] }
 
 [dependencies.keytray_shell]
 path = "../keytray_shell"

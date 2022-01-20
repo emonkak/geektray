@@ -36,7 +36,7 @@ impl TrayContainer {
         if self
             .tray_items
             .iter()
-            .find(|tray_item| tray_item.window() == icon.window)
+            .find(|tray_item| tray_item.window() == icon.window())
             .is_some()
         {
             Effect::Failure
@@ -51,7 +51,7 @@ impl TrayContainer {
         if let Some(tray_item) = self
             .tray_items
             .iter_mut()
-            .find(|tray_item| tray_item.window() == icon.window)
+            .find(|tray_item| tray_item.window() == icon.window())
         {
             tray_item.update_icon(icon)
         } else {

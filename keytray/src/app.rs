@@ -8,6 +8,7 @@ use std::process;
 use std::rc::Rc;
 use x11rb::connection::Connection;
 use x11rb::protocol;
+use x11rb::protocol::damage::ConnectionExt as _;
 use x11rb::protocol::xkb::ConnectionExt as _;
 use x11rb::protocol::xproto;
 use x11rb::protocol::xproto::ConnectionExt as _;
@@ -38,6 +39,8 @@ impl App {
 
         setup_xkb_extension(&connection)?;
 
+        setup_damage_extension(&connection)?;
+
         let tray_manager = TrayManager::new(
             connection.clone(),
             screen_num,
@@ -51,8 +54,7 @@ impl App {
             Size {
                 width: config.ui.icon_size,
                 height: config.ui.icon_size,
-            }
-            .snap(),
+            },
         )?;
 
         let atoms = Atoms::new(connection.as_ref())?
@@ -249,7 +251,7 @@ impl App {
                 self.window.apply_effect(effect, context)?;
             }
             TrayEvent::TrayIconRemoved(icon) => {
-                let effect = self.window.widget_mut().remove_tray_item(icon.window);
+                let effect = self.window.widget_mut().remove_tray_item(icon.window());
                 self.window.apply_effect(effect, context)?;
             }
             TrayEvent::SelectionCleared => {
@@ -390,6 +392,17 @@ fn setup_xkb_extension(connection: &XCBConnection) -> anyhow::Result<()> {
             .context("select xkb events")?;
     }
 
+    Ok(())
+}
+
+fn setup_damage_extension(connection: &XCBConnection) -> anyhow::Result<()> {
+    let reply = connection
+        .damage_query_version(1, 1)?
+        .reply()
+        .context("init damage extension")?;
+    if reply.major_version != 1 || reply.minor_version != 1 {
+        anyhow!("damage extension not supported");
+    }
     Ok(())
 }
 
