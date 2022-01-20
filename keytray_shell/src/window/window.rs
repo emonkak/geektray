@@ -336,6 +336,8 @@ impl<Widget: self::Widget> Window<Widget> {
     }
 
     fn redraw(&mut self) -> Result<(), RenderError> {
+        log::debug!("redraw window");
+
         let mut render_context = RenderContext::new(
             self.connection.clone(),
             self.screen_num,

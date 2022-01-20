@@ -124,7 +124,7 @@ impl<C: Connection> TrayManager<C> {
             return Ok(false);
         }
 
-        log::debug!(
+        log::info!(
             "Acquire System tray selection by window `{}`",
             self.manager_window
         );
@@ -147,7 +147,7 @@ impl<C: Connection> TrayManager<C> {
             self.broadcast_manager_message()?;
             self.status = TrayStatus::Managed;
         } else {
-            log::debug!("Wait until the previous selection owner is destroyed");
+            log::info!("Wait until the previous selection owner is destroyed");
 
             let values = xproto::ChangeWindowAttributesAux::new()
                 .event_mask(Some(xproto::EventMask::STRUCTURE_NOTIFY.into()));
@@ -171,6 +171,7 @@ impl<C: Connection> TrayManager<C> {
 
         let response = match event {
             DamageNotify(event) => {
+                log::debug!("Damage notified from drawable `{}`", event.drawable);
                 self.connection
                     .damage_subtract(event.damage, x11rb::NONE, x11rb::NONE)?
                     .check()?;
@@ -183,14 +184,14 @@ impl<C: Connection> TrayManager<C> {
                 let opcode = data[1];
                 if opcode == SYSTEM_TRAY_REQUEST_DOCK {
                     let icon_window = data[2];
-                    log::debug!("Dock request received from window `{}`", icon_window);
+                    log::info!("Dock request received from window `{}`", icon_window);
                     self.register_tray_icon(container_window, icon_window)?;
                 } else if opcode == SYSTEM_TRAY_BEGIN_MESSAGE {
-                    log::debug!("Begin tray message from window `{}`", event.window);
+                    log::info!("Begin tray message from window `{}`", event.window);
                     let balloon_message = BalloonMessage::new(event.data.as_data32());
                     self.balloon_messages.insert(event.window, balloon_message);
                 } else if opcode == SYSTEM_TRAY_CANCEL_MESSAGE {
-                    log::debug!("Cancel tray message from window `{}`", event.window);
+                    log::info!("Cancel tray message from window `{}`", event.window);
                     if let hash_map::Entry::Occupied(entry) =
                         self.balloon_messages.entry(event.window)
                     {
@@ -203,7 +204,7 @@ impl<C: Connection> TrayManager<C> {
                 None
             }
             ClientMessage(event) if event.type_ == self.atoms._NET_SYSTEM_TRAY_MESSAGE_DATA => {
-                log::debug!("Tray message data received from `{}`", event.window);
+                log::info!("Tray message data received from `{}`", event.window);
                 if let hash_map::Entry::Occupied(mut entry) =
                     self.balloon_messages.entry(event.window)
                 {
@@ -222,7 +223,7 @@ impl<C: Connection> TrayManager<C> {
                 if event.selection == self.system_tray_selection_atom
                     && event.owner == self.manager_window =>
             {
-                log::debug!("Tray manager selection did clear");
+                log::info!("Tray manager selection did clear");
                 for (_, icon) in mem::take(&mut self.embedded_icons) {
                     icon.release_embedding(self.connection.as_ref(), self.screen_num)?;
                 }
@@ -230,7 +231,7 @@ impl<C: Connection> TrayManager<C> {
                 Some(TrayEvent::SelectionCleared)
             }
             PropertyNotify(event) if event.atom == self.atoms._XEMBED_INFO => {
-                log::debug!("Change XEmbed info of window `{}` ", event.window);
+                log::info!("Change XEmbed info of window `{}` ", event.window);
                 if let Some(icon) = self.embedded_icons.get_mut(&event.window) {
                     icon.xembed_info =
                         get_xembed_info(self.connection.as_ref(), event.window, &self.atoms)?;
@@ -265,7 +266,7 @@ impl<C: Connection> TrayManager<C> {
             }
             DestroyNotify(event) => match self.status {
                 TrayStatus::Pending(previous_owner) if event.window == previous_owner => {
-                    log::debug!(
+                    log::info!(
                         "Previous selection owner window `{}` did destroy",
                         event.window
                     );
@@ -284,7 +285,7 @@ impl<C: Connection> TrayManager<C> {
 
     fn release_tray_selection(&mut self) -> Result<(), ReplyError> {
         if matches!(self.status, TrayStatus::Managed) {
-            log::debug!("Releasing system tray selection");
+            log::info!("Releasing system tray selection");
 
             for (_, icon) in mem::take(&mut self.embedded_icons) {
                 icon.release_embedding(self.connection.as_ref(), self.screen_num)?;
@@ -329,7 +330,7 @@ impl<C: Connection> TrayManager<C> {
     }
 
     fn broadcast_manager_message(&self) -> Result<(), ReplyError> {
-        log::debug!("Broadcast MANAGER client message");
+        log::info!("Broadcast MANAGER client message");
 
         let screen = &self.connection.setup().roots[self.screen_num];
         let event = xproto::ClientMessageEvent::new(
@@ -483,7 +484,7 @@ impl TrayIcon {
         container_window: xproto::Window,
         atoms: &Atoms,
     ) -> Result<(), ReplyOrIdError> {
-        log::debug!("Begin embedding for tray icon window `{}`", self.window);
+        log::info!("Begin embedding for tray icon window `{}`", self.window);
 
         {
             let values = xproto::ChangeWindowAttributesAux::new().event_mask(Some(
@@ -540,7 +541,7 @@ impl TrayIcon {
         connection: &C,
         screen_num: usize,
     ) -> Result<(), ReplyError> {
-        log::debug!("Release embedding for tray icon {}", self.window);
+        log::info!("Release embedding for tray icon {}", self.window);
 
         let screen = &connection.setup().roots[screen_num];
 
