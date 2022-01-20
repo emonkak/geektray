@@ -64,6 +64,7 @@ impl<Widget: self::Widget> Window<Widget> {
                 .event_mask(event_mask)
                 .colormap(colormap)
                 .border_pixel(screen.black_pixel)
+                .background_pixel(screen.black_pixel)
                 .override_redirect(if override_redirect { 1 } else { 0 });
 
             connection
@@ -168,8 +169,18 @@ impl<Widget: self::Widget> Window<Widget> {
     }
 
     pub fn request_redraw(&self) -> Result<(), ReplyError> {
+        let event = xproto::ExposeEvent {
+            response_type: xproto::EXPOSE_EVENT,
+            sequence: 0,
+            window: self.window,
+            x: 0,
+            y: 0,
+            width: self.size.width as u16,
+            height: self.size.height as u16,
+            count: 0,
+        };
         self.connection
-            .clear_area(true, self.window, 0, 0, 0, 0)?
+            .send_event(true, self.window, xproto::EventMask::EXPOSURE, event)?
             .check()?;
         self.connection.flush()?;
         Ok(())
