@@ -124,7 +124,10 @@ impl<C: Connection> TrayManager<C> {
             return Ok(false);
         }
 
-        log::debug!("Acquire System tray selection by window `{}`", self.manager_window);
+        log::debug!(
+            "Acquire System tray selection by window `{}`",
+            self.manager_window
+        );
 
         let selection_owner_reply = self
             .connection
@@ -180,7 +183,7 @@ impl<C: Connection> TrayManager<C> {
                 let opcode = data[1];
                 if opcode == SYSTEM_TRAY_REQUEST_DOCK {
                     let icon_window = data[2];
-                    log::debug!("Tray request received from window `{}`", icon_window);
+                    log::debug!("Dock request received from window `{}`", icon_window);
                     self.register_tray_icon(container_window, icon_window)?;
                 } else if opcode == SYSTEM_TRAY_BEGIN_MESSAGE {
                     log::debug!("Begin tray message from window `{}`", event.window);
@@ -200,7 +203,7 @@ impl<C: Connection> TrayManager<C> {
                 None
             }
             ClientMessage(event) if event.type_ == self.atoms._NET_SYSTEM_TRAY_MESSAGE_DATA => {
-                log::debug!("Tray message data received from {}", event.window);
+                log::debug!("Tray message data received from `{}`", event.window);
                 if let hash_map::Entry::Occupied(mut entry) =
                     self.balloon_messages.entry(event.window)
                 {
@@ -219,34 +222,31 @@ impl<C: Connection> TrayManager<C> {
                 if event.selection == self.system_tray_selection_atom
                     && event.owner == self.manager_window =>
             {
-                log::debug!(
-                    "Release all embedding icons because the tray manager selection did clear"
-                );
+                log::debug!("Tray manager selection did clear");
                 for (_, icon) in mem::take(&mut self.embedded_icons) {
-                    if icon.xembed_info.is_mapped() {
-                        icon.release_embedding(self.connection.as_ref(), self.screen_num)?;
-                    }
+                    icon.release_embedding(self.connection.as_ref(), self.screen_num)?;
                 }
                 self.status = TrayStatus::Unmanaged;
                 Some(TrayEvent::SelectionCleared)
             }
             PropertyNotify(event) if event.atom == self.atoms._XEMBED_INFO => {
-                log::debug!(
-                    "Attempt to register tray icon of window `{}` because XEmbed info changed",
-                    event.window
-                );
-                self.register_tray_icon(container_window, event.window)?;
-                None
+                log::debug!("Change XEmbed info of window `{}` ", event.window);
+                if let Some(icon) = self.embedded_icons.get_mut(&event.window) {
+                    icon.xembed_info =
+                        get_xembed_info(self.connection.as_ref(), event.window, &self.atoms)?;
+                    Some(TrayEvent::TrayIconUpdated(icon.clone()))
+                } else {
+                    None
+                }
             }
             PropertyNotify(event)
                 if event.atom == u32::from(xproto::AtomEnum::WM_NAME)
                     || event.atom == self.atoms._NET_WM_NAME =>
             {
                 if let Some(icon) = self.embedded_icons.get_mut(&event.window) {
-                    let title =
+                    icon.title =
                         get_window_title(self.connection.as_ref(), event.window, &self.atoms)?
                             .unwrap_or_default();
-                    icon.title = title;
                     Some(TrayEvent::TrayIconUpdated(icon.clone()))
                 } else {
                     None
@@ -265,7 +265,10 @@ impl<C: Connection> TrayManager<C> {
             }
             DestroyNotify(event) => match self.status {
                 TrayStatus::Pending(previous_owner) if event.window == previous_owner => {
-                    log::debug!("Previous selection owner window `{}` did destroy", event.window);
+                    log::debug!(
+                        "Previous selection owner window `{}` did destroy",
+                        event.window
+                    );
                     self.broadcast_manager_message()?;
                     None
                 }
@@ -284,9 +287,7 @@ impl<C: Connection> TrayManager<C> {
             log::debug!("Releasing system tray selection");
 
             for (_, icon) in mem::take(&mut self.embedded_icons) {
-                if icon.xembed_info.is_mapped() {
-                    icon.release_embedding(self.connection.as_ref(), self.screen_num)?;
-                }
+                icon.release_embedding(self.connection.as_ref(), self.screen_num)?;
             }
 
             self.connection
@@ -308,51 +309,14 @@ impl<C: Connection> TrayManager<C> {
         container_window: xproto::Window,
         icon_window: xproto::Window,
     ) -> Result<(), ReplyOrIdError> {
-        let xembed_info = get_xembed_info(self.connection.as_ref(), icon_window, &self.atoms)?;
         match self.embedded_icons.entry(icon_window) {
-            hash_map::Entry::Occupied(mut entry) => {
-                if let Some(new_xembed_info) = xembed_info {
-                    let old_xembed_info =
-                        mem::replace(&mut entry.get_mut().xembed_info, new_xembed_info);
-                    if new_xembed_info.is_mapped() && !old_xembed_info.is_mapped() {
-                        entry
-                            .get()
-                            .begin_embedding(self.connection.as_ref(), container_window)?;
-                    }
-                } else {
-                    let tray_icon = entry.remove();
-                    if tray_icon.xembed_info.is_mapped() {
-                        tray_icon.release_embedding(self.connection.as_ref(), self.screen_num)?;
-                    }
-                };
-            }
             hash_map::Entry::Vacant(entry) => {
-                if let Some(xembed_info) = xembed_info {
-                    let damage = self.connection.generate_id()?;
-                    self.connection
-                        .damage_create(damage, icon_window, damage::ReportLevel::NON_EMPTY)?
-                        .check()?;
-                    let title =
-                        get_window_title(self.connection.as_ref(), icon_window, &self.atoms)?
-                            .unwrap_or_default();
-                    let icon = TrayIcon {
-                        window: icon_window,
-                        damage,
-                        title,
-                        xembed_info,
-                    };
-                    icon.send_embedded_notify(
-                        self.connection.as_ref(),
-                        container_window,
-                        &self.atoms,
-                    )?;
-                    if xembed_info.is_mapped() {
-                        icon.begin_embedding(self.connection.as_ref(), container_window)?;
-                    } else {
-                        icon.wait_for_embedding(self.connection.as_ref())?;
-                    };
-                    entry.insert(icon);
-                }
+                let icon = TrayIcon::new(self.connection.as_ref(), icon_window, &self.atoms)?;
+                icon.begin_embedding(self.connection.as_ref(), container_window, &self.atoms)?;
+                entry.insert(icon);
+            }
+            hash_map::Entry::Occupied(_entry) => {
+                log::warn!("Registering duplicated tray icon `{}`", icon_window);
             }
         }
 
@@ -408,10 +372,29 @@ pub struct TrayIcon {
     window: xproto::Window,
     damage: damage::Damage,
     title: String,
-    xembed_info: XEmbedInfo,
+    xembed_info: Option<XEmbedInfo>,
 }
 
 impl TrayIcon {
+    fn new<C: Connection>(
+        connection: &C,
+        window: xproto::Window,
+        atoms: &Atoms,
+    ) -> Result<Self, ReplyOrIdError> {
+        let damage = connection.generate_id()?;
+        connection
+            .damage_create(damage, window, damage::ReportLevel::NON_EMPTY)?
+            .check()?;
+        let title = get_window_title(connection, window, atoms)?.unwrap_or_default();
+        let xembed_info = get_xembed_info(connection, window, atoms)?;
+        Ok(Self {
+            window,
+            damage,
+            title,
+            xembed_info,
+        })
+    }
+
     pub fn window(&self) -> xproto::Window {
         self.window
     }
@@ -487,39 +470,18 @@ impl TrayIcon {
         Ok(())
     }
 
-    fn send_embedded_notify<C: Connection>(
-        &self,
-        connection: &C,
-        container_window: xproto::Window,
-        atoms: &Atoms,
-    ) -> Result<(), ReplyError> {
-        let event = xproto::ClientMessageEvent::new(
-            32,
-            self.window,
-            atoms._XEMBED,
-            [
-                x11rb::CURRENT_TIME,
-                XEmbedMessage::EmbeddedNotify.into(),
-                0, // detail
-                container_window,
-                self.xembed_info.version,
-            ],
-        );
-
-        connection
-            .send_event(
-                false,
-                self.window,
-                xproto::EventMask::STRUCTURE_NOTIFY,
-                event,
-            )?
-            .check()
+    pub fn should_map(&self) -> bool {
+        match self.xembed_info {
+            Some(xembed_info) => xembed_info.is_mapped(),
+            None => true,
+        }
     }
 
     fn begin_embedding<C: Connection>(
         &self,
         connection: &C,
         container_window: xproto::Window,
+        atoms: &Atoms,
     ) -> Result<(), ReplyOrIdError> {
         log::debug!("Begin embedding for tray icon window `{}`", self.window);
 
@@ -544,19 +506,27 @@ impl TrayIcon {
             .reparent_window(self.window, container_window, 0, 0)?
             .check()?;
 
-        connection.flush()?;
+        if let Some(xembed_info) = self.xembed_info {
+            let event = xproto::ClientMessageEvent::new(
+                32,
+                self.window,
+                atoms._XEMBED,
+                [
+                    x11rb::CURRENT_TIME,
+                    XEmbedMessage::EmbeddedNotify.into(),
+                    0, // detail
+                    container_window,
+                    xembed_info.version,
+                ],
+            );
 
-        Ok(())
-    }
-
-    fn wait_for_embedding<C: Connection>(&self, connection: &C) -> Result<(), ReplyError> {
-        log::debug!("Wait embedding for tray icon window `{}`", self.window);
-
-        {
-            let values = xproto::ChangeWindowAttributesAux::new()
-                .event_mask(xproto::EventMask::PROPERTY_CHANGE);
             connection
-                .change_window_attributes(self.window, &values)?
+                .send_event(
+                    false,
+                    self.window,
+                    xproto::EventMask::STRUCTURE_NOTIFY,
+                    event,
+                )?
                 .check()?;
         }
 
@@ -800,13 +770,13 @@ fn get_window_title<C: Connection>(
 
 fn get_xembed_info<C: Connection>(
     connection: &C,
-    target: xproto::Window,
+    window: xproto::Window,
     atoms: &Atoms,
 ) -> Result<Option<XEmbedInfo>, ReplyError> {
     let reply = connection
         .get_property(
             false,
-            target,
+            window,
             atoms._XEMBED_INFO,
             xproto::AtomEnum::ANY,
             0,

@@ -28,7 +28,7 @@ impl From<XEmbedMessage> for u32 {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct XEmbedInfo {
     pub version: u32,
     pub flags: u32,

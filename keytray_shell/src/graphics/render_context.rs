@@ -152,12 +152,13 @@ impl RenderContext {
     fn composite_window(&self, window: xproto::Window, bounds: Rect) -> Result<(), RenderError> {
         let pixmap = self.connection.generate_id()?;
 
-        if let Err(_) = self
+        if let Err(error) = self
             .connection
             .composite_name_window_pixmap(window, pixmap)?
             .check()
         {
             // Window is probably hidden.
+            log::warn!("composite_window failure: {}", error);
             return Ok(());
         }
 

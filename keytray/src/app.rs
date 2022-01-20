@@ -152,7 +152,7 @@ impl App {
                         }
                         Ok(None) => {}
                         Err(error) => {
-                            log::error!("Tray error: {}", error);
+                            log::warn!("Error while processing event by TrayManager: {}", error);
                         }
                     }
                     self.on_x11_event(&event, context, control_flow)?;
@@ -235,8 +235,12 @@ impl App {
         control_flow: &mut ControlFlow,
     ) -> anyhow::Result<()> {
         match event {
-            TrayEvent::MessageReceived(_icon_window, _message) => {
-                // TODO: Handle balloon message
+            TrayEvent::MessageReceived(icon_window, message) => {
+                log::info!(
+                    "Tray message from window {}: {}",
+                    icon_window,
+                    message.as_str()
+                )
             }
             TrayEvent::TrayIconAdded(icon) => {
                 let effect = self.window.widget_mut().add_tray_item(icon);

@@ -128,24 +128,26 @@ impl Widget for TrayItem {
             },
         );
 
-        let icon_window = self.icon.window();
+        if self.icon.should_map() {
+            let icon_window = self.icon.window();
 
-        context.push(RenderOp::Action(Box::new(move |connection, _, _| {
-            {
-                let values = xproto::ConfigureWindowAux::new()
-                    .x(bounds.x as i32)
-                    .y(bounds.y as i32)
-                    .width(bounds.width as u32)
-                    .height(bounds.height as u32);
-                connection.configure_window(icon_window, &values)?.check()?;
-            }
+            context.push(RenderOp::Action(Box::new(move |connection, _, _| {
+                {
+                    let values = xproto::ConfigureWindowAux::new()
+                        .x(bounds.x as i32)
+                        .y(bounds.y as i32)
+                        .width(bounds.width as u32)
+                        .height(bounds.height as u32);
+                    connection.configure_window(icon_window, &values)?.check()?;
+                }
 
-            connection.map_window(icon_window)?.check()?;
+                connection.map_window(icon_window)?.check()?;
 
-            Ok(())
-        })));
+                Ok(())
+            })));
 
-        context.push(RenderOp::CompositeWindow(self.icon.window(), bounds));
+            context.push(RenderOp::CompositeWindow(self.icon.window(), bounds));
+        }
     }
 
     fn layout(&self, container_size: Size) -> Layout {
