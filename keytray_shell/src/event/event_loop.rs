@@ -125,6 +125,12 @@ impl<C: Connection + AsRawFd> EventLoop<C> {
                     unreachable!();
                 }
             }
+
+            callback(Event::NextTick, &mut context, &mut control_flow)?;
+
+            if matches!(control_flow, ControlFlow::Break) {
+                break 'outer;
+            }
         }
 
         Ok(())
@@ -215,6 +221,7 @@ pub enum Event {
     X11Event(protocol::Event),
     Signal(signalfd::siginfo),
     Timer(Timer),
+    NextTick,
 }
 
 #[derive(Debug)]

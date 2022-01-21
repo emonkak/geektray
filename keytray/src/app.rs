@@ -142,7 +142,7 @@ impl App {
             .context("acquire tray selection")?;
 
         event_loop.run(|event, context, control_flow| {
-            self.window.on_event(&event, context, control_flow)?;
+            self.window.process_event(&event, context, control_flow)?;
 
             match event {
                 Event::X11Event(event) => {
@@ -163,6 +163,7 @@ impl App {
                     *control_flow = ControlFlow::Break;
                     Ok(())
                 }
+                Event::NextTick => Ok(()),
             }
         })?;
 
@@ -216,7 +217,7 @@ impl App {
                         reply_event,
                     )?;
                 } else if protocol == self.atoms._NET_WM_SYNC_REQUEST {
-                    self.window.request_redraw()?;
+                    self.window.request_redraw();
                 } else if protocol == self.atoms.WM_DELETE_WINDOW {
                     self.window.hide()?;
                 }

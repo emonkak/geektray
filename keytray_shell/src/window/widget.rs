@@ -10,7 +10,7 @@ pub trait Widget {
 
     fn layout(&self, container_size: Size) -> Layout;
 
-    fn on_change_layout(
+    fn on_resize_window(
         &mut self,
         _position: PhysicalPoint,
         _old_size: PhysicalSize,

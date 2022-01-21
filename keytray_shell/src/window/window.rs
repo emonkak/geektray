@@ -24,6 +24,8 @@ pub struct Window<Widget> {
     size: PhysicalSize,
     layout: Layout,
     is_mapped: bool,
+    should_redraw: bool,
+    should_layout: bool,
     delayed_effects: HashMap<TimerId, Effect>,
 }
 
@@ -96,6 +98,8 @@ impl<Widget: self::Widget> Window<Widget> {
             size,
             layout,
             is_mapped: false,
+            should_redraw: false,
+            should_layout: false,
             delayed_effects: HashMap::new(),
         })
     }
@@ -168,38 +172,8 @@ impl<Widget: self::Widget> Window<Widget> {
             .check()
     }
 
-    pub fn request_redraw(&self) -> Result<(), ReplyError> {
-        let event = xproto::ExposeEvent {
-            response_type: xproto::EXPOSE_EVENT,
-            sequence: 0,
-            window: self.window,
-            x: 0,
-            y: 0,
-            width: self.size.width as u16,
-            height: self.size.height as u16,
-            count: 0,
-        };
-        self.connection
-            .send_event(true, self.window, xproto::EventMask::EXPOSURE, event)?
-            .check()?;
-        self.connection.flush()?;
-        Ok(())
-    }
-
-    pub fn recalculate_layout(&mut self, context: &mut EventLoopContext) -> Result<(), ReplyError> {
-        self.layout = self.widget.layout(self.size.unsnap());
-        let size = self.layout.size.snap();
-
-        if self.size != size {
-            let effect = self.widget.on_change_layout(self.position, self.size, size);
-            self.apply_effect(effect, context)?;
-        } else {
-            self.request_redraw()?;
-        }
-
-        self.connection.flush()?;
-
-        Ok(())
+    pub fn request_redraw(&mut self) {
+        self.should_redraw = true;
     }
 
     pub fn apply_effect(
@@ -209,9 +183,6 @@ impl<Widget: self::Widget> Window<Widget> {
     ) -> Result<bool, ReplyError> {
         let mut pending_effects = VecDeque::new();
         let mut current = effect;
-
-        let mut redraw_requested = false;
-        let mut layout_requested = false;
         let mut result = true;
 
         loop {
@@ -232,10 +203,10 @@ impl<Widget: self::Widget> Window<Widget> {
                     continue;
                 }
                 Effect::RequestRedraw => {
-                    redraw_requested = true;
+                    self.should_redraw = true;
                 }
                 Effect::RequestLayout => {
-                    layout_requested = true;
+                    self.should_layout = true;
                 }
             }
             if let Some(next) = pending_effects.pop_front() {
@@ -245,16 +216,10 @@ impl<Widget: self::Widget> Window<Widget> {
             }
         }
 
-        if layout_requested {
-            self.recalculate_layout(context)?;
-        } else if redraw_requested {
-            self.request_redraw()?;
-        }
-
         Ok(result)
     }
 
-    pub fn on_event(
+    pub fn process_event(
         &mut self,
         event: &Event,
         context: &mut EventLoopContext,
@@ -269,6 +234,15 @@ impl<Widget: self::Widget> Window<Widget> {
                 Ok(())
             }
             Event::Signal(_) => Ok(()),
+            Event::NextTick => {
+                if self.should_layout {
+                    self.recalculate_layout(context)?;
+                }
+                if self.should_redraw && self.is_mapped {
+                    self.redraw()?;
+                }
+                Ok(())
+            }
         }
     }
 
@@ -288,7 +262,7 @@ impl<Widget: self::Widget> Window<Widget> {
         match event {
             Expose(event) => {
                 if event.window == self.window && event.count == 0 {
-                    self.redraw()?;
+                    self.should_redraw = true;
                 }
             }
             ConfigureNotify(event) => {
@@ -303,7 +277,7 @@ impl<Widget: self::Widget> Window<Widget> {
                     };
                     if self.size != size {
                         self.size = size;
-                        self.recalculate_layout(context)?;
+                        self.should_layout = true;
                     }
                 }
             }
@@ -347,7 +321,7 @@ impl<Widget: self::Widget> Window<Widget> {
     }
 
     fn redraw(&mut self) -> Result<(), RenderError> {
-        log::debug!("redraw window");
+        log::debug!("Redraw window");
 
         let mut render_context = RenderContext::new(
             self.connection.clone(),
@@ -362,6 +336,36 @@ impl<Widget: self::Widget> Window<Widget> {
         render_context.commit()?;
 
         self.connection.flush()?;
+
+        self.should_redraw = false;
+
+        Ok(())
+    }
+
+    fn recalculate_layout(&mut self, context: &mut EventLoopContext) -> Result<(), ReplyError> {
+        let new_layout = self.widget.layout(self.size.unsnap());
+
+        if new_layout != self.layout {
+            let size = new_layout.size.snap();
+
+            self.layout = new_layout;
+
+            if self.size != size {
+                log::debug!(
+                    "Window resized from {}x{} to {}x{}",
+                    self.size.width,
+                    self.size.height,
+                    size.width,
+                    size.height
+                );
+                let effect = self.widget.on_resize_window(self.position, self.size, size);
+                self.apply_effect(effect, context)?;
+            } else {
+                self.should_redraw = true;
+            }
+        }
+
+        self.should_layout = false;
 
         Ok(())
     }
