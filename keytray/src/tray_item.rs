@@ -142,10 +142,24 @@ impl Widget for TrayItem {
 
                 connection.map_window(icon_window)?.check()?;
 
-                Ok(())
-            })));
+                let reply = connection
+                    .get_image(
+                        xproto::ImageFormat::Z_PIXMAP,
+                        icon_window,
+                        0,
+                        0,
+                        bounds.width as u16,
+                        bounds.height as u16,
+                        0xffffffff,
+                    )?
+                    .reply()?;
 
-            context.push(RenderOp::CompositeWindow(self.icon.window(), bounds));
+                Ok(RenderOp::Image(
+                    Rc::new(reply.data),
+                    bounds,
+                    xproto::ImageFormat::Z_PIXMAP,
+                ))
+            })));
         }
     }
 

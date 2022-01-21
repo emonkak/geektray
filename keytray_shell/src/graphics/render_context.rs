@@ -102,26 +102,13 @@ impl RenderContext {
         })
     }
 
+    pub fn push(&mut self, render_op: RenderOp) {
+        self.render_ops.push(render_op)
+    }
+
     pub fn commit(&mut self) -> Result<(), RenderError> {
         for render_op in mem::take(&mut self.render_ops) {
-            match render_op {
-                RenderOp::Rect(color, bounds) => {
-                    self.rect(color, bounds);
-                }
-                RenderOp::RoundedRect(color, bounds, radius) => {
-                    self.rounded_rect(color, bounds, radius);
-                }
-                RenderOp::Stroke(color, bounds, border_size) => {
-                    self.stroke(color, bounds, border_size);
-                }
-                RenderOp::Text(color, bounds, text) => self.text(color, bounds, text),
-                RenderOp::CompositeWindow(window, bounds) => {
-                    self.composite_window(window, bounds)?;
-                }
-                RenderOp::Action(action) => {
-                    action(self.connection.as_ref(), self.screen_num, self.window)?;
-                }
-            }
+            self.eval(render_op)?;
         }
 
         unsafe {
@@ -145,63 +132,33 @@ impl RenderContext {
         Ok(())
     }
 
-    pub fn push(&mut self, render_op: RenderOp) {
-        self.render_ops.push(render_op)
-    }
-
-    fn composite_window(&self, window: xproto::Window, bounds: Rect) -> Result<(), RenderError> {
-        let pixmap = self.connection.generate_id()?;
-
-        if let Err(error) = self
-            .connection
-            .composite_name_window_pixmap(window, pixmap)?
-            .check()
-        {
-            // Window is probably hidden.
-            log::warn!("composite_window failure: {}", error);
-            return Ok(());
+    fn eval(&mut self, render_op: RenderOp) -> Result<(), RenderError> {
+        match render_op {
+            RenderOp::None => {}
+            RenderOp::Rect(color, bounds) => {
+                self.rect(color, bounds);
+            }
+            RenderOp::RoundedRect(color, bounds, radius) => {
+                self.rounded_rect(color, bounds, radius);
+            }
+            RenderOp::Stroke(color, bounds, border_size) => {
+                self.stroke(color, bounds, border_size);
+            }
+            RenderOp::Text(color, bounds, text) => self.text(color, bounds, text),
+            RenderOp::Image(image, bounds, format) => {
+                self.image(image.as_slice(), bounds, format);
+            }
+            RenderOp::CompositeWindow(window, bounds) => {
+                self.composite_window(window, bounds)?;
+            }
+            RenderOp::Action(action) => {
+                self.eval(action(
+                    self.connection.as_ref(),
+                    self.screen_num,
+                    self.window,
+                )?)?;
+            }
         }
-
-        let src_picture = self.connection.generate_id()?;
-        let dest_picture = self.connection.generate_id()?;
-
-        let visual = self
-            .connection
-            .get_window_attributes(window)?
-            .reply()?
-            .visual;
-        let pictformat = get_pictformat_from_visual(self.connection.as_ref(), visual)?
-            .ok_or(RenderError::PictFormatNotFound)?;
-
-        {
-            let values = render::CreatePictureAux::new();
-            self.connection
-                .render_create_picture(src_picture, pixmap, pictformat, &values)?
-                .check()?;
-            self.connection
-                .render_create_picture(dest_picture, self.pixmap, self.pictformat, &values)?
-                .check()?;
-        }
-
-        self.connection
-            .render_composite(
-                render::PictOp::OVER,
-                src_picture,
-                x11rb::NONE,
-                dest_picture,
-                0,
-                0,
-                0,
-                0,
-                bounds.x as i16,
-                bounds.y as i16,
-                bounds.width as u16,
-                bounds.height as u16,
-            )?
-            .check()?;
-
-        self.connection.render_free_picture(dest_picture)?.check()?;
-        self.connection.render_free_picture(src_picture)?.check()?;
 
         Ok(())
     }
@@ -355,6 +312,86 @@ impl RenderContext {
             gobject::g_object_unref(layout.cast());
         }
     }
+
+    fn image(&self, image: &[u8], bounds: Rect, format: xproto::ImageFormat) {
+        let format = if format == xproto::ImageFormat::Z_PIXMAP {
+            cairo::FORMAT_A_RGB32
+        } else {
+            cairo::FORMAT_RGB24
+        };
+        unsafe {
+            cairo::cairo_save(self.cairo);
+            let stride = cairo::cairo_format_stride_for_width(format, bounds.width as i32);
+            let image_surface = cairo::cairo_image_surface_create_for_data(
+                image.as_ptr() as *mut _,
+                cairo::FORMAT_A_RGB32,
+                bounds.width as i32,
+                bounds.height as i32,
+                stride,
+            );
+            cairo::cairo_set_source_surface(self.cairo, image_surface, bounds.x, bounds.y);
+            cairo::cairo_paint(self.cairo);
+            cairo::cairo_surface_destroy(image_surface);
+            cairo::cairo_restore(self.cairo);
+        }
+    }
+
+    fn composite_window(&self, window: xproto::Window, bounds: Rect) -> Result<(), RenderError> {
+        let pixmap = self.connection.generate_id()?;
+
+        if let Err(error) = self
+            .connection
+            .composite_name_window_pixmap(window, pixmap)?
+            .check()
+        {
+            // Window is probably hidden.
+            log::warn!("composite_window failure: {}", error);
+            return Ok(());
+        }
+
+        let src_picture = self.connection.generate_id()?;
+        let dest_picture = self.connection.generate_id()?;
+
+        let visual = self
+            .connection
+            .get_window_attributes(window)?
+            .reply()?
+            .visual;
+        let pictformat = get_pictformat_from_visual(self.connection.as_ref(), visual)?
+            .ok_or(RenderError::PictFormatNotFound)?;
+
+        {
+            let values = render::CreatePictureAux::new();
+            self.connection
+                .render_create_picture(src_picture, pixmap, pictformat, &values)?
+                .check()?;
+            self.connection
+                .render_create_picture(dest_picture, self.pixmap, self.pictformat, &values)?
+                .check()?;
+        }
+
+        self.connection
+            .render_composite(
+                render::PictOp::OVER,
+                src_picture,
+                x11rb::NONE,
+                dest_picture,
+                0,
+                0,
+                0,
+                0,
+                bounds.x as i16,
+                bounds.y as i16,
+                bounds.width as u16,
+                bounds.height as u16,
+            )?
+            .check()?;
+
+        self.connection.render_free_picture(dest_picture)?.check()?;
+        self.connection.render_free_picture(src_picture)?.check()?;
+
+        Ok(())
+    }
 }
 
 impl Drop for RenderContext {
@@ -370,12 +407,14 @@ impl Drop for RenderContext {
 }
 
 pub enum RenderOp {
+    None,
     Rect(Color, Rect),
     RoundedRect(Color, Rect, Size),
     Stroke(Color, Rect, f64),
     Text(Color, Rect, Text),
+    Image(Rc<Vec<u8>>, Rect, xproto::ImageFormat),
     CompositeWindow(xproto::Window, Rect),
-    Action(Box<dyn FnOnce(&XCBConnection, usize, xproto::Window) -> Result<(), ReplyError>>),
+    Action(Box<dyn FnOnce(&XCBConnection, usize, xproto::Window) -> Result<RenderOp, ReplyError>>),
 }
 
 #[derive(Debug)]
