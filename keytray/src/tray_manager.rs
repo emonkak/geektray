@@ -418,16 +418,18 @@ impl TrayIcon {
             .translate_coordinates(self.window, screen.root, 0, 0)?
             .reply()?;
 
-        connection.warp_pointer(
-            x11rb::NONE,                    // src_window
-            screen.root,                    // dst_window
-            0,                              // src_x
-            0,                              // src_y
-            0,                              // src_width
-            0,                              // src_heihgt
-            absolute_position.dst_x as i16, // dst_x
-            absolute_position.dst_y as i16, // dst_y
-        )?;
+        connection
+            .warp_pointer(
+                x11rb::NONE,                    // src_window
+                screen.root,                    // dst_window
+                0,                              // src_x
+                0,                              // src_y
+                0,                              // src_width
+                0,                              // src_heihgt
+                absolute_position.dst_x as i16, // dst_x
+                absolute_position.dst_y as i16, // dst_y
+            )?
+            .check()?;
 
         send_button_event(
             connection,
@@ -455,16 +457,18 @@ impl TrayIcon {
             absolute_position.dst_y,
         )?;
 
-        connection.warp_pointer(
-            x11rb::NONE,                 // src_window
-            screen.root,                 // dst_window
-            0,                           // src_x
-            0,                           // src_y
-            0,                           // src_width
-            0,                           // src_heihgt
-            saved_pointer.root_x as i16, // dst_x
-            saved_pointer.root_y as i16, // dst_y
-        )?;
+        connection
+            .warp_pointer(
+                x11rb::NONE,                 // src_window
+                screen.root,                 // dst_window
+                0,                           // src_x
+                0,                           // src_y
+                0,                           // src_width
+                0,                           // src_heihgt
+                saved_pointer.root_x as i16, // dst_x
+                saved_pointer.root_y as i16, // dst_y
+            )?
+            .check()?;
 
         connection.flush()?;
 
