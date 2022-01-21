@@ -26,6 +26,7 @@ pub struct Window<Widget> {
     is_mapped: bool,
     should_redraw: bool,
     should_layout: bool,
+    render_context: Option<RenderContext>,
     delayed_effects: HashMap<TimerId, Effect>,
 }
 
@@ -100,6 +101,7 @@ impl<Widget: self::Widget> Window<Widget> {
             is_mapped: false,
             should_redraw: false,
             should_layout: false,
+            render_context: None,
             delayed_effects: HashMap::new(),
         })
     }
@@ -278,6 +280,7 @@ impl<Widget: self::Widget> Window<Widget> {
                     if self.size != size {
                         self.size = size;
                         self.should_layout = true;
+                        self.render_context = None;
                     }
                 }
             }
@@ -323,17 +326,22 @@ impl<Widget: self::Widget> Window<Widget> {
     fn redraw(&mut self) -> Result<(), RenderError> {
         log::debug!("Redraw window");
 
-        let mut render_context = RenderContext::new(
-            self.connection.clone(),
-            self.screen_num,
-            self.window,
-            self.size,
-        )?;
+        if self.render_context.is_none() {
+            self.render_context = Some(RenderContext::new(
+                self.connection.clone(),
+                self.screen_num,
+                self.window,
+                self.size,
+            )?);
+        }
 
-        self.widget
-            .render(Point::ZERO, &self.layout, 0, &mut render_context);
+        let render_context = self.render_context.as_mut().unwrap();
 
-        render_context.commit()?;
+        let render_op = self
+            .widget
+            .render(Point::ZERO, &self.layout, 0, render_context);
+
+        render_context.commit(render_op)?;
 
         self.connection.flush()?;
 

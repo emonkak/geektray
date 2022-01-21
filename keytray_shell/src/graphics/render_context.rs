@@ -2,11 +2,15 @@ use cairo_sys as cairo;
 use gobject_sys as gobject;
 use pango_cairo_sys as pango_cairo;
 use pango_sys as pango;
+use std::any::Any;
+use std::collections::hash_map;
+use std::collections::HashMap;
 use std::error;
 use std::fmt;
-use std::mem;
+use std::ops::Add;
 use std::os::raw::*;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use x11rb::connection::Connection;
 use x11rb::errors::{ConnectionError, ReplyError, ReplyOrIdError};
 use x11rb::protocol::composite::ConnectionExt as _;
@@ -32,7 +36,7 @@ pub struct RenderContext {
     cairo: *mut cairo::cairo_t,
     cairo_surface: *mut cairo::cairo_surface_t,
     pango: *mut pango::PangoContext,
-    render_ops: Vec<RenderOp>,
+    cached_render_ops: HashMap<CacheKey, (Rc<dyn CacheDep>, RenderOp)>,
 }
 
 impl RenderContext {
@@ -98,18 +102,12 @@ impl RenderContext {
             cairo_surface,
             cairo,
             pango,
-            render_ops: Vec::new(),
+            cached_render_ops: HashMap::new(),
         })
     }
 
-    pub fn push(&mut self, render_op: RenderOp) {
-        self.render_ops.push(render_op)
-    }
-
-    pub fn commit(&mut self) -> Result<(), RenderError> {
-        for render_op in mem::take(&mut self.render_ops) {
-            self.eval(render_op)?;
-        }
+    pub fn commit(&mut self, render_op: RenderOp) -> Result<(), RenderError> {
+        self.eval(render_op)?;
 
         unsafe {
             cairo::cairo_surface_flush(self.cairo_surface);
@@ -133,30 +131,64 @@ impl RenderContext {
     }
 
     fn eval(&mut self, render_op: RenderOp) -> Result<(), RenderError> {
-        match render_op {
-            RenderOp::None => {}
-            RenderOp::Rect(color, bounds) => {
-                self.rect(color, bounds);
+        let mut queue = Vec::new();
+        let mut current = render_op;
+
+        loop {
+            match current {
+                RenderOp::None => {}
+                RenderOp::Batch(render_ops) => {
+                    queue.extend(render_ops.into_iter().rev());
+                }
+                RenderOp::Rect(color, bounds) => {
+                    self.rect(color, bounds);
+                }
+                RenderOp::RoundedRect(color, bounds, radius) => {
+                    self.rounded_rect(color, bounds, radius);
+                }
+                RenderOp::Stroke(color, bounds, border_size) => {
+                    self.stroke(color, bounds, border_size);
+                }
+                RenderOp::Text(color, bounds, text) => {
+                    self.text(color, bounds, text);
+                }
+                RenderOp::Image(image, bounds, depth) => {
+                    self.image(image.as_slice(), bounds, depth);
+                }
+                RenderOp::CompositeWindow(window, bounds) => {
+                    self.composite_window(window, bounds)?;
+                }
+                RenderOp::Action(action) => {
+                    current = action(self.connection.as_ref(), self.screen_num, self.window)?;
+                    continue;
+                }
+                RenderOp::Memoize(key, dependency, action) => {
+                    current = match self.cached_render_ops.entry(key) {
+                        hash_map::Entry::Occupied(mut entry) => {
+                            if entry.get().0.same(dependency.as_any()) {
+                                entry.get().1.clone()
+                            } else {
+                                let render_op =
+                                    action(self.connection.as_ref(), self.screen_num, self.window)?;
+                                entry.insert((dependency, render_op.clone()));
+                                render_op
+                            }
+                        }
+                        hash_map::Entry::Vacant(entry) => {
+                            let render_op =
+                                action(self.connection.as_ref(), self.screen_num, self.window)?;
+                            entry.insert((dependency, render_op.clone()));
+                            render_op
+                        }
+                    };
+                    continue;
+                }
             }
-            RenderOp::RoundedRect(color, bounds, radius) => {
-                self.rounded_rect(color, bounds, radius);
-            }
-            RenderOp::Stroke(color, bounds, border_size) => {
-                self.stroke(color, bounds, border_size);
-            }
-            RenderOp::Text(color, bounds, text) => self.text(color, bounds, text),
-            RenderOp::Image(image, bounds, format) => {
-                self.image(image.as_slice(), bounds, format);
-            }
-            RenderOp::CompositeWindow(window, bounds) => {
-                self.composite_window(window, bounds)?;
-            }
-            RenderOp::Action(action) => {
-                self.eval(action(
-                    self.connection.as_ref(),
-                    self.screen_num,
-                    self.window,
-                )?)?;
+
+            if let Some(render_op) = queue.pop() {
+                current = render_op;
+            } else {
+                break;
             }
         }
 
@@ -313,8 +345,8 @@ impl RenderContext {
         }
     }
 
-    fn image(&self, image: &[u8], bounds: Rect, format: xproto::ImageFormat) {
-        let format = if format == xproto::ImageFormat::Z_PIXMAP {
+    fn image(&self, image: &[u8], bounds: Rect, depth: u8) {
+        let format = if depth == 32 {
             cairo::FORMAT_A_RGB32
         } else {
             cairo::FORMAT_RGB24
@@ -324,7 +356,7 @@ impl RenderContext {
             let stride = cairo::cairo_format_stride_for_width(format, bounds.width as i32);
             let image_surface = cairo::cairo_image_surface_create_for_data(
                 image.as_ptr() as *mut _,
-                cairo::FORMAT_A_RGB32,
+                format,
                 bounds.width as i32,
                 bounds.height as i32,
                 stride,
@@ -406,15 +438,63 @@ impl Drop for RenderContext {
     }
 }
 
+#[derive(Clone)]
 pub enum RenderOp {
     None,
+    Batch(Vec<RenderOp>),
     Rect(Color, Rect),
     RoundedRect(Color, Rect, Size),
     Stroke(Color, Rect, f64),
     Text(Color, Rect, Text),
-    Image(Rc<Vec<u8>>, Rect, xproto::ImageFormat),
+    Image(Rc<Vec<u8>>, Rect, u8),
     CompositeWindow(xproto::Window, Rect),
-    Action(Box<dyn FnOnce(&XCBConnection, usize, xproto::Window) -> Result<RenderOp, ReplyError>>),
+    Action(Rc<dyn Fn(&XCBConnection, usize, xproto::Window) -> Result<RenderOp, ReplyError>>),
+    Memoize(
+        CacheKey,
+        Rc<dyn CacheDep>,
+        Rc<dyn Fn(&XCBConnection, usize, xproto::Window) -> Result<RenderOp, ReplyError>>,
+    ),
+}
+
+impl RenderOp {
+    pub fn action<F>(action: F) -> Self
+    where
+        F: 'static + Fn(&XCBConnection, usize, xproto::Window) -> Result<RenderOp, ReplyError>,
+    {
+        Self::Action(Rc::new(action))
+    }
+
+    pub fn memoize<D, F>(key: CacheKey, dependency: D, action: F) -> Self
+    where
+        D: 'static + CacheDep,
+        F: 'static + Fn(&XCBConnection, usize, xproto::Window) -> Result<RenderOp, ReplyError>,
+    {
+        Self::Memoize(key, Rc::new(dependency), Rc::new(action))
+    }
+}
+
+impl Add for RenderOp {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Batch(mut xs), Self::Batch(ys)) => {
+                xs.extend(ys);
+                Self::Batch(xs)
+            }
+            (Self::Batch(mut xs), y) => {
+                xs.push(y);
+                Self::Batch(xs)
+            }
+            (x, Self::Batch(ys)) => {
+                let mut xs = Vec::with_capacity(ys.len() + 1);
+                xs.push(x);
+                xs.extend(ys);
+                Self::Batch(xs)
+            }
+            (x, y) => Self::Batch(vec![x, y]),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -454,6 +534,22 @@ impl fmt::Display for RenderError {
 
 impl error::Error for RenderError {}
 
+pub trait CacheDep {
+    fn same(&self, other: &dyn Any) -> bool;
+
+    fn as_any(&self) -> &dyn Any;
+}
+
+impl<T: 'static + PartialEq> CacheDep for T {
+    fn same(&self, other: &dyn Any) -> bool {
+        other.downcast_ref().map_or(false, |other| self == other)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 fn get_pictformat_from_visual<C: Connection>(
     connection: &C,
     visual_id: xproto::Visualid,
@@ -468,4 +564,15 @@ fn get_pictformat_from_visual<C: Connection>(
         .find(|pictvisual| pictvisual.visual == visual_id)
         .map(|pictvisual| pictvisual.format);
     Ok(pictformat)
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct CacheKey(usize);
+
+impl CacheKey {
+    pub fn next() -> Self {
+        static COUNTER: AtomicUsize = AtomicUsize::new(1);
+        let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
+        Self(counter)
+    }
 }

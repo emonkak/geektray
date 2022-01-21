@@ -150,18 +150,28 @@ impl TrayContainer {
 }
 
 impl Widget for TrayContainer {
-    fn render(&self, position: Point, layout: &Layout, _index: usize, context: &mut RenderContext) {
-        context.push(RenderOp::Rect(
-            self.config.window_background,
-            Rect::new(position, layout.size),
-        ));
+    fn render(
+        &self,
+        position: Point,
+        layout: &Layout,
+        _index: usize,
+        context: &mut RenderContext,
+    ) -> RenderOp {
+        let mut result = RenderOp::None;
+
+        result = result
+            + RenderOp::Rect(
+                self.config.window_background,
+                Rect::new(position, layout.size),
+            );
 
         if self.config.border_size > 0.0 {
-            context.push(RenderOp::Stroke(
-                self.config.border_color,
-                Rect::new(position, layout.size),
-                self.config.border_size,
-            ));
+            result = result
+                + RenderOp::Stroke(
+                    self.config.border_color,
+                    Rect::new(position, layout.size),
+                    self.config.border_size,
+                );
         }
 
         if self.tray_items.len() > 0 {
@@ -171,26 +181,29 @@ impl Widget for TrayContainer {
                 .zip(layout.children.iter())
                 .enumerate()
             {
-                tray_item.render(*child_position, child_layout, index, context);
+                result = result + tray_item.render(*child_position, child_layout, index, context);
             }
         } else {
-            context.push(RenderOp::Text(
-                self.config.window_foreground,
-                Rect {
-                    x: position.x + self.config.container_padding,
-                    y: position.y,
-                    width: layout.size.width - (self.config.container_padding * 2.0),
-                    height: layout.size.height,
-                },
-                Text {
-                    content: "No tray items found".into(),
-                    font_description: self.font.clone(),
-                    font_size: self.config.font_size,
-                    horizontal_align: HorizontalAlign::Center,
-                    vertical_align: VerticalAlign::Middle,
-                },
-            ));
+            result = result
+                + RenderOp::Text(
+                    self.config.window_foreground,
+                    Rect {
+                        x: position.x + self.config.container_padding,
+                        y: position.y,
+                        width: layout.size.width - (self.config.container_padding * 2.0),
+                        height: layout.size.height,
+                    },
+                    Text {
+                        content: "No tray items found".into(),
+                        font_description: self.font.clone(),
+                        font_size: self.config.font_size,
+                        horizontal_align: HorizontalAlign::Center,
+                        vertical_align: VerticalAlign::Middle,
+                    },
+                );
         }
+
+        result
     }
 
     fn layout(&self, container_size: Size) -> Layout {

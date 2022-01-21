@@ -1,7 +1,7 @@
 use keytray_shell::event::MouseButton;
 use keytray_shell::geometrics::{PhysicalPoint, Point, Rect, Size};
 use keytray_shell::graphics::{
-    FontDescription, HorizontalAlign, RenderContext, RenderOp, Text, VerticalAlign,
+    CacheKey, FontDescription, HorizontalAlign, RenderContext, RenderOp, Text, VerticalAlign,
 };
 use keytray_shell::window::{Effect, Layout, Widget};
 use std::rc::Rc;
@@ -19,6 +19,7 @@ pub struct TrayItem {
     is_pressed: bool,
     font: FontDescription,
     config: Rc<UiConfig>,
+    image_cache_key: CacheKey,
 }
 
 impl TrayItem {
@@ -29,6 +30,7 @@ impl TrayItem {
             is_pressed: false,
             font,
             config,
+            image_cache_key: CacheKey::next(),
         }
     }
 
@@ -68,7 +70,13 @@ impl TrayItem {
 }
 
 impl Widget for TrayItem {
-    fn render(&self, position: Point, layout: &Layout, index: usize, context: &mut RenderContext) {
+    fn render(
+        &self,
+        position: Point,
+        layout: &Layout,
+        index: usize,
+        _context: &mut RenderContext,
+    ) -> RenderOp {
         let (bg_color, fg_color) = if self.is_selected {
             (
                 self.config.selected_item_background,
@@ -81,17 +89,20 @@ impl Widget for TrayItem {
             )
         };
 
+        let mut result = RenderOp::None;
+
         if self.config.item_corner_radius > 0.0 {
-            context.push(RenderOp::RoundedRect(
-                bg_color,
-                Rect::new(position, layout.size),
-                Size {
-                    width: self.config.item_corner_radius,
-                    height: self.config.item_corner_radius,
-                },
-            ));
+            result = result
+                + RenderOp::RoundedRect(
+                    bg_color,
+                    Rect::new(position, layout.size),
+                    Size {
+                        width: self.config.item_corner_radius,
+                        height: self.config.item_corner_radius,
+                    },
+                );
         } else {
-            context.push(RenderOp::Rect(bg_color, Rect::new(position, layout.size)));
+            result = result + RenderOp::Rect(bg_color, Rect::new(position, layout.size));
         }
 
         let title = if self.config.show_index {
@@ -100,22 +111,24 @@ impl Widget for TrayItem {
             self.icon.title().to_owned()
         };
 
-        context.push(RenderOp::Text(
-            fg_color,
-            Rect {
-                x: position.x + (self.config.icon_size + self.config.item_padding * 2.0),
-                y: position.y,
-                width: layout.size.width - (self.config.icon_size + self.config.item_padding * 3.0),
-                height: layout.size.height,
-            },
-            Text {
-                content: title.into(),
-                font_description: self.font.clone(),
-                font_size: self.config.font_size,
-                horizontal_align: HorizontalAlign::Left,
-                vertical_align: VerticalAlign::Middle,
-            },
-        ));
+        result = result
+            + RenderOp::Text(
+                fg_color,
+                Rect {
+                    x: position.x + (self.config.icon_size + self.config.item_padding * 2.0),
+                    y: position.y,
+                    width: layout.size.width
+                        - (self.config.icon_size + self.config.item_padding * 3.0),
+                    height: layout.size.height,
+                },
+                Text {
+                    content: title.into(),
+                    font_description: self.font.clone(),
+                    font_size: self.config.font_size,
+                    horizontal_align: HorizontalAlign::Left,
+                    vertical_align: VerticalAlign::Middle,
+                },
+            );
 
         if self.icon.should_map() {
             let icon_window = self.icon.window();
@@ -130,37 +143,48 @@ impl Widget for TrayItem {
                 },
             );
 
-            context.push(RenderOp::Action(Box::new(move |connection, _, _| {
-                {
-                    let values = xproto::ConfigureWindowAux::new()
-                        .x(bounds.x as i32)
-                        .y(bounds.y as i32)
-                        .width(bounds.width as u32)
-                        .height(bounds.height as u32);
-                    connection.configure_window(icon_window, &values)?.check()?;
-                }
+            result = result
+                + RenderOp::memoize(
+                    self.image_cache_key,
+                    (self.icon.version(), bounds),
+                    move |connection, _, _| {
+                        {
+                            let values = xproto::ConfigureWindowAux::new()
+                                .x(bounds.x as i32)
+                                .y(bounds.y as i32)
+                                .width(bounds.width as u32)
+                                .height(bounds.height as u32);
+                            connection.configure_window(icon_window, &values)?.check()?;
+                        }
 
-                connection.map_window(icon_window)?.check()?;
+                        connection.map_window(icon_window)?.check()?;
 
-                let reply = connection
-                    .get_image(
-                        xproto::ImageFormat::Z_PIXMAP,
-                        icon_window,
-                        0,
-                        0,
-                        bounds.width as u16,
-                        bounds.height as u16,
-                        0xffffffff,
-                    )?
-                    .reply()?;
+                        let render_op = connection
+                            .get_image(
+                                xproto::ImageFormat::Z_PIXMAP,
+                                icon_window,
+                                0,
+                                0,
+                                bounds.width as u16,
+                                bounds.height as u16,
+                                0xffffffff,
+                            )?
+                            .reply()
+                            .ok()
+                            .map_or(RenderOp::None, |reply| {
+                                RenderOp::Image(
+                                    Rc::new(reply.data),
+                                    bounds,
+                                    reply.depth,
+                                )
+                            });
 
-                Ok(RenderOp::Image(
-                    Rc::new(reply.data),
-                    bounds,
-                    xproto::ImageFormat::Z_PIXMAP,
-                ))
-            })));
+                        Ok(render_op)
+                    },
+                );
         }
+
+        result
     }
 
     fn layout(&self, container_size: Size) -> Layout {

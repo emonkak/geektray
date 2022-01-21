@@ -175,9 +175,12 @@ impl<C: Connection> TrayManager<C> {
                 self.connection
                     .damage_subtract(event.damage, x11rb::NONE, x11rb::NONE)?
                     .check()?;
-                self.embedded_icons
-                    .get(&event.drawable)
-                    .map(|icon| TrayEvent::TrayIconUpdated(icon.clone()))
+                if let Some(icon) = self.embedded_icons.get_mut(&event.drawable) {
+                    icon.version = event.sequence;
+                    Some(TrayEvent::TrayIconUpdated(icon.clone()))
+                } else {
+                    None
+                }
             }
             ClientMessage(event) if event.type_ == self.atoms._NET_SYSTEM_TRAY_OPCODE => {
                 let data = event.data.as_data32();
@@ -235,6 +238,7 @@ impl<C: Connection> TrayManager<C> {
                 if let Some(icon) = self.embedded_icons.get_mut(&event.window) {
                     icon.xembed_info =
                         get_xembed_info(self.connection.as_ref(), event.window, &self.atoms)?;
+                    icon.version = event.sequence;
                     Some(TrayEvent::TrayIconUpdated(icon.clone()))
                 } else {
                     None
@@ -248,6 +252,7 @@ impl<C: Connection> TrayManager<C> {
                     icon.title =
                         get_window_title(self.connection.as_ref(), event.window, &self.atoms)?
                             .unwrap_or_default();
+                    icon.version = event.sequence;
                     Some(TrayEvent::TrayIconUpdated(icon.clone()))
                 } else {
                     None
@@ -374,6 +379,7 @@ pub struct TrayIcon {
     damage: damage::Damage,
     title: String,
     xembed_info: Option<XEmbedInfo>,
+    version: u16,
 }
 
 impl TrayIcon {
@@ -393,6 +399,7 @@ impl TrayIcon {
             damage,
             title,
             xembed_info,
+            version: 0,
         })
     }
 
@@ -480,6 +487,10 @@ impl TrayIcon {
             Some(xembed_info) => xembed_info.is_mapped(),
             None => true,
         }
+    }
+
+    pub fn version(&self) -> u16 {
+        self.version
     }
 
     fn begin_embedding<C: Connection>(

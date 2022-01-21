@@ -3,10 +3,16 @@ use x11rb::protocol;
 use super::effect::Effect;
 use super::layout::Layout;
 use crate::geometrics::{PhysicalPoint, PhysicalSize, Point, Size};
-use crate::graphics::RenderContext;
+use crate::graphics::{RenderContext, RenderOp};
 
 pub trait Widget {
-    fn render(&self, position: Point, layout: &Layout, index: usize, context: &mut RenderContext);
+    fn render(
+        &self,
+        position: Point,
+        layout: &Layout,
+        index: usize,
+        context: &mut RenderContext,
+    ) -> RenderOp;
 
     fn layout(&self, container_size: Size) -> Layout;
 
