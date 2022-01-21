@@ -42,8 +42,11 @@ impl App {
         setup_damage_extension(&connection)?;
 
         let screen = &connection.setup().roots[screen_num];
-        let visual = find_visual_from_screen(screen, 32, xproto::VisualClass::TRUE_COLOR)
-            .context("find 32 bit true color visual")?;
+        let (visual_id, depth) =
+            match find_visual_from_screen(screen, 32, xproto::VisualClass::TRUE_COLOR) {
+                Some(visual) => (visual.visual_id, 32),
+                None => (screen.root_visual, screen.root_depth),
+            };
         let colormap = connection.generate_id()?;
 
         connection
@@ -51,7 +54,7 @@ impl App {
                 xproto::ColormapAlloc::NONE,
                 colormap,
                 screen.root,
-                visual.visual_id,
+                visual_id,
             )?
             .check()?;
 
@@ -62,7 +65,7 @@ impl App {
         let tray_manager = TrayManager::new(
             connection.clone(),
             screen_num,
-            visual.visual_id,
+            visual_id,
             SystemTrayOrientation::VERTICAL,
             SystemTrayColors::new(
                 config.ui.normal_item_foreground,
@@ -76,8 +79,8 @@ impl App {
             TrayContainer::new(Rc::new(config.ui)),
             connection.clone(),
             screen_num,
-            32,
-            visual.visual_id,
+            depth,
+            visual_id,
             colormap,
             Size {
                 width: config.window.width,
