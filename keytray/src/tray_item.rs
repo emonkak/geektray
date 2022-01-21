@@ -117,19 +117,18 @@ impl Widget for TrayItem {
             },
         ));
 
-        let bounds = Rect::new(
-            Point {
-                x: position.x + self.config.item_padding,
-                y: position.y + self.config.item_padding,
-            },
-            Size {
-                width: self.config.icon_size,
-                height: self.config.icon_size,
-            },
-        );
-
         if self.icon.should_map() {
             let icon_window = self.icon.window();
+            let bounds = Rect::new(
+                Point {
+                    x: position.x + self.config.item_padding,
+                    y: position.y + self.config.item_padding,
+                },
+                Size {
+                    width: self.config.icon_size,
+                    height: self.config.icon_size,
+                },
+            );
 
             context.push(RenderOp::Action(Box::new(move |connection, _, _| {
                 {
