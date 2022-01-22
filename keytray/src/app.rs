@@ -7,6 +7,7 @@ use std::mem::ManuallyDrop;
 use std::process;
 use std::rc::Rc;
 use x11rb::connection::Connection;
+use x11rb::errors::ReplyError;
 use x11rb::protocol;
 use x11rb::protocol::damage::ConnectionExt as _;
 use x11rb::protocol::xkb::ConnectionExt as _;
@@ -26,6 +27,7 @@ pub struct App {
     screen_num: usize,
     atoms: Atoms,
     window: ManuallyDrop<Window<TrayContainer>>,
+    window_config: WindowConfig,
     tray_manager: ManuallyDrop<TrayManager<XCBConnection>>,
     keyboard_state: xkb::State,
     hotkey_interpreter: HotkeyInterpreter,
@@ -91,7 +93,7 @@ impl App {
         )
         .context("create window")?;
 
-        configure_window(&connection, window.id(), config.window, &atoms)?;
+        configure_window(&connection, window.id(), &config.window, &atoms)?;
 
         let keyboard_state = {
             let context = xkb::Context::new();
@@ -106,7 +108,7 @@ impl App {
             let keycode = keyboard_state
                 .lookup_keycode(key.keysym())
                 .context("lookup keycode")?;
-            grab_key(&connection, screen_num, keycode, key.modifiers())?;
+            grab_key(&connection, screen_num, keycode, key.modifiers()).context("grab_key")?;
         }
 
         let all_hotkeys = config
@@ -120,6 +122,7 @@ impl App {
             screen_num,
             atoms,
             window: ManuallyDrop::new(window),
+            window_config: config.window,
             tray_manager: ManuallyDrop::new(tray_manager),
             keyboard_state,
             hotkey_interpreter,
@@ -204,6 +207,36 @@ impl App {
                     }
                 }
             }
+            LeaveNotify(event) => {
+                if self.window_config.auto_close && event.event == self.window.id() {
+                    self.window.hide().context("hide window")?;
+                }
+            }
+            MapNotify(event) => {
+                if event.window == event.event {
+                    // from STRUCTURE_NOTIFY
+                    if self.window_config.override_redirect && event.window == self.window.id() {
+                        grab_keyboard(self.connection.as_ref(), self.screen_num)
+                            .context("grab keyboard")?;
+                    }
+                } else {
+                    // from SUBSTRUCTURE_NOTIFY
+                    if self.window_config.override_redirect
+                        && event.window != self.window.id()
+                        && !event.override_redirect
+                    {
+                        // It maybe hidden under other windows, so lift the window.
+                        self.window.raise().context("raise window")?;
+                    }
+                }
+            }
+            UnmapNotify(event) => {
+                if event.window == event.event && event.window == self.window.id() {
+                    if self.window_config.override_redirect {
+                        ungrab_keyboard(self.connection.as_ref()).context("ungrab keyboard")?;
+                    }
+                }
+            }
             ClientMessage(event)
                 if event.type_ == self.atoms.WM_PROTOCOLS && event.format == 32 =>
             {
@@ -212,17 +245,19 @@ impl App {
                     let screen = &self.connection.setup().roots[self.screen_num];
                     let mut reply_event = event.clone();
                     reply_event.window = screen.root;
-                    self.connection.send_event(
-                        false,
-                        screen.root,
-                        xproto::EventMask::SUBSTRUCTURE_NOTIFY
-                            | xproto::EventMask::SUBSTRUCTURE_REDIRECT,
-                        reply_event,
-                    )?;
+                    self.connection
+                        .send_event(
+                            false,
+                            screen.root,
+                            xproto::EventMask::SUBSTRUCTURE_NOTIFY
+                                | xproto::EventMask::SUBSTRUCTURE_REDIRECT,
+                            reply_event,
+                        )
+                        .context("reply _NET_WM_PING")?;
                 } else if protocol == self.atoms._NET_WM_SYNC_REQUEST {
                     self.window.request_redraw();
                 } else if protocol == self.atoms.WM_DELETE_WINDOW {
-                    self.window.hide()?;
+                    self.window.hide().context("hide window")?;
                 }
             }
             XkbStateNotify(event) => self.keyboard_state.update_mask(event),
@@ -276,10 +311,111 @@ impl Drop for App {
     }
 }
 
+fn run_command(
+    connection: &XCBConnection,
+    screen_num: usize,
+    window: &mut Window<TrayContainer>,
+    command: Command,
+    context: &mut EventLoopContext,
+) -> anyhow::Result<bool> {
+    match command {
+        Command::HideWindow => {
+            if window.is_mapped() {
+                window.hide().context("hide window")?;
+                Ok(true)
+            } else {
+                Ok(false)
+            }
+        }
+        Command::ShowWindow => {
+            if window.is_mapped() {
+                Ok(false)
+            } else {
+                let position = get_window_position_at_center(connection, screen_num, window.size());
+                window
+                    .move_position(position)
+                    .context("move window position")?;
+                window.show().context("show window")?;
+                Ok(true)
+            }
+        }
+        Command::ToggleWindow => {
+            if window.is_mapped() {
+                window.hide().context("hide window")?;
+            } else {
+                let position = get_window_position_at_center(connection, screen_num, window.size());
+                window
+                    .move_position(position)
+                    .context("move window position")?;
+                window.show().context("show window")?;
+            }
+            Ok(true)
+        }
+        Command::DeselectItem => {
+            let effect = window.widget_mut().select_item(None);
+            Ok(window.apply_effect(effect, context)?)
+        }
+        Command::SelectItem(index) => {
+            let effect = window.widget_mut().select_item(Some(index));
+            Ok(window.apply_effect(effect, context)?)
+        }
+        Command::SelectNextItem => {
+            let effect = window.widget_mut().select_next_item();
+            Ok(window.apply_effect(effect, context)?)
+        }
+        Command::SelectPreviousItem => {
+            let effect = window.widget_mut().select_previous_item();
+            Ok(window.apply_effect(effect, context)?)
+        }
+        Command::ClickMouseButton(button) => {
+            let effect = window.widget_mut().click_selected_item(button);
+            Ok(window.apply_effect(effect, context)?)
+        }
+    }
+}
+
+fn setup_xkb_extension(connection: &XCBConnection) -> anyhow::Result<()> {
+    let reply = connection
+        .xkb_use_extension(1, 0)?
+        .reply()
+        .context("init xkb extension")?;
+    if !reply.supported {
+        anyhow!("xkb extension not supported.");
+    }
+
+    {
+        let values = x11rb::protocol::xkb::SelectEventsAux::new();
+        connection
+            .xkb_select_events(
+                protocol::xkb::ID::USE_CORE_KBD.into(), // device_spec
+                0u16,                                   // clear
+                protocol::xkb::EventType::STATE_NOTIFY, // select_all
+                0u16,                                   // affect_map
+                0u16,                                   // map
+                &values,                                // details
+            )?
+            .check()
+            .context("select xkb events")?;
+    }
+
+    Ok(())
+}
+
+fn setup_damage_extension(connection: &XCBConnection) -> anyhow::Result<()> {
+    let reply = connection
+        .damage_query_version(1, 1)?
+        .reply()
+        .context("init damage extension")?;
+    if reply.major_version != 1 || reply.minor_version != 1 {
+        anyhow!("damage extension not supported");
+    }
+    Ok(())
+}
+
 fn configure_window(
     connection: &XCBConnection,
     window: xproto::Window,
-    config: WindowConfig,
+    config: &WindowConfig,
     atoms: &Atoms,
 ) -> anyhow::Result<()> {
     connection
@@ -381,136 +517,6 @@ fn configure_window(
     Ok(())
 }
 
-fn setup_xkb_extension(connection: &XCBConnection) -> anyhow::Result<()> {
-    let reply = connection
-        .xkb_use_extension(1, 0)?
-        .reply()
-        .context("init xkb extension")?;
-    if !reply.supported {
-        anyhow!("xkb extension not supported.");
-    }
-
-    {
-        let values = x11rb::protocol::xkb::SelectEventsAux::new();
-        connection
-            .xkb_select_events(
-                protocol::xkb::ID::USE_CORE_KBD.into(), // device_spec
-                0u16,                                   // clear
-                protocol::xkb::EventType::STATE_NOTIFY, // select_all
-                0u16,                                   // affect_map
-                0u16,                                   // map
-                &values,                                // details
-            )?
-            .check()
-            .context("select xkb events")?;
-    }
-
-    Ok(())
-}
-
-fn setup_damage_extension(connection: &XCBConnection) -> anyhow::Result<()> {
-    let reply = connection
-        .damage_query_version(1, 1)?
-        .reply()
-        .context("init damage extension")?;
-    if reply.major_version != 1 || reply.minor_version != 1 {
-        anyhow!("damage extension not supported");
-    }
-    Ok(())
-}
-
-fn grab_key(
-    connection: &XCBConnection,
-    screen_num: usize,
-    keycode: u32,
-    modifiers: Modifiers,
-) -> anyhow::Result<()> {
-    let screen = &connection.setup().roots[screen_num];
-    let modifiers = modifiers.without_locks();
-    for modifiers in [
-        modifiers,
-        modifiers | Modifiers::CAPS_LOCK,
-        modifiers | Modifiers::NUM_LOCK,
-        modifiers | Modifiers::CAPS_LOCK | Modifiers::NUM_LOCK,
-    ] {
-        connection
-            .grab_key(
-                true,
-                screen.root,
-                modifiers,
-                keycode as u8,
-                xproto::GrabMode::ASYNC,
-                xproto::GrabMode::ASYNC,
-            )?
-            .check()
-            .context("grab key")?;
-    }
-    Ok(())
-}
-
-fn run_command(
-    connection: &XCBConnection,
-    screen_num: usize,
-    window: &mut Window<TrayContainer>,
-    command: Command,
-    context: &mut EventLoopContext,
-) -> anyhow::Result<bool> {
-    match command {
-        Command::HideWindow => {
-            if window.is_mapped() {
-                window.hide().context("hide window")?;
-                Ok(true)
-            } else {
-                Ok(false)
-            }
-        }
-        Command::ShowWindow => {
-            if window.is_mapped() {
-                Ok(false)
-            } else {
-                let position = get_window_position_at_center(connection, screen_num, window.size());
-                window
-                    .move_position(position)
-                    .context("move window position")?;
-                window.show().context("show window")?;
-                Ok(true)
-            }
-        }
-        Command::ToggleWindow => {
-            if window.is_mapped() {
-                window.hide().context("hide window")?;
-            } else {
-                let position = get_window_position_at_center(connection, screen_num, window.size());
-                window
-                    .move_position(position)
-                    .context("move window position")?;
-                window.show().context("show window")?;
-            }
-            Ok(true)
-        }
-        Command::DeselectItem => {
-            let effect = window.widget_mut().select_item(None);
-            Ok(window.apply_effect(effect, context)?)
-        }
-        Command::SelectItem(index) => {
-            let effect = window.widget_mut().select_item(Some(index));
-            Ok(window.apply_effect(effect, context)?)
-        }
-        Command::SelectNextItem => {
-            let effect = window.widget_mut().select_next_item();
-            Ok(window.apply_effect(effect, context)?)
-        }
-        Command::SelectPreviousItem => {
-            let effect = window.widget_mut().select_previous_item();
-            Ok(window.apply_effect(effect, context)?)
-        }
-        Command::ClickMouseButton(button) => {
-            let effect = window.widget_mut().click_selected_item(button);
-            Ok(window.apply_effect(effect, context)?)
-        }
-    }
-}
-
 fn get_window_position_at_center(
     connection: &XCBConnection,
     screen_num: usize,
@@ -534,6 +540,57 @@ fn find_visual_from_screen(
         .filter(|visualdepth| visualdepth.depth == depth)
         .flat_map(|visualdepth| visualdepth.visuals.iter())
         .find(|visualtype| visualtype.class == visual_class)
+}
+
+fn grab_key(
+    connection: &XCBConnection,
+    screen_num: usize,
+    keycode: u32,
+    modifiers: Modifiers,
+) -> Result<(), ReplyError> {
+    let screen = &connection.setup().roots[screen_num];
+    let modifiers = modifiers.without_locks();
+    for modifiers in [
+        modifiers,
+        modifiers | Modifiers::CAPS_LOCK,
+        modifiers | Modifiers::NUM_LOCK,
+        modifiers | Modifiers::CAPS_LOCK | Modifiers::NUM_LOCK,
+    ] {
+        connection
+            .grab_key(
+                true,
+                screen.root,
+                modifiers,
+                keycode as u8,
+                xproto::GrabMode::ASYNC,
+                xproto::GrabMode::ASYNC,
+            )?
+            .check()?;
+    }
+    Ok(())
+}
+
+fn grab_keyboard<C: Connection>(connection: &C, screen_num: usize) -> Result<(), ReplyError> {
+    let screen = &connection.setup().roots[screen_num];
+    connection
+        .grab_keyboard(
+            true,
+            screen.root,
+            x11rb::CURRENT_TIME,
+            xproto::GrabMode::ASYNC,
+            xproto::GrabMode::ASYNC,
+        )?
+        .discard_reply_and_errors();
+    connection.flush()?;
+    Ok(())
+}
+
+fn ungrab_keyboard<C: Connection>(connection: &C) -> Result<(), ReplyError> {
+    connection
+        .ungrab_keyboard(x11rb::CURRENT_TIME)?
+        .ignore_error();
+    connection.flush()?;
+    Ok(())
 }
 
 x11rb::atom_manager! {

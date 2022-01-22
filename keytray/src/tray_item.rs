@@ -172,11 +172,7 @@ impl Widget for TrayItem {
                             .reply()
                             .ok()
                             .map_or(RenderOp::None, |reply| {
-                                RenderOp::Image(
-                                    Rc::new(reply.data),
-                                    bounds,
-                                    reply.depth,
-                                )
+                                RenderOp::Image(Rc::new(reply.data), bounds, reply.depth)
                             });
 
                         Ok(render_op)

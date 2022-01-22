@@ -290,31 +290,13 @@ impl<Widget: self::Widget> Window<Widget> {
                 }
             }
             MapNotify(event) => {
-                if event.window == event.event {
-                    // from STRUCTURE_NOTIFY
-                    if event.window == self.window {
-                        self.is_mapped = true;
-                        if self.override_redirect {
-                            self.grab_keyboard()?;
-                        }
-                    }
-                } else {
-                    // from SUBSTRUCTURE_NOTIFY
-                    if event.window != self.window
-                        && !event.override_redirect
-                        && self.override_redirect
-                    {
-                        // It maybe hidden under other windows, so lift the window.
-                        self.raise()?;
-                    }
+                if event.window == event.event && event.window == self.window {
+                    self.is_mapped = true;
                 }
             }
             UnmapNotify(event) => {
                 if event.window == event.event && event.window == self.window {
                     self.is_mapped = false;
-                    if self.override_redirect {
-                        self.ungrab_keyboard()?;
-                    }
                 }
             }
             _ => {}
@@ -375,29 +357,6 @@ impl<Widget: self::Widget> Window<Widget> {
 
         self.should_layout = false;
 
-        Ok(())
-    }
-
-    fn grab_keyboard(&self) -> Result<(), ReplyError> {
-        let screen = &self.connection.setup().roots[self.screen_num];
-        self.connection
-            .grab_keyboard(
-                true,
-                screen.root,
-                x11rb::CURRENT_TIME,
-                xproto::GrabMode::ASYNC,
-                xproto::GrabMode::ASYNC,
-            )?
-            .discard_reply_and_errors();
-        self.connection.flush()?;
-        Ok(())
-    }
-
-    fn ungrab_keyboard(&self) -> Result<(), ReplyError> {
-        self.connection
-            .ungrab_keyboard(x11rb::CURRENT_TIME)?
-            .check()?;
-        self.connection.flush()?;
         Ok(())
     }
 }

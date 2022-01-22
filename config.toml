@@ -5,6 +5,7 @@ name = "KeyTray"
 class = "KeyTray"
 width = 480.0
 override_redirect = false
+auto_close = true
 
 [ui]
 container_padding = 8.0
@@ -95,20 +96,20 @@ commands = [ { type = "SelectPreviousItem" } ]
 
 [[hotkeys]]
 keysym = "l"
-commands = [ { type = "ClickMouseButton", params = "Left" }, { type = "HideWindow" } ]
+commands = [ { type = "ClickMouseButton", params = "Left" } ]
 
 [[hotkeys]]
 keysym = "Return"
-commands = [ { type = "ClickMouseButton", params = "Left" }, { type = "HideWindow" } ]
+commands = [ { type = "ClickMouseButton", params = "Left" } ]
 
 [[hotkeys]]
 keysym = "h"
-commands = [ { type = "ClickMouseButton", params = "Right" }, { type = "HideWindow" } ]
+commands = [ { type = "ClickMouseButton", params = "Right" } ]
 
 [[hotkeys]]
 keysym = "Return"
 modifiers = { shift = true }
-commands = [ { type = "ClickMouseButton", params = "Right" }, { type = "HideWindow" } ]
+commands = [ { type = "ClickMouseButton", params = "Right" } ]
 
 [[hotkeys]]
 keysym = "q"

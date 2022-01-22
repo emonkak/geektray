@@ -150,6 +150,7 @@ pub struct WindowConfig {
     pub class: Cow<'static, str>,
     pub width: f64,
     pub override_redirect: bool,
+    pub auto_close: bool,
 }
 
 impl Default for WindowConfig {
@@ -159,6 +160,7 @@ impl Default for WindowConfig {
             class: Cow::Borrowed("KeyTray"),
             width: 480.0,
             override_redirect: false,
+            auto_close: true,
         }
     }
 }
