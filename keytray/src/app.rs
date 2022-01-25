@@ -487,7 +487,10 @@ fn configure_window(
             window,
             atoms._NET_WM_WINDOW_TYPE,
             xproto::AtomEnum::ATOM,
-            &[atoms._NET_WM_WINDOW_TYPE_DIALOG],
+            &[
+                atoms._NET_WM_WINDOW_TYPE_NORMAL,
+                atoms._NET_WM_WINDOW_TYPE_UTILITY,
+            ],
         )?
         .check()
         .context("set _NET_WM_WINDOW_TYPE property")?;
@@ -498,7 +501,11 @@ fn configure_window(
             window,
             atoms._NET_WM_STATE,
             xproto::AtomEnum::ATOM,
-            &[atoms._NET_WM_STATE_ABOVE, atoms._NET_WM_STATE_STICKY],
+            &[
+                atoms._NET_WM_STATE_ABOVE,
+                atoms._NET_WM_STATE_STAYS_ON_TOP,
+                atoms._NET_WM_STATE_STICKY,
+            ],
         )?
         .check()
         .context("set _NET_WM_STATE property")?;
@@ -604,9 +611,11 @@ x11rb::atom_manager! {
         _NET_WM_PING,
         _NET_WM_STATE,
         _NET_WM_STATE_ABOVE,
+        _NET_WM_STATE_STAYS_ON_TOP,
         _NET_WM_STATE_STICKY,
         _NET_WM_SYNC_REQUEST,
         _NET_WM_WINDOW_TYPE,
-        _NET_WM_WINDOW_TYPE_DIALOG,
+        _NET_WM_WINDOW_TYPE_NORMAL,
+        _NET_WM_WINDOW_TYPE_UTILITY,
     }
 }
