@@ -208,7 +208,13 @@ impl App {
                 }
             }
             LeaveNotify(event) => {
-                if self.window_config.auto_close && event.event == self.window.id() {
+                if self.window_config.auto_close
+                    && event.event == self.window.id()
+                    && matches!(
+                        event.detail,
+                        xproto::NotifyDetail::ANCESTOR | xproto::NotifyDetail::NONLINEAR
+                    )
+                {
                     self.window.hide().context("hide window")?;
                 }
             }
