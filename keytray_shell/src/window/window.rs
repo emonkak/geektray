@@ -31,7 +31,7 @@ pub struct Window<Widget> {
 }
 
 impl<Widget: self::Widget> Window<Widget> {
-    pub fn new<GetPosition>(
+    pub fn new(
         widget: Widget,
         connection: Rc<XCBConnection>,
         screen_num: usize,
@@ -40,14 +40,10 @@ impl<Widget: self::Widget> Window<Widget> {
         colormap: xproto::Colormap,
         initial_size: Size,
         override_redirect: bool,
-        get_position: GetPosition,
-    ) -> Result<Self, ReplyOrIdError>
-    where
-        GetPosition: FnOnce(&XCBConnection, usize, PhysicalSize) -> PhysicalPoint,
-    {
+    ) -> Result<Self, ReplyOrIdError> {
         let layout = widget.layout(initial_size);
         let size = layout.size.snap();
-        let position = get_position(connection.as_ref(), screen_num, size);
+        let position = widget.arrange_window(connection.as_ref(), screen_num, size);
 
         let window = {
             let window = connection.generate_id()?;
@@ -88,6 +84,15 @@ impl<Widget: self::Widget> Window<Widget> {
 
             window
         };
+
+        widget.layout_window(
+            connection.as_ref(),
+            screen_num,
+            window,
+            position,
+            size,
+            size,
+        )?;
 
         Ok(Self {
             widget,
@@ -140,7 +145,13 @@ impl<Widget: self::Widget> Window<Widget> {
 
     pub fn show(&self) -> Result<(), ReplyError> {
         {
-            let values = xproto::ConfigureWindowAux::new().stack_mode(xproto::StackMode::ABOVE);
+            let position =
+                self.widget
+                    .arrange_window(self.connection.as_ref(), self.screen_num, self.size);
+            let values = xproto::ConfigureWindowAux::new()
+                .x(position.x)
+                .y(position.y)
+                .stack_mode(xproto::StackMode::ABOVE);
             self.connection
                 .configure_window(self.window, &values)?
                 .check()?;
@@ -238,7 +249,7 @@ impl<Widget: self::Widget> Window<Widget> {
             Event::Signal(_) => Ok(()),
             Event::NextTick => {
                 if self.should_layout {
-                    self.recalculate_layout(context)?;
+                    self.recalculate_layout()?;
                 }
                 if self.should_redraw && self.is_mapped {
                     self.redraw()?;
@@ -332,7 +343,7 @@ impl<Widget: self::Widget> Window<Widget> {
         Ok(())
     }
 
-    fn recalculate_layout(&mut self, context: &mut EventLoopContext) -> Result<(), ReplyError> {
+    fn recalculate_layout(&mut self) -> Result<(), ReplyError> {
         let new_layout = self.widget.layout(self.size.unsnap());
 
         if new_layout != self.layout {
@@ -348,8 +359,14 @@ impl<Widget: self::Widget> Window<Widget> {
                     size.width,
                     size.height
                 );
-                let effect = self.widget.on_resize_window(self.position, self.size, size);
-                self.apply_effect(effect, context)?;
+                self.widget.layout_window(
+                    self.connection.as_ref(),
+                    self.screen_num,
+                    self.window,
+                    self.position,
+                    self.size,
+                    size,
+                )?;
             } else {
                 self.should_redraw = true;
             }

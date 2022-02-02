@@ -5,10 +5,13 @@ use keytray_shell::graphics::{
 };
 use keytray_shell::window::{Effect, Layout, Widget};
 use std::rc::Rc;
+use x11rb::connection::Connection as _;
+use x11rb::errors::ReplyError;
 use x11rb::properties;
 use x11rb::protocol;
 use x11rb::protocol::xproto;
 use x11rb::protocol::xproto::ConnectionExt as _;
+use x11rb::xcb_ffi::XCBConnection;
 
 use crate::config::UiConfig;
 use crate::tray_item::TrayItem;
@@ -242,32 +245,46 @@ impl Widget for TrayContainer {
         }
     }
 
-    fn on_resize_window(
-        &mut self,
+    fn arrange_window(
+        &self,
+        connection: &XCBConnection,
+        screen_num: usize,
+        size: PhysicalSize,
+    ) -> PhysicalPoint {
+        let screen = &connection.setup().roots[screen_num];
+        PhysicalPoint {
+            x: (screen.width_in_pixels as i32 - size.width as i32) / 2,
+            y: (screen.height_in_pixels as i32 - size.height as i32) / 2,
+        }
+    }
+
+    fn layout_window(
+        &self,
+        connection: &XCBConnection,
+        _screen_num: usize,
+        window: xproto::Window,
         position: PhysicalPoint,
         old_size: PhysicalSize,
         new_size: PhysicalSize,
-    ) -> Effect {
-        Effect::Action(Box::new(move |connection, _, window| {
-            {
-                let mut size_hints = properties::WmSizeHints::new();
-                size_hints.min_size = Some((new_size.width as i32, new_size.height as i32));
-                size_hints.max_size = Some((new_size.width as i32, new_size.height as i32));
-                size_hints.set_normal_hints(connection, window)?.check()?;
-            }
+    ) -> Result<(), ReplyError> {
+        {
+            let mut size_hints = properties::WmSizeHints::new();
+            size_hints.min_size = Some((new_size.width as i32, new_size.height as i32));
+            size_hints.max_size = Some((new_size.width as i32, new_size.height as i32));
+            size_hints.set_normal_hints(connection, window)?.check()?;
+        }
 
-            {
-                let values = xproto::ConfigureWindowAux::new()
-                    .x(position.x + ((old_size.width as i32 - new_size.width as i32) / 2))
-                    .y(position.y + ((old_size.height as i32 - new_size.height as i32) / 2))
-                    .height(new_size.height)
-                    .width(new_size.width);
+        if old_size != new_size {
+            let values = xproto::ConfigureWindowAux::new()
+                .x(position.x + ((old_size.width as i32 - new_size.width as i32) / 2))
+                .y(position.y + ((old_size.height as i32 - new_size.height as i32) / 2))
+                .height(new_size.height)
+                .width(new_size.width);
 
-                connection.configure_window(window, &values)?.check()?;
-            }
+            connection.configure_window(window, &values)?.check()?;
+        }
 
-            Ok(Effect::Success)
-        }))
+        Ok(())
     }
 
     fn on_event(&mut self, event: &protocol::Event, _position: Point, layout: &Layout) -> Effect {

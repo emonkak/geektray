@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context as _};
 use keytray_shell::event::{ControlFlow, Event, EventLoop, EventLoopContext, KeyState, Modifiers};
-use keytray_shell::geometrics::{PhysicalPoint, PhysicalSize, Size};
+use keytray_shell::geometrics::Size;
 use keytray_shell::window::Window;
 use keytray_shell::xkb;
 use std::mem::ManuallyDrop;
@@ -89,7 +89,6 @@ impl App {
                 height: 0.0,
             },
             config.window.override_redirect,
-            get_window_position_at_center,
         )
         .context("create window")?;
 
@@ -196,13 +195,7 @@ impl App {
                 let modifiers = self.keyboard_state.get_modifiers();
                 let commands = self.hotkey_interpreter.eval(keysym, modifiers);
                 for command in commands {
-                    if !run_command(
-                        &self.connection,
-                        self.screen_num,
-                        &mut self.window,
-                        *command,
-                        context,
-                    )? {
+                    if !run_command(&mut self.window, *command, context)? {
                         break;
                     }
                 }
@@ -318,8 +311,6 @@ impl Drop for App {
 }
 
 fn run_command(
-    connection: &XCBConnection,
-    screen_num: usize,
     window: &mut Window<TrayContainer>,
     command: Command,
     context: &mut EventLoopContext,
@@ -337,10 +328,6 @@ fn run_command(
             if window.is_mapped() {
                 Ok(false)
             } else {
-                let position = get_window_position_at_center(connection, screen_num, window.size());
-                window
-                    .move_position(position)
-                    .context("move window position")?;
                 window.show().context("show window")?;
                 Ok(true)
             }
@@ -349,10 +336,6 @@ fn run_command(
             if window.is_mapped() {
                 window.hide().context("hide window")?;
             } else {
-                let position = get_window_position_at_center(connection, screen_num, window.size());
-                window
-                    .move_position(position)
-                    .context("move window position")?;
                 window.show().context("show window")?;
             }
             Ok(true)
@@ -528,18 +511,6 @@ fn configure_window(
         .context("set _NET_WM_DESKTOP property")?;
 
     Ok(())
-}
-
-fn get_window_position_at_center(
-    connection: &XCBConnection,
-    screen_num: usize,
-    size: PhysicalSize,
-) -> PhysicalPoint {
-    let screen = &connection.setup().roots[screen_num];
-    PhysicalPoint {
-        x: (screen.width_in_pixels as i32 - size.width as i32) / 2,
-        y: (screen.height_in_pixels as i32 - size.height as i32) / 2,
-    }
 }
 
 fn find_visual_from_screen(
