@@ -53,6 +53,7 @@ impl<Widget: self::Widget> Window<Widget> {
                 | xproto::EventMask::BUTTON_RELEASE
                 | xproto::EventMask::ENTER_WINDOW
                 | xproto::EventMask::EXPOSURE
+                | xproto::EventMask::FOCUS_CHANGE
                 | xproto::EventMask::KEY_PRESS
                 | xproto::EventMask::KEY_RELEASE
                 | xproto::EventMask::LEAVE_WINDOW

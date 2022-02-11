@@ -184,6 +184,11 @@ impl App {
         use protocol::Event::*;
 
         match event {
+            FocusOut(event) => {
+                if event.mode == xproto::NotifyMode::NORMAL && event.event == self.window.id() {
+                    self.window.hide().context("hide window")?;
+                }
+            }
             KeyPress(event) => {
                 self.keyboard_state
                     .update_key(event.detail as u32, KeyState::Down);
