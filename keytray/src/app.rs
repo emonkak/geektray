@@ -7,7 +7,7 @@ use std::mem::ManuallyDrop;
 use std::process;
 use std::rc::Rc;
 use x11rb::connection::Connection;
-use x11rb::errors::ReplyError;
+use x11rb::errors::{ConnectionError, ReplyError};
 use x11rb::protocol;
 use x11rb::protocol::damage::ConnectionExt as _;
 use x11rb::protocol::xkb::ConnectionExt as _;
@@ -559,7 +559,7 @@ fn grab_key(
     Ok(())
 }
 
-fn grab_keyboard<C: Connection>(connection: &C, screen_num: usize) -> Result<(), ReplyError> {
+fn grab_keyboard<C: Connection>(connection: &C, screen_num: usize) -> Result<(), ConnectionError> {
     let screen = &connection.setup().roots[screen_num];
     connection
         .grab_keyboard(
@@ -574,7 +574,7 @@ fn grab_keyboard<C: Connection>(connection: &C, screen_num: usize) -> Result<(),
     Ok(())
 }
 
-fn ungrab_keyboard<C: Connection>(connection: &C) -> Result<(), ReplyError> {
+fn ungrab_keyboard<C: Connection>(connection: &C) -> Result<(), ConnectionError> {
     connection
         .ungrab_keyboard(x11rb::CURRENT_TIME)?
         .ignore_error();
