@@ -2,7 +2,7 @@
 name = "keytray_shell"
 version = "0.0.0"
 authors = ["Shota Nozaki <emonkak@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 anyhow = "1.0.52"

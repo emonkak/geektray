@@ -1,4 +1,3 @@
-use std::array;
 use std::ops::RangeInclusive;
 use x11rb::errors::ReplyError;
 use x11rb::protocol::xkb;
@@ -44,14 +43,15 @@ impl State {
     }
 
     pub fn get_modifiers(&self) -> Modifiers {
-        array::IntoIter::new([
+        [
             (self.mod_indices.control, Modifiers::CONTROL),
             (self.mod_indices.alt, Modifiers::ALT),
             (self.mod_indices.shift, Modifiers::SHIFT),
             (self.mod_indices.super_, Modifiers::SUPER),
             (self.mod_indices.caps_lock, Modifiers::CAPS_LOCK),
             (self.mod_indices.num_lock, Modifiers::NUM_LOCK),
-        ])
+        ]
+        .into_iter()
         .fold(Modifiers::NONE, |acc, (index, modifier)| {
             let is_active = unsafe {
                 ffi::xkb_state_mod_index_is_active(self.state, index, ffi::XKB_STATE_MODS_EFFECTIVE)
