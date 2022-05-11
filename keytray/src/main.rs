@@ -11,7 +11,7 @@ use keytray::{App, Config};
 
 fn main() -> anyhow::Result<()> {
     let config = match get_config_path() {
-        Some(config_path) if config_path.exists() => load_config(config_path).unwrap(),
+        Some(config_path) if config_path.exists() => load_config(config_path)?,
         _ => Config::default(),
     };
     SimpleLogger::new()
