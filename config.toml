@@ -1,8 +1,8 @@
 log_level = "debug"
 
 [window]
-name = "KeyTray"
-class = "KeyTray"
+name = "GeekTray"
+class = "GeekTray"
 width = 480.0
 override_redirect = false
 auto_close = true

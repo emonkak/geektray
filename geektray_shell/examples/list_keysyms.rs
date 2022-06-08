@@ -1,12 +1,12 @@
 extern crate anyhow;
-extern crate keytray_shell;
+extern crate geektray_shell;
 extern crate x11rb;
 
 use anyhow::{anyhow, Context as _};
 use x11rb::protocol::xkb::ConnectionExt as _;
 use x11rb::xcb_ffi::XCBConnection;
 
-use keytray_shell::xkb;
+use geektray_shell::xkb;
 
 fn main() -> anyhow::Result<()> {
     let (connection, _screen_num) = XCBConnection::connect(None).context("connect to X server")?;

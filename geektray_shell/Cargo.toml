@@ -1,5 +1,5 @@
 [package]
-name = "keytray_shell"
+name = "geektray_shell"
 version = "0.0.0"
 authors = ["Shota Nozaki <emonkak@gmail.com>"]
 edition = "2021"

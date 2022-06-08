@@ -1,8 +1,8 @@
 use anyhow::{anyhow, Context as _};
-use keytray_shell::event::{ControlFlow, Event, EventLoop, EventLoopContext, KeyState, Modifiers};
-use keytray_shell::geometrics::Size;
-use keytray_shell::window::Window;
-use keytray_shell::xkb;
+use geektray_shell::event::{ControlFlow, Event, EventLoop, EventLoopContext, KeyState, Modifiers};
+use geektray_shell::geometrics::Size;
+use geektray_shell::window::Window;
+use geektray_shell::xkb;
 use std::mem::ManuallyDrop;
 use std::process;
 use std::rc::Rc;

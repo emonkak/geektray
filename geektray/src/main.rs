@@ -1,4 +1,4 @@
-extern crate keytray;
+extern crate geektray;
 extern crate simple_logger;
 
 use anyhow::Context as _;
@@ -7,7 +7,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use keytray::{App, Config};
+use geektray::{App, Config};
 
 fn main() -> anyhow::Result<()> {
     let config = match get_config_path() {
@@ -27,7 +27,7 @@ fn get_config_path() -> Option<PathBuf> {
     env::var("XDG_CONFIG_HOME")
         .map(|config_dir| Path::new(&config_dir).to_path_buf())
         .or_else(|_| env::var("HOME").map(|home_dir| Path::new(&home_dir).join(".config")))
-        .map(|config_dir| config_dir.join("keytray").join("config.toml"))
+        .map(|config_dir| config_dir.join("geektray").join("config.toml"))
         .ok()
 }
 
