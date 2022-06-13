@@ -149,7 +149,6 @@ pub struct WindowConfig {
     pub name: Cow<'static, str>,
     pub class: Cow<'static, str>,
     pub width: f64,
-    pub override_redirect: bool,
     pub auto_close: bool,
 }
 
@@ -159,7 +158,6 @@ impl Default for WindowConfig {
             name: Cow::Borrowed("GeekTray"),
             class: Cow::Borrowed("GeekTray"),
             width: 480.0,
-            override_redirect: false,
             auto_close: true,
         }
     }

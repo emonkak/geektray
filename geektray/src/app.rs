@@ -7,7 +7,7 @@ use std::mem::ManuallyDrop;
 use std::process;
 use std::rc::Rc;
 use x11rb::connection::Connection;
-use x11rb::errors::{ConnectionError, ReplyError};
+use x11rb::errors::ReplyError;
 use x11rb::protocol;
 use x11rb::protocol::damage::ConnectionExt as _;
 use x11rb::protocol::xkb::ConnectionExt as _;
@@ -88,7 +88,6 @@ impl App {
                 width: config.window.width,
                 height: 0.0,
             },
-            config.window.override_redirect,
         )
         .context("create window")?;
 
@@ -131,16 +130,6 @@ impl App {
     pub fn run(&mut self) -> anyhow::Result<()> {
         let mut event_loop =
             EventLoop::new(self.connection.clone()).context("create event loop")?;
-
-        if self.window.override_redirect() {
-            // If `override_redirect` is enabled, we need to monitor mapping of other windows.
-            let screen = &self.connection.setup().roots[self.screen_num];
-            let values = xproto::ChangeWindowAttributesAux::new()
-                .event_mask(xproto::EventMask::SUBSTRUCTURE_NOTIFY);
-            self.connection
-                .change_window_attributes(screen.root, &values)?
-                .check()?;
-        }
 
         self.tray_manager
             .acquire_tray_selection()
@@ -214,31 +203,6 @@ impl App {
                     )
                 {
                     self.window.hide().context("hide window")?;
-                }
-            }
-            MapNotify(event) => {
-                if event.window == event.event {
-                    // from STRUCTURE_NOTIFY
-                    if self.window_config.override_redirect && event.window == self.window.id() {
-                        grab_keyboard(self.connection.as_ref(), self.screen_num)
-                            .context("grab keyboard")?;
-                    }
-                } else {
-                    // from SUBSTRUCTURE_NOTIFY
-                    if self.window_config.override_redirect
-                        && event.window != self.window.id()
-                        && !event.override_redirect
-                    {
-                        // It maybe hidden under other windows, so lift the window.
-                        self.window.raise().context("raise window")?;
-                    }
-                }
-            }
-            UnmapNotify(event) => {
-                if event.window == event.event && event.window == self.window.id() {
-                    if self.window_config.override_redirect {
-                        ungrab_keyboard(self.connection.as_ref()).context("ungrab keyboard")?;
-                    }
                 }
             }
             ClientMessage(event)
@@ -556,29 +520,6 @@ fn grab_key(
             )?
             .check()?;
     }
-    Ok(())
-}
-
-fn grab_keyboard<C: Connection>(connection: &C, screen_num: usize) -> Result<(), ConnectionError> {
-    let screen = &connection.setup().roots[screen_num];
-    connection
-        .grab_keyboard(
-            true,
-            screen.root,
-            x11rb::CURRENT_TIME,
-            xproto::GrabMode::ASYNC,
-            xproto::GrabMode::ASYNC,
-        )?
-        .discard_reply_and_errors();
-    connection.flush()?;
-    Ok(())
-}
-
-fn ungrab_keyboard<C: Connection>(connection: &C) -> Result<(), ConnectionError> {
-    connection
-        .ungrab_keyboard(x11rb::CURRENT_TIME)?
-        .ignore_error();
-    connection.flush()?;
     Ok(())
 }
 

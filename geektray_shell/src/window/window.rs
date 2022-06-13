@@ -18,7 +18,6 @@ pub struct Window<Widget> {
     widget: Widget,
     connection: Rc<XCBConnection>,
     screen_num: usize,
-    override_redirect: bool,
     window: xproto::Window,
     position: PhysicalPoint,
     size: PhysicalSize,
@@ -39,7 +38,6 @@ impl<Widget: self::Widget> Window<Widget> {
         visual_id: xproto::Visualid,
         colormap: xproto::Colormap,
         initial_size: Size,
-        override_redirect: bool,
     ) -> Result<Self, ReplyOrIdError> {
         let layout = widget.layout(initial_size);
         let size = layout.size.snap();
@@ -64,8 +62,7 @@ impl<Widget: self::Widget> Window<Widget> {
                 .event_mask(event_mask)
                 .colormap(colormap)
                 .border_pixel(screen.black_pixel)
-                .background_pixel(screen.black_pixel)
-                .override_redirect(if override_redirect { 1 } else { 0 });
+                .background_pixel(screen.black_pixel);
 
             connection
                 .create_window(
@@ -99,7 +96,6 @@ impl<Widget: self::Widget> Window<Widget> {
             widget,
             connection,
             screen_num,
-            override_redirect,
             window,
             position,
             size,
@@ -130,10 +126,6 @@ impl<Widget: self::Widget> Window<Widget> {
 
     pub fn is_mapped(&self) -> bool {
         self.is_mapped
-    }
-
-    pub fn override_redirect(&self) -> bool {
-        self.override_redirect
     }
 
     pub fn widget(&self) -> &Widget {

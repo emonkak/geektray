@@ -4,7 +4,6 @@ log_level = "debug"
 name = "GeekTray"
 class = "GeekTray"
 width = 480.0
-override_redirect = false
 auto_close = true
 
 [ui]
