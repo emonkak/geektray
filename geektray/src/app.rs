@@ -98,7 +98,7 @@ impl App {
             let device_id = xkb::DeviceId::core_keyboard(&connection)
                 .context("get the core keyboard device ID")?;
             let keymap = xkb::Keymap::from_device(context, &connection, device_id)
-                .context("create a keymap from a device")?;
+                .context("create a keymap from the device")?;
             xkb::State::from_keymap(keymap)
         };
 
