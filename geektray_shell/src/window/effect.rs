@@ -6,8 +6,7 @@ use x11rb::xcb_ffi::XCBConnection;
 
 #[must_use]
 pub enum Effect {
-    Success,
-    Failure,
+    None,
     Batch(Vec<Effect>),
     Delay(Box<Effect>, Duration),
     Action(Box<dyn FnOnce(&XCBConnection, usize, xproto::Window) -> Result<Effect, ReplyError>>),
@@ -30,7 +29,7 @@ impl Effect {
 
 impl Default for Effect {
     fn default() -> Self {
-        Self::Success
+        Self::None
     }
 }
 
@@ -39,10 +38,8 @@ impl Add for Effect {
 
     fn add(self, other: Self) -> Self {
         match (self, other) {
-            (Self::Success, y) => y,
-            (x, Self::Success) => x,
-            (Self::Failure, _) => Self::Failure,
-            (_, Self::Failure) => Self::Failure,
+            (Self::None, y) => y,
+            (x, Self::None) => x,
             (Self::Batch(mut xs), Self::Batch(ys)) => {
                 xs.extend(ys);
                 Self::Batch(xs)

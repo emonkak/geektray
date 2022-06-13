@@ -54,7 +54,7 @@ impl TrayItem {
         };
         return Effect::Action(Box::new(move |connection, screen_num, _| {
             icon.click(connection, screen_num, button, button_mask)?;
-            Ok(Effect::Success)
+            Ok(Effect::None)
         }));
     }
 
@@ -221,7 +221,7 @@ impl Widget for TrayItem {
                         let button_mask = event.state.into();
                         return Effect::Action(Box::new(move |connection, screen_num, _| {
                             icon.click(connection, screen_num, button, button_mask)?;
-                            Ok(Effect::Success)
+                            Ok(Effect::None)
                         }));
                     }
                 }
@@ -232,6 +232,6 @@ impl Widget for TrayItem {
             _ => {}
         }
 
-        Effect::Success
+        Effect::None
     }
 }

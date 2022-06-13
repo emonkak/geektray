@@ -189,14 +189,11 @@ impl<Widget: self::Widget> Window<Widget> {
     ) -> Result<bool, ReplyError> {
         let mut pending_effects = VecDeque::new();
         let mut current = effect;
-        let mut result = true;
+        let mut result = false;
 
         loop {
             match current {
-                Effect::Success => {}
-                Effect::Failure => {
-                    result = false;
-                }
+                Effect::None => {},
                 Effect::Batch(effects) => {
                     pending_effects.extend(effects);
                 }
@@ -205,13 +202,16 @@ impl<Widget: self::Widget> Window<Widget> {
                     self.delayed_effects.insert(timer_id, *effect);
                 }
                 Effect::Action(action) => {
+                    result = true;
                     current = action(self.connection.as_ref(), self.screen_num, self.window)?;
                     continue;
                 }
                 Effect::RequestRedraw => {
+                    result = true;
                     self.should_redraw = true;
                 }
                 Effect::RequestLayout => {
+                    result = true;
                     self.should_layout = true;
                 }
             }

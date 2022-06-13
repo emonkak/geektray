@@ -189,7 +189,7 @@ impl App {
                 let modifiers = self.keyboard_state.get_modifiers();
                 let commands = self.hotkey_interpreter.eval(keysym, modifiers);
                 for command in commands {
-                    if !run_command(&mut self.window, *command, context)? {
+                    if !run_command(&mut self.window, command, context)? {
                         break;
                     }
                 }
@@ -281,7 +281,7 @@ impl Drop for App {
 
 fn run_command(
     window: &mut Window<TrayContainer>,
-    command: Command,
+    command: &Command,
     context: &mut EventLoopContext,
 ) -> anyhow::Result<bool> {
     match command {
@@ -314,7 +314,7 @@ fn run_command(
             Ok(window.apply_effect(effect, context)?)
         }
         Command::SelectItem(index) => {
-            let effect = window.widget_mut().select_item(Some(index));
+            let effect = window.widget_mut().select_item(Some(*index));
             Ok(window.apply_effect(effect, context)?)
         }
         Command::SelectNextItem => {
@@ -326,7 +326,7 @@ fn run_command(
             Ok(window.apply_effect(effect, context)?)
         }
         Command::ClickMouseButton(button) => {
-            let effect = window.widget_mut().click_selected_item(button);
+            let effect = window.widget_mut().click_selected_item(*button);
             Ok(window.apply_effect(effect, context)?)
         }
     }

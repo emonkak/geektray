@@ -48,7 +48,7 @@ impl TrayContainer {
             .find(|tray_item| tray_item.window() == icon.window())
             .is_some()
         {
-            Effect::Failure
+            Effect::None
         } else {
             let tray_item = TrayItem::new(icon, self.font.clone(), self.config.clone());
             self.tray_items.push(tray_item);
@@ -88,12 +88,12 @@ impl TrayContainer {
             self.tray_items.remove(index);
             Effect::RequestLayout
         } else {
-            Effect::Failure
+            Effect::None
         }
     }
 
     pub fn select_item(&mut self, new_index: Option<usize>) -> Effect {
-        let mut result = Effect::Success;
+        let mut result = Effect::None;
 
         if let Some(index) = self.selected_index {
             let tray_item = &mut self.tray_items[index];
@@ -116,7 +116,7 @@ impl TrayContainer {
 
     pub fn select_next_item(&mut self) -> Effect {
         if self.tray_items.len() == 0 {
-            return Effect::Failure;
+            return Effect::None;
         }
 
         let selected_index = match self.selected_index {
@@ -130,7 +130,7 @@ impl TrayContainer {
 
     pub fn select_previous_item(&mut self) -> Effect {
         if self.tray_items.len() == 0 {
-            return Effect::Failure;
+            return Effect::None;
         }
 
         let selected_index = match self.selected_index {
@@ -147,7 +147,7 @@ impl TrayContainer {
             let tray_item = &mut self.tray_items[index];
             tray_item.click_item(button)
         } else {
-            Effect::Failure
+            Effect::None
         }
     }
 }
@@ -288,7 +288,7 @@ impl Widget for TrayContainer {
     }
 
     fn on_event(&mut self, event: &protocol::Event, _position: Point, layout: &Layout) -> Effect {
-        let mut side_effect = Effect::Success;
+        let mut side_effect = Effect::None;
 
         for (tray_item, (position, layout)) in
             self.tray_items.iter_mut().zip(layout.children.iter())
