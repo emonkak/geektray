@@ -451,7 +451,7 @@ fn configure_window(
     }
 
     {
-        let class_string = format!("{}\0{}", config.class.as_ref(), config.class.as_ref());
+        let class_string = format!("{}\0{}", config.name.as_ref(), config.class.as_ref());
         connection
             .change_property8(
                 xproto::PropMode::REPLACE,
