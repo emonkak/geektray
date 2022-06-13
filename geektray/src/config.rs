@@ -104,7 +104,7 @@ impl Default for Config {
                 ),
                 Hotkey::new(
                     xkb::XKB_KEY_l,
-                    Modifiers::CONTROL,
+                    Modifiers::NONE,
                     vec![Command::ClickMouseButton(MouseButton::Left)],
                 ),
                 Hotkey::new(
@@ -202,7 +202,7 @@ impl Default for UiConfig {
             item_corner_radius: 4.0,
             icon_size: 24.0,
             show_index: true,
-            border_size: 2.0,
+            border_size: 0.0,
             border_color: Color::from_rgb(0x1c95e6),
             font_family: FontFamily::default(),
             font_weight: FontWeight::default(),

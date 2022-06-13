@@ -91,12 +91,17 @@ pub enum KeyState {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Modifiers {
+    #[serde(skip_serializing_if = "is_false")]
     pub control: bool,
+    #[serde(skip_serializing_if = "is_false")]
     pub shift: bool,
+    #[serde(skip_serializing_if = "is_false")]
     pub alt: bool,
-    #[serde(rename = "super")]
+    #[serde(skip_serializing_if = "is_false", rename = "super")]
     pub super_: bool,
+    #[serde(skip_serializing_if = "is_false")]
     pub caps_lock: bool,
+    #[serde(skip_serializing_if = "is_false")]
     pub num_lock: bool,
 }
 
@@ -256,4 +261,8 @@ impl BitOrAssign for Modifiers {
         self.caps_lock |= rhs.caps_lock;
         self.num_lock |= rhs.num_lock;
     }
+}
+
+fn is_false(value: &bool) -> bool {
+    *value == false
 }
