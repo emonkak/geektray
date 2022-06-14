@@ -2,6 +2,7 @@ extern crate geektray;
 extern crate simple_logger;
 
 use anyhow::Context as _;
+use clap::Parser;
 use simple_logger::SimpleLogger;
 use std::env;
 use std::fs;
@@ -9,8 +10,20 @@ use std::path::{Path, PathBuf};
 
 use geektray::{App, Config};
 
+#[derive(Parser, Debug)]
+#[clap(
+    version,
+    help_template = "{before-help}{usage-heading}\n    {usage}\n\n{all-args}{after-help}"
+)]
+struct Args {
+    /// a path to the alternative config file
+    #[clap(short, long, value_parser)]
+    config: Option<String>,
+}
+
 fn main() -> anyhow::Result<()> {
-    let config = match get_config_path() {
+    let args = Args::parse();
+    let config = match args.config.map(PathBuf::from).or_else(get_config_path) {
         Some(path) => {
             if path.exists() {
                 load_config(path)?
@@ -19,7 +32,7 @@ fn main() -> anyhow::Result<()> {
                 save_config(path, &config)?;
                 config
             }
-        },
+        }
         _ => Config::default(),
     };
     SimpleLogger::new()

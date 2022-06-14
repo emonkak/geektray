@@ -193,7 +193,7 @@ impl<Widget: self::Widget> Window<Widget> {
 
         loop {
             match current {
-                Effect::None => {},
+                Effect::None => {}
                 Effect::Batch(effects) => {
                     pending_effects.extend(effects);
                 }

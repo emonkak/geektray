@@ -1,11 +1,13 @@
 [package]
 name = "geektray"
+description = "A keyboard based freedesktop.org system tray implementation for X11"
 version = "0.0.0"
 authors = ["Shota Nozaki <emonkak@gmail.com>"]
 edition = "2021"
 
 [dependencies]
 anyhow = "1.0"
+clap = { version = "3.2.1", features = ["derive", "std"], default-features = false }
 log = "0.4"
 nix = "0.23"
 serde = { version = "1.0", features = ["derive"] }
