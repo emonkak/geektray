@@ -1,0 +1,16 @@
+name: CI
+
+on: [push, pull_request]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Install packages
+      run: sudo apt-get -y install libcairo2 libglibd-2.0 libpango1.0 libxkbcommon-x11-dev
+    - uses: actions/checkout@v3
+    - name: Run tests
+      run: cargo test --verbose

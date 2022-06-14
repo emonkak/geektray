@@ -1,0 +1,41 @@
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Install packages
+      run: sudo apt-get -y install libcairo2 libglibd-2.0 libpango1.0 libxkbcommon-x11-dev
+    - uses: actions/checkout@v3
+    - name: Build
+      run: cargo build --release --verbose
+    - name: Strip
+      run: strip target/release/geektray
+    - name: Archive
+      run: gzip -fk target/release/geektray
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: false
+        prerelease: false
+    - name: Upload Release Asset
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./target/release/geektray.gz
+        asset_name: geektray.gz
+        asset_content_type: application/gzip
