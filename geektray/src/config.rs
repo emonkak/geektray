@@ -12,11 +12,11 @@ use crate::hotkey::Hotkey;
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Config {
-    pub log_level: LogLevel,
     pub window: WindowConfig,
     pub ui: UiConfig,
     pub hotkeys: Vec<Hotkey>,
     pub global_hotkeys: Vec<Hotkey>,
+    pub log_level: LogLevel,
 }
 
 impl Default for Config {
