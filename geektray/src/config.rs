@@ -156,8 +156,9 @@ impl Default for Config {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(default)]
 pub struct WindowConfig {
-    pub name: Cow<'static, str>,
-    pub class: Cow<'static, str>,
+    pub title: Cow<'static, str>,
+    pub instance_name: Cow<'static, str>,
+    pub class_name: Cow<'static, str>,
     pub width: f64,
     pub auto_close: bool,
 }
@@ -165,8 +166,9 @@ pub struct WindowConfig {
 impl Default for WindowConfig {
     fn default() -> Self {
         Self {
-            name: Cow::Borrowed("GeekTray"),
-            class: Cow::Borrowed("GeekTray"),
+            title: Cow::Borrowed("GeekTray"),
+            instance_name: Cow::Borrowed("GeekTray"),
+            class_name: Cow::Borrowed("GeekTray"),
             width: 480.0,
             auto_close: true,
         }

@@ -390,7 +390,7 @@ fn configure_window(
                 window,
                 xproto::AtomEnum::WM_NAME,
                 xproto::AtomEnum::STRING,
-                config.name.as_bytes(),
+                config.title.as_bytes(),
             )?
             .check()
             .context("set WM_NAME property")?;
@@ -400,14 +400,18 @@ fn configure_window(
                 window,
                 atoms._NET_WM_NAME,
                 atoms.UTF8_STRING,
-                config.name.as_bytes(),
+                config.title.as_bytes(),
             )?
             .check()
             .context("set _NET_WM_NAME property")?;
     }
 
     {
-        let class_string = format!("{}\0{}", config.name.as_ref(), config.class.as_ref());
+        let class_string = format!(
+            "{}\0{}",
+            config.instance_name.as_ref(),
+            config.class_name.as_ref()
+        );
         connection
             .change_property8(
                 xproto::PropMode::REPLACE,
