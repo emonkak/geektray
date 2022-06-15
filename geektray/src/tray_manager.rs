@@ -238,7 +238,6 @@ impl<C: Connection> TrayManager<C> {
                 if let Some(icon) = self.embedded_icons.get_mut(&event.window) {
                     icon.xembed_info =
                         get_xembed_info(self.connection.as_ref(), event.window, &self.atoms)?;
-                    icon.version = event.sequence;
                     Some(TrayEvent::TrayIconUpdated(icon.clone()))
                 } else {
                     None
@@ -252,7 +251,6 @@ impl<C: Connection> TrayManager<C> {
                     icon.title =
                         get_window_title(self.connection.as_ref(), event.window, &self.atoms)?
                             .unwrap_or_default();
-                    icon.version = event.sequence;
                     Some(TrayEvent::TrayIconUpdated(icon.clone()))
                 } else {
                     None
