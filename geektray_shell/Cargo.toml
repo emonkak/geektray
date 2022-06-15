@@ -18,12 +18,3 @@ x11rb = { version = "0.9", features = ["allow-unsafe-code", "xkb"] }
 [build-dependencies]
 bindgen = "0.59.2"
 pkg-config = "0.3"
-
-[[example]]
-name = "tray_icon_test"
-
-[[example]]
-name = "list_keysyms"
-
-[[example]]
-name = "xcb_cairo_test"
