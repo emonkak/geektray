@@ -13,10 +13,11 @@ use geektray::{App, Config};
 #[derive(Parser, Debug)]
 #[clap(
     version,
+    term_width = 0,
     help_template = "{before-help}{usage-heading}\n    {usage}\n\n{all-args}{after-help}"
 )]
 struct Args {
-    /// a path to the alternative config file
+    /// a path to the alternative config file [Default: $XDG_CONFIG_HOME/geektray/config.yml]
     #[clap(short, long, value_parser)]
     config: Option<String>,
 }

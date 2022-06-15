@@ -2,7 +2,9 @@
 name = "geektray_shell"
 version = "0.0.0"
 authors = ["Shota Nozaki <emonkak@gmail.com>"]
+license = "MIT"
 edition = "2021"
+resolver = "2"
 
 [dependencies]
 anyhow = "1.0.52"
