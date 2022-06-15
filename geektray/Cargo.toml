@@ -15,5 +15,8 @@ serde_yaml = "0.8"
 simple_logger = "2.0"
 x11rb = { version = "0.9", features = ["allow-unsafe-code", "composite", "damage", "render", "xkb"] }
 
+[dev-dependencies]
+pretty_assertions = "1.2.1"
+
 [dependencies.geektray_shell]
 path = "../geektray_shell"

@@ -28,9 +28,8 @@ fn main() -> anyhow::Result<()> {
             if path.exists() {
                 load_config(path)?
             } else {
-                let config = Config::default();
-                save_config(path, &config)?;
-                config
+                save_default_config(path)?;
+                Config::default()
             }
         }
         _ => Config::default(),
@@ -58,8 +57,8 @@ fn load_config(path: impl AsRef<Path>) -> anyhow::Result<Config> {
     Ok(config)
 }
 
-fn save_config(path: impl AsRef<Path>, config: &Config) -> anyhow::Result<()> {
-    let toml_string = serde_yaml::to_string(config).context("serialize config")?;
-    fs::write(path, toml_string).context("write config file")?;
+fn save_default_config(path: impl AsRef<Path>) -> anyhow::Result<()> {
+    let default_string = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/config.yml"));
+    fs::write(path, default_string).context("write config file")?;
     Ok(())
 }

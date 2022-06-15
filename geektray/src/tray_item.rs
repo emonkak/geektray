@@ -17,18 +17,25 @@ pub struct TrayItem {
     icon: TrayIcon,
     is_selected: bool,
     is_pressed: bool,
-    font: FontDescription,
+    item_font: FontDescription,
+    selected_item_font: FontDescription,
     config: Rc<UiConfig>,
     image_cache_key: CacheKey,
 }
 
 impl TrayItem {
-    pub fn new(icon: TrayIcon, font: FontDescription, config: Rc<UiConfig>) -> Self {
+    pub fn new(
+        icon: TrayIcon,
+        item_font: FontDescription,
+        selected_item_font: FontDescription,
+        config: Rc<UiConfig>,
+    ) -> Self {
         Self {
             icon,
             is_selected: false,
             is_pressed: false,
-            font,
+            item_font,
+            selected_item_font,
             config,
             image_cache_key: CacheKey::next(),
         }
@@ -83,10 +90,7 @@ impl Widget for TrayItem {
                 self.config.selected_item_foreground,
             )
         } else {
-            (
-                self.config.normal_item_background,
-                self.config.normal_item_foreground,
-            )
+            (self.config.item_background, self.config.item_foreground)
         };
 
         let mut result = RenderOp::None;
@@ -105,10 +109,16 @@ impl Widget for TrayItem {
             result = result + RenderOp::Rect(bg_color, Rect::new(position, layout.size));
         }
 
-        let title = if self.config.show_index {
+        let title = if self.config.show_number {
             format!("{}. {}", index + 1, self.icon.title())
         } else {
             self.icon.title().to_owned()
+        };
+
+        let font = if self.is_selected {
+            self.selected_item_font.clone()
+        } else {
+            self.item_font.clone()
         };
 
         result = result
@@ -123,8 +133,8 @@ impl Widget for TrayItem {
                 },
                 Text {
                     content: title.into(),
-                    font_description: self.font.clone(),
-                    font_size: self.config.font_size,
+                    font,
+                    size: self.config.text_size,
                     horizontal_align: HorizontalAlign::Left,
                     vertical_align: VerticalAlign::Middle,
                 },

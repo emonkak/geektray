@@ -29,7 +29,7 @@ impl HotkeyInterpreter {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct Hotkey {
     keysym: Keysym,
     #[serde(default)]

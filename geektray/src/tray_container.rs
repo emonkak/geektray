@@ -22,22 +22,34 @@ pub struct TrayContainer {
     tray_items: Vec<TrayItem>,
     selected_index: Option<usize>,
     config: Rc<UiConfig>,
-    font: FontDescription,
+    item_font: FontDescription,
+    selected_item_font: FontDescription,
 }
 
 impl TrayContainer {
     pub fn new(config: Rc<UiConfig>) -> TrayContainer {
-        let font = FontDescription::new(
-            config.font_family.clone(),
-            config.font_style,
-            config.font_weight,
-            config.font_stretch,
+        let item_font = FontDescription::new(
+            config.item_font.family.clone(),
+            config.item_font.style,
+            config.item_font.weight,
+            config.item_font.stretch,
         );
+        let selected_item_font = if config.item_font == config.selected_item_font {
+            item_font.clone()
+        } else {
+            FontDescription::new(
+                config.selected_item_font.family.clone(),
+                config.selected_item_font.style,
+                config.selected_item_font.weight,
+                config.selected_item_font.stretch,
+            )
+        };
         Self {
             tray_items: Vec::new(),
             selected_index: None,
             config,
-            font,
+            item_font,
+            selected_item_font,
         }
     }
 
@@ -50,7 +62,12 @@ impl TrayContainer {
         {
             Effect::None
         } else {
-            let tray_item = TrayItem::new(icon, self.font.clone(), self.config.clone());
+            let tray_item = TrayItem::new(
+                icon,
+                self.item_font.clone(),
+                self.selected_item_font.clone(),
+                self.config.clone(),
+            );
             self.tray_items.push(tray_item);
             Effect::RequestLayout
         }
@@ -64,7 +81,12 @@ impl TrayContainer {
         {
             tray_item.update_icon(icon)
         } else {
-            let tray_item = TrayItem::new(icon, self.font.clone(), self.config.clone());
+            let tray_item = TrayItem::new(
+                icon,
+                self.item_font.clone(),
+                self.selected_item_font.clone(),
+                self.config.clone(),
+            );
             self.tray_items.push(tray_item);
             Effect::RequestLayout
         }
@@ -164,18 +186,9 @@ impl Widget for TrayContainer {
 
         result = result
             + RenderOp::Rect(
-                self.config.window_background,
+                self.config.container_background,
                 Rect::new(position, layout.size),
             );
-
-        if self.config.border_size > 0.0 {
-            result = result
-                + RenderOp::Stroke(
-                    self.config.border_color,
-                    Rect::new(position, layout.size),
-                    self.config.border_size,
-                );
-        }
 
         if self.tray_items.len() > 0 {
             for (index, (tray_item, (child_position, child_layout))) in self
@@ -189,7 +202,7 @@ impl Widget for TrayContainer {
         } else {
             result = result
                 + RenderOp::Text(
-                    self.config.window_foreground,
+                    self.config.container_foreground,
                     Rect {
                         x: position.x + self.config.container_padding,
                         y: position.y,
@@ -198,8 +211,8 @@ impl Widget for TrayContainer {
                     },
                     Text {
                         content: "No tray items found".into(),
-                        font_description: self.font.clone(),
-                        font_size: self.config.font_size,
+                        font: self.item_font.clone(),
+                        size: self.config.text_size,
                         horizontal_align: HorizontalAlign::Center,
                         vertical_align: VerticalAlign::Middle,
                     },
@@ -218,10 +231,8 @@ impl Widget for TrayContainer {
         let mut children = Vec::with_capacity(self.tray_items.len());
 
         let container_inset = Size {
-            width: container_size.width
-                - (self.config.container_padding * 2.0 + self.config.border_size * 2.0),
-            height: container_size.height
-                - (self.config.container_padding * 2.0 + self.config.border_size * 2.0),
+            width: container_size.width - (self.config.container_padding * 2.0),
+            height: container_size.height - (self.config.container_padding * 2.0),
         };
 
         for (index, tray_item) in self.tray_items.iter().enumerate() {

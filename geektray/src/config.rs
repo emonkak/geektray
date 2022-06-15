@@ -9,7 +9,7 @@ use std::str::FromStr as _;
 use crate::command::Command;
 use crate::hotkey::Hotkey;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Config {
     pub window: WindowConfig,
@@ -93,7 +93,7 @@ impl Default for Config {
                     vec![Command::SelectPreviousItem],
                 ),
                 Hotkey::new(
-                    xkb::XKB_KEY_Down,
+                    xkb::XKB_KEY_Up,
                     Modifiers::NONE,
                     vec![Command::SelectPreviousItem],
                 ),
@@ -104,13 +104,6 @@ impl Default for Config {
                 ),
                 Hotkey::new(
                     xkb::XKB_KEY_l,
-                    Modifiers::NONE,
-                    vec![Command::ClickMouseButton {
-                        button: MouseButton::Left,
-                    }],
-                ),
-                Hotkey::new(
-                    xkb::XKB_KEY_Return,
                     Modifiers::NONE,
                     vec![Command::ClickMouseButton {
                         button: MouseButton::Left,
@@ -153,7 +146,7 @@ impl Default for Config {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct WindowConfig {
     pub title: Cow<'static, str>,
@@ -175,26 +168,22 @@ impl Default for WindowConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct UiConfig {
+    pub show_number: bool,
+    pub icon_size: f64,
+    pub text_size: f64,
     pub container_padding: f64,
+    pub container_background: Color,
+    pub container_foreground: Color,
     pub item_padding: f64,
     pub item_gap: f64,
-    pub icon_size: f64,
     pub item_corner_radius: f64,
-    pub show_index: bool,
-    pub border_size: f64,
-    pub border_color: Color,
-    pub font_family: FontFamily,
-    pub font_weight: FontWeight,
-    pub font_style: FontStyle,
-    pub font_stretch: FontStretch,
-    pub font_size: f64,
-    pub window_background: Color,
-    pub window_foreground: Color,
-    pub normal_item_background: Color,
-    pub normal_item_foreground: Color,
+    pub item_font: FontConfig,
+    pub item_background: Color,
+    pub item_foreground: Color,
+    pub selected_item_font: FontConfig,
     pub selected_item_background: Color,
     pub selected_item_foreground: Color,
 }
@@ -208,27 +197,32 @@ impl UiConfig {
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
+            show_number: true,
+            icon_size: 24.0,
+            text_size: 12.0,
             container_padding: 8.0,
+            container_background: Color::from_rgb(0x21272b),
+            container_foreground: Color::from_rgb(0xe8eaeb),
             item_padding: 8.0,
             item_gap: 8.0,
             item_corner_radius: 4.0,
-            icon_size: 24.0,
-            show_index: true,
-            border_size: 0.0,
-            border_color: Color::from_rgb(0x1c95e6),
-            font_family: FontFamily::default(),
-            font_weight: FontWeight::default(),
-            font_style: FontStyle::default(),
-            font_stretch: FontStretch::default(),
-            font_size: 12.0,
-            window_background: Color::from_rgb(0x21272b),
-            window_foreground: Color::from_rgb(0xe8eaeb),
-            normal_item_background: Color::from_rgb(0x363f45),
-            normal_item_foreground: Color::from_rgb(0xe8eaeb),
+            item_font: FontConfig::default(),
+            item_background: Color::from_rgb(0x363f45),
+            item_foreground: Color::from_rgb(0xe8eaeb),
+            selected_item_font: FontConfig::default(),
             selected_item_background: Color::from_rgb(0x1c95e6),
             selected_item_foreground: Color::from_rgb(0xe8eaeb),
         }
     }
+}
+
+#[derive(Debug, Default, Eq, PartialEq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct FontConfig {
+    pub family: FontFamily,
+    pub weight: FontWeight,
+    pub style: FontStyle,
+    pub stretch: FontStretch,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -259,5 +253,20 @@ impl<'de> Deserialize<'de> for LogLevel {
             Ok(level_filter) => Ok(LogLevel(level_filter)),
             Err(error) => Err(de::Error::custom(error)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_config() {
+        let yaml_string = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/config.yml"));
+        let config: Config = serde_yaml::from_str(&yaml_string).unwrap();
+        pretty_assertions::assert_eq!(
+            config,
+            Config::default(),
+        );
     }
 }

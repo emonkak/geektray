@@ -70,10 +70,10 @@ impl App {
             visual_id,
             SystemTrayOrientation::VERTICAL,
             SystemTrayColors::new(
-                config.ui.normal_item_foreground,
-                config.ui.normal_item_foreground,
-                config.ui.normal_item_foreground,
-                config.ui.normal_item_foreground,
+                config.ui.item_foreground,
+                config.ui.item_foreground,
+                config.ui.item_foreground,
+                config.ui.item_foreground,
             ),
         )?;
 

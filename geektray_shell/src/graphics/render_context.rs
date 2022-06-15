@@ -293,8 +293,8 @@ impl RenderContext {
     }
 
     fn text(&self, color: Color, bounds: Rect, text: Text) {
-        let mut font_description = text.font_description.clone();
-        font_description.set_font_size(text.font_size * pango::PANGO_SCALE as f64);
+        let mut font = text.font.clone();
+        font.set_font_size(text.size * pango::PANGO_SCALE as f64);
 
         let layout = unsafe {
             let layout = pango::pango_layout_new(self.pango);
@@ -310,7 +310,7 @@ impl RenderContext {
                     HorizontalAlign::Right => pango::PANGO_ALIGN_RIGHT,
                 },
             );
-            pango::pango_layout_set_font_description(layout, font_description.as_mut_ptr());
+            pango::pango_layout_set_font_description(layout, font.as_mut_ptr());
             pango::pango_layout_set_text(
                 layout,
                 text.content.as_ptr() as *const c_char,
