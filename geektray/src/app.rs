@@ -189,9 +189,7 @@ impl App {
                 let modifiers = self.keyboard_state.get_modifiers();
                 let commands = self.hotkey_interpreter.eval(keysym, modifiers);
                 for command in commands {
-                    if !run_command(&mut self.window, command, context)? {
-                        break;
-                    }
+                    run_command(&mut self.window, command, context)?;
                 }
             }
             LeaveNotify(event) => {
@@ -283,22 +281,16 @@ fn run_command(
     window: &mut Window<TrayContainer>,
     command: &Command,
     context: &mut EventLoopContext,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<()> {
     match command {
         Command::HideWindow => {
             if window.is_mapped() {
                 window.hide().context("hide window")?;
-                Ok(true)
-            } else {
-                Ok(false)
             }
         }
         Command::ShowWindow => {
-            if window.is_mapped() {
-                Ok(false)
-            } else {
+            if !window.is_mapped() {
                 window.show().context("show window")?;
-                Ok(true)
             }
         }
         Command::ToggleWindow => {
@@ -307,29 +299,29 @@ fn run_command(
             } else {
                 window.show().context("show window")?;
             }
-            Ok(true)
         }
         Command::DeselectItem => {
             let effect = window.widget_mut().select_item(None);
-            Ok(window.apply_effect(effect, context)?)
+            window.apply_effect(effect, context)?;
         }
-        Command::SelectItem(index) => {
+        Command::SelectItem { index } => {
             let effect = window.widget_mut().select_item(Some(*index));
-            Ok(window.apply_effect(effect, context)?)
+            window.apply_effect(effect, context)?;
         }
         Command::SelectNextItem => {
             let effect = window.widget_mut().select_next_item();
-            Ok(window.apply_effect(effect, context)?)
+            window.apply_effect(effect, context)?;
         }
         Command::SelectPreviousItem => {
             let effect = window.widget_mut().select_previous_item();
-            Ok(window.apply_effect(effect, context)?)
+            window.apply_effect(effect, context)?;
         }
-        Command::ClickMouseButton(button) => {
+        Command::ClickMouseButton { button } => {
             let effect = window.widget_mut().click_selected_item(*button);
-            Ok(window.apply_effect(effect, context)?)
+            window.apply_effect(effect, context)?;
         }
     }
+    Ok(())
 }
 
 fn setup_xkb_extension(connection: &XCBConnection) -> anyhow::Result<()> {

@@ -29,47 +29,47 @@ impl Default for Config {
                 Hotkey::new(
                     xkb::XKB_KEY_1,
                     Modifiers::NONE,
-                    vec![Command::SelectItem(0)],
+                    vec![Command::SelectItem { index: 0 }],
                 ),
                 Hotkey::new(
                     xkb::XKB_KEY_2,
                     Modifiers::NONE,
-                    vec![Command::SelectItem(1)],
+                    vec![Command::SelectItem { index: 1 }],
                 ),
                 Hotkey::new(
                     xkb::XKB_KEY_3,
                     Modifiers::NONE,
-                    vec![Command::SelectItem(2)],
+                    vec![Command::SelectItem { index: 2 }],
                 ),
                 Hotkey::new(
                     xkb::XKB_KEY_4,
                     Modifiers::NONE,
-                    vec![Command::SelectItem(3)],
+                    vec![Command::SelectItem { index: 3 }],
                 ),
                 Hotkey::new(
                     xkb::XKB_KEY_5,
                     Modifiers::NONE,
-                    vec![Command::SelectItem(4)],
+                    vec![Command::SelectItem { index: 4 }],
                 ),
                 Hotkey::new(
                     xkb::XKB_KEY_6,
                     Modifiers::NONE,
-                    vec![Command::SelectItem(5)],
+                    vec![Command::SelectItem { index: 5 }],
                 ),
                 Hotkey::new(
                     xkb::XKB_KEY_7,
                     Modifiers::NONE,
-                    vec![Command::SelectItem(6)],
+                    vec![Command::SelectItem { index: 6 }],
                 ),
                 Hotkey::new(
                     xkb::XKB_KEY_8,
                     Modifiers::NONE,
-                    vec![Command::SelectItem(7)],
+                    vec![Command::SelectItem { index: 7 }],
                 ),
                 Hotkey::new(
                     xkb::XKB_KEY_9,
                     Modifiers::NONE,
-                    vec![Command::SelectItem(8)],
+                    vec![Command::SelectItem { index: 8 }],
                 ),
                 Hotkey::new(xkb::XKB_KEY_0, Modifiers::NONE, vec![Command::DeselectItem]),
                 Hotkey::new(
@@ -105,27 +105,37 @@ impl Default for Config {
                 Hotkey::new(
                     xkb::XKB_KEY_l,
                     Modifiers::NONE,
-                    vec![Command::ClickMouseButton(MouseButton::Left)],
+                    vec![Command::ClickMouseButton {
+                        button: MouseButton::Left,
+                    }],
                 ),
                 Hotkey::new(
                     xkb::XKB_KEY_Return,
                     Modifiers::NONE,
-                    vec![Command::ClickMouseButton(MouseButton::Left)],
+                    vec![Command::ClickMouseButton {
+                        button: MouseButton::Left,
+                    }],
                 ),
                 Hotkey::new(
                     xkb::XKB_KEY_Return,
                     Modifiers::NONE,
-                    vec![Command::ClickMouseButton(MouseButton::Left)],
+                    vec![Command::ClickMouseButton {
+                        button: MouseButton::Left,
+                    }],
                 ),
                 Hotkey::new(
                     xkb::XKB_KEY_h,
                     Modifiers::NONE,
-                    vec![Command::ClickMouseButton(MouseButton::Right)],
+                    vec![Command::ClickMouseButton {
+                        button: MouseButton::Right,
+                    }],
                 ),
                 Hotkey::new(
                     xkb::XKB_KEY_Return,
                     Modifiers::SHIFT,
-                    vec![Command::ClickMouseButton(MouseButton::Right)],
+                    vec![Command::ClickMouseButton {
+                        button: MouseButton::Right,
+                    }],
                 ),
                 Hotkey::new(xkb::XKB_KEY_q, Modifiers::NONE, vec![Command::HideWindow]),
                 Hotkey::new(

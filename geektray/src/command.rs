@@ -8,8 +8,8 @@ pub enum Command {
     ShowWindow,
     ToggleWindow,
     DeselectItem,
-    SelectItem(usize),
+    SelectItem { index: usize },
     SelectNextItem,
     SelectPreviousItem,
-    ClickMouseButton(MouseButton),
+    ClickMouseButton { button: MouseButton },
 }
