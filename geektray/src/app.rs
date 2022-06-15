@@ -174,7 +174,11 @@ impl App {
 
         match event {
             FocusOut(event) => {
-                if event.mode == xproto::NotifyMode::NORMAL && event.event == self.window.id() {
+                if self.window_config.auto_close
+                    && event.mode == xproto::NotifyMode::NORMAL
+                    && event.detail == xproto::NotifyDetail::NONLINEAR
+                    && event.event == self.window.id()
+                {
                     self.window.hide().context("hide window")?;
                 }
             }
@@ -194,11 +198,9 @@ impl App {
             }
             LeaveNotify(event) => {
                 if self.window_config.auto_close
+                    && event.mode == xproto::NotifyMode::NORMAL
+                    && event.detail == xproto::NotifyDetail::ANCESTOR
                     && event.event == self.window.id()
-                    && matches!(
-                        event.detail,
-                        xproto::NotifyDetail::ANCESTOR | xproto::NotifyDetail::NONLINEAR
-                    )
                 {
                     self.window.hide().context("hide window")?;
                 }
