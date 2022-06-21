@@ -2,7 +2,6 @@ extern crate geektray;
 extern crate simple_logger;
 
 use anyhow::Context as _;
-use clap::Parser;
 use simple_logger::SimpleLogger;
 use std::env;
 use std::fs;
@@ -10,20 +9,24 @@ use std::path::{Path, PathBuf};
 
 use geektray::{App, Config};
 
-#[derive(Parser, Debug)]
-#[clap(
-    version,
-    term_width = 0,
-    help_template = "{before-help}{usage-heading}\n    {usage}\n\n{all-args}{after-help}"
-)]
+const HELP: &'static str = "\
+USAGE:
+  geektray [OPTIONS]
+
+OPTIONS:
+  -c, --config <CONFIG>  a path to the alternative config file [Default: $XDG_CONFIG_HOME/geektray/config.yml]
+  -h, --help             Print help information
+  -V, --version          Print version information
+";
+
+#[derive(Debug)]
 struct Args {
-    /// a path to the alternative config file [Default: $XDG_CONFIG_HOME/geektray/config.yml]
-    #[clap(short, long, value_parser)]
     config: Option<String>,
 }
 
 fn main() -> anyhow::Result<()> {
-    let args = Args::parse();
+    let args = parse_args().context("parse args")?;
+
     let config = match args.config.map(PathBuf::from).or_else(get_config_path) {
         Some(path) => {
             if path.exists() {
@@ -42,6 +45,24 @@ fn main() -> anyhow::Result<()> {
     let mut app = App::new(config)?;
     app.run()?;
     Ok(())
+}
+
+fn parse_args() -> Result<Args, pico_args::Error> {
+    let mut pargs = pico_args::Arguments::from_env();
+
+    if pargs.contains(["-h", "--help"]) {
+        print!("{}", HELP);
+        std::process::exit(0);
+    }
+
+    if pargs.contains(["-V", "--version"]) {
+        println!("geektray v{}", env!("CARGO_PKG_VERSION"));
+        std::process::exit(0);
+    }
+
+    Ok(Args {
+        config: pargs.opt_value_from_str(["-c", "--config"])?,
+    })
 }
 
 fn get_config_path() -> Option<PathBuf> {

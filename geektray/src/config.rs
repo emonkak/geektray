@@ -264,9 +264,6 @@ mod tests {
     fn test_default_config() {
         let yaml_string = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/config.yml"));
         let config: Config = serde_yaml::from_str(&yaml_string).unwrap();
-        pretty_assertions::assert_eq!(
-            config,
-            Config::default(),
-        );
+        pretty_assertions::assert_eq!(config, Config::default(),);
     }
 }
