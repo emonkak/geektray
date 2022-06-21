@@ -54,7 +54,7 @@ GeekTray does not show any window on the screen when started for the first time.
 | <kbd>j</kbd>                      | Select next item                  |        |
 | <kbd>Down</kbd>                   | Select next item                  |        |
 | <kbd>Ctrl + n</kbd>               | Select next item                  |        |
-| <kbd>k</kbd>                      | Select next item                  |        |
+| <kbd>k</kbd>                      | Select previous item              |        |
 | <kbd>Up</kbd>                     | Select previous item              |        |
 | <kbd>Ctrl + p</kbd>               | Select previous item              |        |
 | <kbd>l</kbd>                      | Emit left click to selected item  |        |
