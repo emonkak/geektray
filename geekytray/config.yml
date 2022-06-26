@@ -1,12 +1,12 @@
 window:
   # The title of the application window.
-  title: GeekTray
+  title: GeekyTray
 
   # The particular instance name of the application.
-  instance_name: GeekTray
+  instance_name: GeekyTray
 
   # The general class name of the application.
-  class_name: GeekTray
+  class_name: GeekyTray
 
   # The width of the application window in pixels.
   width: 480.0
@@ -131,7 +131,7 @@ ui:
 #   The list of commands that are executed by a hotkey. Possible commands are in
 #   the following URL:
 #
-#     https://github.com/emonkak/geektray/blob/master/geektray/src/command.rs
+#     https://github.com/emonkak/geekytray/blob/master/geekytray/src/command.rs
 #
 #   e.g.
 #     { type: SelectItem, params: { index: 0 } }

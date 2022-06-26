@@ -1,4 +1,4 @@
-use geektray_shell::graphics::Color;
+use geekytray_shell::graphics::Color;
 use std::collections::hash_map;
 use std::collections::HashMap;
 use std::mem;

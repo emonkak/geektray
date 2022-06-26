@@ -1,10 +1,10 @@
-# GeekTray
+# GeekyTray
 
-![CI Status](https://github.com/emonkak/geektray/actions/workflows/ci.yml/badge.svg)
+![CI Status](https://github.com/emonkak/geekytray/actions/workflows/ci.yml/badge.svg)
 
 ![Screenshot](extras/screenshot.png)
 
-GeekTray is a freedesktop.org system tray implementation for X11, but it provides a keyboard based UI that is unlike general system tray implementaions. So it has better interoperability with a tiling window manager.
+GeekyTray is a freedesktop.org system tray implementation for X11, but it provides a keyboard based UI that is unlike general system tray implementaions. So it has better interoperability with a tiling window manager.
 
 ## Features
 
@@ -18,7 +18,7 @@ GeekTray is a freedesktop.org system tray implementation for X11, but it provide
 
 - **Lightweight GUI implementation**
 
-    GeekTray is a lightweight GUI implementaion written by Rust, which don't use any GUI toolkit such as GTK. There is only the dependencies of some low-level libraries.
+    GeekyTray is a lightweight GUI implementaion written by Rust, which don't use any GUI toolkit such as GTK. There is only the dependencies of some low-level libraries.
 
 ## Requirements
 
@@ -29,11 +29,11 @@ GeekTray is a freedesktop.org system tray implementation for X11, but it provide
 
 ## Installations
 
-You can download the binary for Linux/amd64 from the [release page](https://github.com/emonkak/geektray/releases).
+You can download the binary for Linux/amd64 from the [release page](https://github.com/emonkak/geekytray/releases).
 
 ## Usage
 
-GeekTray does not show any window on the screen when started for the first time. To show the window, you should use the hotkey for it (Default: <kbd>Super + Backquote(\`)</kbd>).
+GeekyTray does not show any window on the screen when started for the first time. To show the window, you should use the hotkey for it (Default: <kbd>Super + Backquote(\`)</kbd>).
 
 ### Default Hotkeys
 
@@ -64,7 +64,7 @@ GeekTray does not show any window on the screen when started for the first time.
 
 ## Configuration
 
-You can customize the hotkeys and more by the configuration file. It is available in `$XDG_CONFIG_HOME/geektray/geektray.yml`. The configuration file is generated when GeekTray started for the first time.
+You can customize the hotkeys and more by the configuration file. It is available in `$XDG_CONFIG_HOME/geekytray/geekytray.yml`. The configuration file is generated when geekytray started for the first time.
 
 ## Known Bugs
 
