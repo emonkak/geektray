@@ -58,7 +58,7 @@ ui:
 
   # The Font of text on the item.
   item_font:
-    # The name of font family
+    # The name of font family.
     family: Sans
 
     # The number representing the font weight such as `400` (Regular) or
