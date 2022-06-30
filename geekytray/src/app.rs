@@ -1,5 +1,7 @@
 use anyhow::{anyhow, Context as _};
-use geekytray_shell::event::{ControlFlow, Event, EventLoop, EventLoopContext, KeyState, Modifiers};
+use geekytray_shell::event::{
+    ControlFlow, Event, EventLoop, EventLoopContext, KeyState, Modifiers,
+};
 use geekytray_shell::geometrics::Size;
 use geekytray_shell::window::Window;
 use geekytray_shell::xkb;
