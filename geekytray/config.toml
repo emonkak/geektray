@@ -1,0 +1,236 @@
+# The level of log that the application output to the standard output.
+log_level = "ERROR"
+
+[window]
+# The title of the application window.
+title = "GeekyTray"
+
+# The particular instance name of the application.
+instance_name = "GeekyTray"
+
+# The general class name of the application.
+class_name = "GeekyTray"
+
+# The width of the application window in pixels.
+width = 480.0
+
+# Whether to close the window when the focus was out of the window.
+auto_close = true
+
+# UI Visual:
+# .------------------------------------.
+# | Container                          |
+# | .--------------------------------. |
+# | | [Icon] 1. Item                 | |
+# | '--------------------------------' |
+# | .--------------------------------. |
+# | | [Icon] 2. Item                 | |
+# | '--------------------------------' |
+# | .--------------------------------. |
+# | | [Icon] 3. Item                 | |
+# | '--------------------------------' |
+# '------------------------------------'
+[ui]
+# Whether to show the number for each items.
+show_index = true
+
+# The size of an icon on the item in pixels.
+icon_size = 24.0
+
+# The size of a text for the whole application window UI in pixels.
+text_size = 12.0
+
+# The color for a background on the container. It can be specified by string
+# such as `#RRGGBB` or `#RRGGBBAA`.
+container_background = "#21272b"
+
+# The color for text on the tray container.
+container_foreground = "#e8eaeb"
+
+# The spaces in pixels added around the tray container.
+container_padding = 8.0
+
+# The space added around the item in pixels.
+item_padding = 8.0
+
+# The vertical space between items.
+item_gap = 8.0
+
+# The radius of the item's four corners window
+item_corner_radius = 4.0
+
+# The color of the item background.
+item_background = "#363f45"
+
+# The color of the item background.
+item_foreground = "#e8eaeb"
+
+# The color of the selected item background.
+selected_item_background = "#1c95e6"
+
+# The color of the selected item text.
+selected_item_foreground = "#e8eaeb"
+
+# The Font of text on the item.
+[ui.item_font]
+# The name of font family.
+family = "Sans"
+
+# The number representing the font weight such as `400` (Regular) or
+# `700` (Bold).
+weight = 400
+
+# The string representing the font style. The possible values are:
+#   - Normal
+#   - Itelic
+#   - Oblique
+style = "Normal"
+
+# The string representing the font width. The possible values are:
+#   - UltraCondensed
+#   - ExtraCondensed
+#   - Condensed
+#   - SemiCondensed
+#   - Normal
+#   - SemiExpanded
+#   - Expanded
+#   - ExtraExpanded
+#   - UltraExpanded
+stretch = "Normal"
+
+# The Font of text on the selected item.
+[ui.selected_item_font]
+family = "Sans"
+weight = 400
+style = "Normal"
+stretch = "Normal"
+
+# Those keys are only enabled when the application window has focus.
+#
+# The following properties can be specified for the hotkey:
+#
+# - keysym: String
+#
+#   The string representing the key symbol. A substring from a definition
+#   starting after "XK_" of the following header is it.
+#
+#   https://cgit.freedesktop.org/xorg/proto/x11proto/tree/keysymdef.h
+#
+# - modifiers: [Modifiers]
+#
+#   The boolean value properties representing the modifier keys. The possible
+#   keys are:
+#     - control
+#     - shift
+#     - alt
+#     - super
+#     - caps_lock
+#     - num_lock
+#
+#   e.g.
+#     { control = true, shift = true }
+#
+# - commands: [Command]
+#   The list of commands that are executed by a hotkey. Possible commands are in
+#   the following URL:
+#
+#     https://github.com/emonkak/geekytray/blob/master/geekytray/src/command.rs
+#
+#   e.g.
+#     { type = SelectItem, params = { index = 0 } }
+[[hotkeys]]
+keysym = "1"
+commands = [{ type = "SelectItem", params = { index = 0 } }]
+
+[[hotkeys]]
+keysym = "2"
+commands = [{ type = "SelectItem", params = { index = 1 } }]
+
+[[hotkeys]]
+keysym = "3"
+commands = [{ type = "SelectItem", params = { index = 2 } }]
+
+[[hotkeys]]
+keysym = "4"
+commands = [{ type = "SelectItem", params = { index = 3 } }]
+
+[[hotkeys]]
+keysym = "5"
+commands = [{ type = "SelectItem", params = { index = 4 } }]
+
+[[hotkeys]]
+keysym = "6"
+commands = [{ type = "SelectItem", params = { index = 5 } }]
+
+[[hotkeys]]
+keysym = "7"
+commands = [{ type = "SelectItem", params = { index = 6 } }]
+
+[[hotkeys]]
+keysym = "8"
+commands = [{ type = "SelectItem", params = { index = 7 } }]
+
+[[hotkeys]]
+keysym = "9"
+commands = [{ type = "SelectItem", params = { index = 8 } }]
+
+[[hotkeys]]
+keysym = "0"
+commands = [{ type = "DeselectItem" }]
+
+[[hotkeys]]
+keysym = "j"
+commands = [{ type = "SelectNextItem" }]
+
+[[hotkeys]]
+keysym = "Down"
+commands = [{ type = "SelectNextItem" }]
+
+[[hotkeys]]
+keysym = "n"
+modifiers = { control = true }
+commands = [{ type = "SelectNextItem" }]
+
+[[hotkeys]]
+keysym = "k"
+commands = [{ type = "SelectPreviousItem" }]
+
+[[hotkeys]]
+keysym = "Up"
+commands = [{ type = "SelectPreviousItem" }]
+
+[[hotkeys]]
+keysym = "p"
+modifiers = { control = true }
+commands = [{ type = "SelectPreviousItem" }]
+
+[[hotkeys]]
+keysym = "l"
+commands = [{ type = "ClickMouseButton", params = { button = "Left" } }]
+
+[[hotkeys]]
+keysym = "Return"
+commands = [{ type = "ClickMouseButton", params = { button = "Left" } }]
+
+[[hotkeys]]
+keysym = "h"
+commands = [{ type = "ClickMouseButton", params = { button = "Right" } }]
+
+[[hotkeys]]
+keysym = "Return"
+modifiers = { shift = true }
+commands = [{ type = "ClickMouseButton", params = { button = "Right" } }]
+
+[[hotkeys]]
+keysym = "q"
+commands = [{ type = "HideWindow" }]
+
+[[hotkeys]]
+keysym = "Escape"
+commands = [{ type = "HideWindow" }]
+
+# Those keys are always enabled whether or not the application window has focus.
+[[global_hotkeys]]
+keysym = "grave"
+modifiers = { super = true }
+commands = [{ type = "ToggleWindow" }]

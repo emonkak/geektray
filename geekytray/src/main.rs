@@ -69,18 +69,18 @@ fn get_config_path() -> Option<PathBuf> {
     env::var("XDG_CONFIG_HOME")
         .map(|config_dir| Path::new(&config_dir).to_path_buf())
         .or_else(|_| env::var("HOME").map(|home_dir| Path::new(&home_dir).join(".config")))
-        .map(|config_dir| config_dir.join("geekytray").join("config.yaml"))
+        .map(|config_dir| config_dir.join("geekytray").join("config.toml"))
         .ok()
 }
 
 fn load_config(path: impl AsRef<Path>) -> anyhow::Result<Config> {
-    let yaml_string = fs::read_to_string(path).context("read config file")?;
-    let config: Config = serde_yaml::from_str(&yaml_string).context("parse config file")?;
+    let toml_string = fs::read_to_string(path).context("read config file")?;
+    let config: Config = toml::from_str(&toml_string).context("parse config file")?;
     Ok(config)
 }
 
 fn save_default_config(path: impl AsRef<Path>) -> anyhow::Result<()> {
-    let default_string = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/config.yml"));
+    let default_string = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/config.toml"));
     fs::write(path, default_string).context("write config file")?;
     Ok(())
 }

@@ -262,8 +262,8 @@ mod tests {
 
     #[test]
     fn test_default_config() {
-        let yaml_string = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/config.yml"));
-        let config: Config = serde_yaml::from_str(&yaml_string).unwrap();
-        pretty_assertions::assert_eq!(config, Config::default(),);
+        let toml_string = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/config.toml"));
+        let config: Result<Config, _> = toml::from_str(&toml_string);
+        pretty_assertions::assert_eq!(config, Ok(Config::default()));
     }
 }

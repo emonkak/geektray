@@ -64,7 +64,7 @@ GeekyTray does not show any window on the screen when started for the first time
 
 ## Configuration
 
-You can customize the hotkeys and more by the configuration file. It is available in `$XDG_CONFIG_HOME/geekytray/geekytray.yml`. The configuration file is generated when geekytray started for the first time.
+You can customize the hotkeys and more by the configuration file. It is available in `$XDG_CONFIG_HOME/geekytray/config.toml`. The configuration file is generated when geekytray started for the first time.
 
 ## Known Bugs
 
