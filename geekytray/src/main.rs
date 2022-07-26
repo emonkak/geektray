@@ -24,8 +24,28 @@ struct Args {
     config: Option<String>,
 }
 
+impl Args {
+    fn parse_from_env() -> Result<Self, pico_args::Error> {
+        let mut pargs = pico_args::Arguments::from_env();
+
+        if pargs.contains(["-h", "--help"]) {
+            print!("{}", HELP);
+            std::process::exit(0);
+        }
+
+        if pargs.contains(["-V", "--version"]) {
+            println!("geekytray v{}", env!("CARGO_PKG_VERSION"));
+            std::process::exit(0);
+        }
+
+        Ok(Self {
+            config: pargs.opt_value_from_str(["-c", "--config"])?,
+        })
+    }
+}
+
 fn main() -> anyhow::Result<()> {
-    let args = parse_args().context("parse args")?;
+    let args = Args::parse_from_env().context("parse args")?;
 
     let config = match args.config.map(PathBuf::from).or_else(get_config_path) {
         Some(path) => {
@@ -45,24 +65,6 @@ fn main() -> anyhow::Result<()> {
     let mut app = App::new(config)?;
     app.run()?;
     Ok(())
-}
-
-fn parse_args() -> Result<Args, pico_args::Error> {
-    let mut pargs = pico_args::Arguments::from_env();
-
-    if pargs.contains(["-h", "--help"]) {
-        print!("{}", HELP);
-        std::process::exit(0);
-    }
-
-    if pargs.contains(["-V", "--version"]) {
-        println!("geekytray v{}", env!("CARGO_PKG_VERSION"));
-        std::process::exit(0);
-    }
-
-    Ok(Args {
-        config: pargs.opt_value_from_str(["-c", "--config"])?,
-    })
 }
 
 fn get_config_path() -> Option<PathBuf> {
