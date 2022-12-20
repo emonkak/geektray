@@ -33,34 +33,34 @@ You can download the binary for Linux/amd64 from the [release page](https://gith
 
 ## Usage
 
-GeekyTray does not show any window on the screen when started for the first time. To show the window, you should use the hotkey for it (Default: <kbd>Super + Backquote(\`)</kbd>).
+GeekyTray does not show any window on the screen when started for the first time. To show the window, you should use the hotkey for it (Default: <kbd>Super</kbd> + <kbd>\`</kbd>).
 
 ### Default Hotkeys
 
-| Key                               | Command                           | Global |
-| --------------------------------- | --------------------------------- | ------ |
-| <kbd>Super + Backquote(\`)</kbd>  | Toggle window                     | ✅     |
-| <kbd>q</kbd>                      | Hide window                       |        |
-| <kbd>Escape</kbd>                 | Hide window                       |        |
-| <kbd>1</kbd>                      | Select 1st item                   |        |
-| <kbd>2</kbd>                      | Select 2nd item                   |        |
-| <kbd>3</kbd>                      | Select 3rd item                   |        |
-| <kbd>4</kbd>                      | Select 4st item                   |        |
-| <kbd>5</kbd>                      | Select 5st item                   |        |
-| <kbd>6</kbd>                      | Select 6st item                   |        |
-| <kbd>7</kbd>                      | Select 7st item                   |        |
-| <kbd>8</kbd>                      | Select 8st item                   |        |
-| <kbd>9</kbd>                      | Select 9st item                   |        |
-| <kbd>j</kbd>                      | Select next item                  |        |
-| <kbd>Down</kbd>                   | Select next item                  |        |
-| <kbd>Ctrl + n</kbd>               | Select next item                  |        |
-| <kbd>k</kbd>                      | Select previous item              |        |
-| <kbd>Up</kbd>                     | Select previous item              |        |
-| <kbd>Ctrl + p</kbd>               | Select previous item              |        |
-| <kbd>l</kbd>                      | Emit left click to selected item  |        |
-| <kbd>Return</kbd>                 | Emit left click to selected item  |        |
-| <kbd>h</kbd>                      | Emit right click to selected item |        |
-| <kbd>Shift + Return</kbd>         | Emit right click to selected item |        |
+| Key                                  | Command                           | Global |
+| ------------------------------------ | --------------------------------- | ------ |
+| <kbd>Super</kbd> + <kbd>\`</kbd>     | Toggle window                     | ✅     |
+| <kbd>Q</kbd>                         | Hide window                       |        |
+| <kbd>Escape</kbd>                    | Hide window                       |        |
+| <kbd>1</kbd>                         | Select 1st item                   |        |
+| <kbd>2</kbd>                         | Select 2nd item                   |        |
+| <kbd>3</kbd>                         | Select 3rd item                   |        |
+| <kbd>4</kbd>                         | Select 4st item                   |        |
+| <kbd>5</kbd>                         | Select 5st item                   |        |
+| <kbd>6</kbd>                         | Select 6st item                   |        |
+| <kbd>7</kbd>                         | Select 7st item                   |        |
+| <kbd>8</kbd>                         | Select 8st item                   |        |
+| <kbd>9</kbd>                         | Select 9st item                   |        |
+| <kbd>J</kbd>                         | Select next item                  |        |
+| <kbd>Down</kbd>                      | Select next item                  |        |
+| <kbd>Ctrl</kbd> + <kbd>N</kbd>       | Select next item                  |        |
+| <kbd>K</kbd>                         | Select previous item              |        |
+| <kbd>Up</kbd>                        | Select previous item              |        |
+| <kbd>Ctrl</kbd> + <kbd>P</kbd>       | Select previous item              |        |
+| <kbd>L</kbd>                         | Emit left click to selected item  |        |
+| <kbd>Return</kbd>                    | Emit left click to selected item  |        |
+| <kbd>H</kbd>                         | Emit right click to selected item |        |
+| <kbd>Shift</kbd> + <kbd>Return</kbd> | Emit right click to selected item |        |
 
 ## Configuration
 
