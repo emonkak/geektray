@@ -185,11 +185,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "geekytray"
+name = "geektray"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "geekytray_shell",
+ "geektray_shell",
  "log",
  "nix 0.23.1",
  "pico-args",
@@ -201,7 +201,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "geekytray_shell"
+name = "geektray_shell"
 version = "0.1.0"
 dependencies = [
  "anyhow",

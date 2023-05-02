@@ -1,5 +1,5 @@
 [package]
-name = "geekytray"
+name = "geektray"
 description = "A keyboard based freedesktop.org system tray implementation for X11"
 license = "MIT"
 version = "0.1.0"
@@ -19,5 +19,5 @@ x11rb = { version = "0.9", features = ["allow-unsafe-code", "composite", "damage
 [dev-dependencies]
 pretty_assertions = "1.2.1"
 
-[dependencies.geekytray_shell]
-path = "../geekytray_shell"
+[dependencies.geektray_shell]
+path = "../geektray_shell"

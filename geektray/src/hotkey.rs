@@ -1,4 +1,4 @@
-use geekytray_shell::event::{Keysym, Modifiers};
+use geektray_shell::event::{Keysym, Modifiers};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

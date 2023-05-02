@@ -1,6 +1,6 @@
-use geekytray_shell::event::{Modifiers, MouseButton};
-use geekytray_shell::graphics::{Color, FontFamily, FontStretch, FontStyle, FontWeight};
-use geekytray_shell::xkbcommon_sys as xkb;
+use geektray_shell::event::{Modifiers, MouseButton};
+use geektray_shell::graphics::{Color, FontFamily, FontStretch, FontStyle, FontWeight};
+use geektray_shell::xkbcommon_sys as xkb;
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Cow;
@@ -159,9 +159,9 @@ pub struct WindowConfig {
 impl Default for WindowConfig {
     fn default() -> Self {
         Self {
-            title: Cow::Borrowed("GeekyTray"),
-            instance_name: Cow::Borrowed("GeekyTray"),
-            class_name: Cow::Borrowed("GeekyTray"),
+            title: Cow::Borrowed("GeekTray"),
+            instance_name: Cow::Borrowed("GeekTray"),
+            class_name: Cow::Borrowed("GeekTray"),
             width: 480.0,
             auto_close: true,
         }

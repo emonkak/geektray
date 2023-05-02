@@ -1,5 +1,5 @@
 [package]
-name = "geekytray_shell"
+name = "geektray_shell"
 version = "0.1.0"
 authors = ["Shota Nozaki <emonkak@gmail.com>"]
 license = "MIT"

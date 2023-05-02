@@ -1,9 +1,9 @@
-use geekytray_shell::event::MouseButton;
-use geekytray_shell::geometrics::{PhysicalPoint, Point, Rect, Size};
-use geekytray_shell::graphics::{
+use geektray_shell::event::MouseButton;
+use geektray_shell::geometrics::{PhysicalPoint, Point, Rect, Size};
+use geektray_shell::graphics::{
     CacheKey, FontDescription, HorizontalAlign, RenderContext, RenderOp, Text, VerticalAlign,
 };
-use geekytray_shell::window::{Effect, Layout, Widget};
+use geektray_shell::window::{Effect, Layout, Widget};
 use std::rc::Rc;
 use x11rb::protocol;
 use x11rb::protocol::xproto;

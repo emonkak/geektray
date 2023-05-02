@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "geekytray",
-    "geekytray_shell",
+    "geektray",
+    "geektray_shell",
 ]
 resolver = "2"

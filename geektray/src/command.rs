@@ -1,4 +1,4 @@
-use geekytray_shell::event::MouseButton;
+use geektray_shell::event::MouseButton;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
