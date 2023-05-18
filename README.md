@@ -2,6 +2,8 @@
 
 ![CI Status](https://github.com/emonkak/geektray/actions/workflows/ci.yml/badge.svg)
 
+![Screenshot](extras/screenshot.png)
+
 GeekTray is a freedesktop.org system tray implementation for X11, but it provides a keyboard based UI that is unlike general system tray implementaions. So it has better interoperability with a tiling window manager.
 
 ## Features
