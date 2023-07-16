@@ -2,19 +2,19 @@
 
 ![CI Status](https://github.com/emonkak/geektray/actions/workflows/ci.yml/badge.svg)
 
-![Screenshot](extras/screenshot.png)
+![Screenshot](extra/screenshot.png)
 
-GeekTray is a freedesktop.org system tray implementation for X11, but it provides a keyboard based UI that is unlike general system tray implementaions. So it has better interoperability with a tiling window manager.
+GeekTray is a yet another freedesktop.org system tray implementation for X11. It provides a keyboard-oriented UI that is higher affinity for tiling window managers.
 
 ## Features
 
-- **Keyboard based UI**
+- **Keyboard-oriented UI**
 
-    All of the features are accessible both from a mouse and a keyboard.
+    All of the actions are accessible both from a mouse and a keyboard.
 
 - **Fully customizable**
 
-    All of the hotkeys and the UI styling are fully customizable by the configuration file.
+    All of the key bindings and the UI styling are fully customizable by the configuration file.
 
 - **Lightweight GUI implementation**
 
@@ -33,11 +33,11 @@ You can download the binary for Linux/amd64 from the [release page](https://gith
 
 ## Usage
 
-GeekTray does not show any window on the screen when started for the first time. To show the window, you should use the hotkey for it (Default: <kbd>Super</kbd> + <kbd>\`</kbd>).
+GeekTray does not show any window on the screen when started for the first time. To show the window, you must use the key binding for it (Default: <kbd>Super</kbd> + <kbd>\`</kbd>).
 
 ### Default Hotkeys
 
-| Key                                  | Command                           | Global |
+| Key                                  | Action                            | Global |
 | ------------------------------------ | --------------------------------- | ------ |
 | <kbd>Super</kbd> + <kbd>\`</kbd>     | Toggle window                     | ✅     |
 | <kbd>Q</kbd>                         | Hide window                       |        |
@@ -64,7 +64,7 @@ GeekTray does not show any window on the screen when started for the first time.
 
 ## Configuration
 
-You can customize the hotkeys and more by the configuration file. It is available in `$XDG_CONFIG_HOME/geektray/config.toml`. The configuration file is generated when geektray started for the first time.
+You can customize the key bindings and more by the configuration file. It is available in `$XDG_CONFIG_HOME/geektray/config.toml`. The configuration file is generated when geektray started for the first time.
 
 ## Known Bugs
 
@@ -72,7 +72,7 @@ You can customize the hotkeys and more by the configuration file. It is availabl
 
 The tray icon window created by Wine isn't set a title. Additionally, The process that created window is not the application itself, but exeplorer.exe. So we can't get any information for the tray icon.
 
-There is the [patch](https://gist.github.com/emonkak/1033cfc3f20bd435c5ac3c394205b2c9) for Wine to work-around this issue.
+There is the [patch](https://github.com/emonkak/config/blob/master/gentoo/etc/portage/patches/app-emulation/wine-vanilla/systray-icon-title.patch) for Wine to work-around this issue.
 
 ## FAQ
 

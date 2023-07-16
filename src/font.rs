@@ -1,3 +1,4 @@
+use pango_sys as pango;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::convert::TryFrom;
@@ -6,14 +7,12 @@ use std::ffi::CString;
 use std::fmt;
 use std::os::raw::*;
 
-use pango_sys as pango;
-
 #[derive(Debug)]
 pub struct FontDescription(*mut pango::PangoFontDescription);
 
 impl FontDescription {
     pub fn new(
-        family: FontFamily,
+        family: &FontFamily,
         style: FontStyle,
         weight: FontWeight,
         stretch: FontStretch,

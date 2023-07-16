@@ -1,6 +1,28 @@
-[workspace]
-members = [
-    "geektray",
-    "geektray_shell",
-]
-resolver = "2"
+[package]
+name = "geektray"
+description = "A keyboard-oriented freedesktop.org system tray implementation for X11"
+license = "MIT"
+version = "0.2.0"
+authors = ["Shota Nozaki <emonkak@gmail.com>"]
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0"
+cairo-sys-rs = { version = "0.18.0", features = ["xcb"] }
+gobject-sys = "0.18"
+log = "0.4"
+nix = "0.26"
+pango-sys = "0.18"
+pangocairo-sys = "0.18"
+pico-args = "0.5"
+serde = { version = "1.0", features = ["derive"] }
+simple_logger = "4.0"
+toml = "0.7"
+x11rb = { version = "0.12", features = ["allow-unsafe-code", "xkb"] }
+
+[dev-dependencies]
+pretty_assertions = "1.4"
+
+[build-dependencies]
+bindgen = "0.66"
+pkg-config = "0.3"

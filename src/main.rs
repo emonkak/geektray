@@ -1,13 +1,11 @@
 extern crate geektray;
-extern crate simple_logger;
 
 use anyhow::Context as _;
+use geektray::{App, Config};
 use simple_logger::SimpleLogger;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-
-use geektray::{App, Config};
 
 const HELP: &'static str = "\
 USAGE:

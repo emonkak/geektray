@@ -14,6 +14,20 @@ pub struct Color {
 }
 
 impl Color {
+    pub const WHITE: Self = Self {
+        red: 255,
+        green: 255,
+        blue: 255,
+        alpha: 255,
+    };
+
+    pub const BLACK: Self = Self {
+        red: 0,
+        green: 0,
+        blue: 0,
+        alpha: 255,
+    };
+
     pub const fn new(red: u8, green: u8, blue: u8, alpha: u8) -> Self {
         Self {
             red,
@@ -43,7 +57,7 @@ impl Color {
         }
     }
 
-    pub fn to_u16_rgba(&self) -> [u16; 4] {
+    pub const fn to_u16_components(&self) -> [u16; 4] {
         let r = self.red as u16;
         let g = self.green as u16;
         let b = self.blue as u16;
@@ -51,7 +65,7 @@ impl Color {
         [r << 8 | r, g << 8 | g, b << 8 | b, a << 8 | a]
     }
 
-    pub fn to_f64_rgba(&self) -> [f64; 4] {
+    pub fn to_f64_components(&self) -> [f64; 4] {
         [
             self.red as f64 / u8::MAX as f64,
             self.green as f64 / u8::MAX as f64,
@@ -150,7 +164,7 @@ impl<'de> Deserialize<'de> for Color {
             type Value = Color;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a hex RGB color code, such as #ffffff or #ffffffff.")
+                formatter.write_str("a hex RGB color code, such as #rrggbb or #rrggbbaa.")
             }
 
             fn visit_str<E>(self, value: &str) -> std::result::Result<Color, E>

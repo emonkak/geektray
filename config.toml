@@ -1,0 +1,248 @@
+# Log level
+#
+# The following are the levels that may be specified:
+#   - "Off"
+#   - "Error"
+#   - "Warn"
+#   - "Info"
+#   - "Debug"
+#   - "Trace"
+log_level = "Error"
+
+[window]
+# Window title
+title = "GeekTray"
+
+# Instance name part of WM_CLASS
+instance_name = "GeekTray"
+
+# Class name part of WM_CLASS
+class_name = "GeekTray"
+
+# Default window width
+default_width = 480.0
+
+# Whether to automatically hide the window when it has lost focus.
+auto_hide = true
+
+# Theme for tray icons
+#
+# This value is set as "_NET_SYSTEM_TRAY_COLORS".
+icon_theme_color = "#ffffff"
+
+[ui]
+# Whether to add the sequential number in front of the title each tray items.
+show_number = true
+
+# Tray icon size (px)
+icon_size = 24.0
+
+# UI text size
+text_size = 12.0
+
+# Tray window background color (#RRGGBB, #RRBBGGAA)
+window_background = "#22262b"
+
+# Tray window text color (#RRGGBB, #RRBBGGAA)
+#
+# Format: #RRGGBB, #RRGGBBAA.
+window_foreground = "#d1dbe7"
+
+# Tray window padding (px)
+window_padding = 8.0
+
+# Tray item padding (px)
+item_padding = 8.0
+
+# The vertical space between tray items (px)
+item_gap = 8.0
+
+# The corner radius of tray items (px)
+item_corner_radius = 4.0
+
+# Normal tray item background color (#RRGGBB, #RRBBGGAA)
+normal_item_background = "#334454"
+
+# Normal tray item text color (#RRGGBB, #RRBBGGAA)
+normal_item_foreground = "#d1dbe7"
+
+# Selected tray item background color (#RRGGBB, #RRBBGGAA)
+selected_item_background = "#5686d7"
+
+# Selected tray item text color (#RRGGBB, #RRBBGGAA)
+selected_item_foreground = "#d1dbe7"
+
+# The Font for normal tray items
+[ui.normal_item_font]
+# Family name
+family = "Sans"
+
+# The number representing the font weight
+#
+# A number value between 1 and 1000, inclusive. Higher numbers represent
+# weights that are bolder than lower numbers.
+weight = 400
+
+# The string representing the font style
+#
+# The following are the values that may be specified:
+#   - "Normal"
+#   - "Itelic"
+#   - "Oblique"
+style = "Normal"
+
+# The string representing the font width
+#
+# The following are the values that may be specified:
+#   - "UltraCondensed"
+#   - "ExtraCondensed"
+#   - "Condensed"
+#   - "SemiCondensed"
+#   - "Normal"
+#   - "SemiExpanded"
+#   - "Expanded"
+#   - "ExtraExpanded"
+#   - "UltraExpanded"
+stretch = "Normal"
+
+# The Font for selected tray items
+[ui.selected_item_font]
+family = "Sans"
+weight = 700
+style = "Normal"
+stretch = "Normal"
+
+# Key bindins
+#
+# The following properties can be specified for key bindings:
+#
+# - keysym: String
+#   The string representing the key symbol. Please see the definitions starting
+#   with "XK_" in the "keysymdef.h" for the strings that can be used.
+#
+#   https://cgit.freedesktop.org/xorg/proto/x11proto/tree/keysymdef.h
+#
+# - modifiers: Modifiers (Default: {})
+#   A boolean table representing the enabled modifiers. The following are the
+#   keys that may be specified:
+#     - control
+#     - shift
+#     - alt
+#     - super
+#     - caps_lock
+#     - num_lock
+#
+#   Example:
+#     { control = true, shift = true }
+#
+# - actions: [Action]
+#   The list of actions that are executed by this key binding. The following
+#   are the actions that may be specified:
+#     - { type = "HideWindow" }
+#     - { type = "ShowWindow" }
+#     - { type = "ToggleWindow" }
+#     - { type = "DeselectItem" }
+#     - { type = "SelectItem", index = number }
+#     - { type = "SelectNextItem" }
+#     - { type = "SelectPreviousItem" }
+#     - { type = "ClickSelectedItem", button = "Left|Right|Middle|X1|X2" }
+#
+# - global: boolean (Default: false)
+#   If true, the key binding is always active even when the tray window does
+#   not have focus.
+[[key_bindings]]
+keysym = "1"
+actions = [{ type = "SelectItem", index = 0 }]
+
+[[key_bindings]]
+keysym = "2"
+actions = [{ type = "SelectItem", index = 1 }]
+
+[[key_bindings]]
+keysym = "3"
+actions = [{ type = "SelectItem", index = 2 }]
+
+[[key_bindings]]
+keysym = "4"
+actions = [{ type = "SelectItem", index = 3 }]
+
+[[key_bindings]]
+keysym = "5"
+actions = [{ type = "SelectItem", index = 4 }]
+
+[[key_bindings]]
+keysym = "6"
+actions = [{ type = "SelectItem", index = 5 }]
+
+[[key_bindings]]
+keysym = "7"
+actions = [{ type = "SelectItem", index = 6 }]
+
+[[key_bindings]]
+keysym = "8"
+actions = [{ type = "SelectItem", index = 7 }]
+
+[[key_bindings]]
+keysym = "9"
+actions = [{ type = "SelectItem", index = 8 }]
+
+[[key_bindings]]
+keysym = "0"
+actions = [{ type = "DeselectItem" }]
+
+[[key_bindings]]
+keysym = "j"
+actions = [{ type = "SelectNextItem" }]
+
+[[key_bindings]]
+keysym = "Down"
+actions = [{ type = "SelectNextItem" }]
+
+[[key_bindings]]
+keysym = "n"
+modifiers = { control = true }
+actions = [{ type = "SelectNextItem" }]
+
+[[key_bindings]]
+keysym = "k"
+actions = [{ type = "SelectPreviousItem" }]
+
+[[key_bindings]]
+keysym = "Up"
+actions = [{ type = "SelectPreviousItem" }]
+
+[[key_bindings]]
+keysym = "p"
+modifiers = { control = true }
+actions = [{ type = "SelectPreviousItem" }]
+
+[[key_bindings]]
+keysym = "l"
+actions = [{ type = "ClickSelectedItem", button = "Left" }]
+
+[[key_bindings]]
+keysym = "Return"
+actions = [{ type = "ClickSelectedItem", button = "Left" }]
+
+[[key_bindings]]
+keysym = "h"
+actions = [{ type = "ClickSelectedItem", button = "Right" }]
+
+[[key_bindings]]
+keysym = "Return"
+modifiers = { shift = true }
+actions = [{ type = "ClickSelectedItem", button = "Right" }]
+
+[[key_bindings]]
+keysym = "q"
+actions = [{ type = "HideWindow" }]
+
+[[key_bindings]]
+keysym = "Escape"
+actions = [{ type = "HideWindow" }]
+
+[[key_bindings]]
+keysym = "grave"
+global = true
+modifiers = { super = true }
+actions = [{ type = "ToggleWindow" }]

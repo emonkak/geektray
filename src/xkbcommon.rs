@@ -1,4 +1,5 @@
 use std::ops::RangeInclusive;
+use x11rb::connection::Connection;
 use x11rb::errors::ReplyError;
 use x11rb::protocol::xkb;
 use x11rb::protocol::xkb::ConnectionExt as _;
@@ -26,10 +27,7 @@ impl State {
     }
 
     pub fn lookup_keycode(&self, keysym: Keysym) -> Option<u32> {
-        let min_keycode = self.keymap.min_keycode();
-        let max_keycode = self.keymap.max_keycode();
-
-        for keycode in min_keycode..=max_keycode {
+        for keycode in self.keymap.all_keycodes() {
             if self.get_keysym(keycode) == keysym {
                 return Some(keycode);
             }
@@ -82,12 +80,12 @@ impl State {
         unsafe {
             ffi::xkb_state_update_mask(
                 self.state,
-                event.base_mods as u32,
-                event.latched_mods as u32,
-                event.locked_mods as u32,
+                u16::from(event.base_mods) as u32,
+                u16::from(event.latched_mods) as u32,
+                u16::from(event.locked_mods) as u32,
                 event.base_group as u32,
                 event.latched_group as u32,
-                u32::from(event.locked_group),
+                u8::from(event.locked_group) as u32,
             );
         }
     }
@@ -196,11 +194,11 @@ impl Drop for Keymap {
 pub struct DeviceId(u8);
 
 impl DeviceId {
-    pub fn core_keyboard(connection: &XCBConnection) -> Result<Self, ReplyError> {
+    pub fn core_keyboard(connection: &impl Connection) -> Result<Self, ReplyError> {
         let reply = connection
             .xkb_get_device_info(
                 xkb::ID::USE_CORE_KBD.into(),
-                0u16,
+                xkb::XIFeature::from(0u16),
                 false,
                 0u8,
                 0u8,

@@ -1,8 +1,8 @@
-fn main() {
-    use pkg_config::probe_library;
-    use std::env;
-    use std::path::PathBuf;
+use pkg_config::probe_library;
+use std::env;
+use std::path::PathBuf;
 
+fn main() {
     probe_library("xkbcommon").unwrap();
     probe_library("xkbcommon-x11").unwrap();
 

@@ -12,6 +12,12 @@ use crate::xkbcommon_sys as ffi;
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Keysym(xproto::Keysym);
 
+impl Keysym {
+    pub fn get(&self) -> xproto::Keysym {
+        self.0
+    }
+}
+
 impl fmt::Display for Keysym {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut buffer = [0u8; 256];
@@ -53,7 +59,7 @@ impl Serialize for Keysym {
         };
         if length < 0 {
             return Err(ser::Error::custom(format!(
-                "Keysym `{}` is not defined.",
+                "Keysym \"{}\" is not defined.",
                 self.0
             )));
         }
@@ -261,6 +267,15 @@ impl BitOrAssign for Modifiers {
         self.caps_lock |= rhs.caps_lock;
         self.num_lock |= rhs.num_lock;
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Deserialize, Serialize)]
+pub enum MouseButton {
+    Left,
+    Right,
+    Middle,
+    X1,
+    X2,
 }
 
 fn is_false(value: &bool) -> bool {
