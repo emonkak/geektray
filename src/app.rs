@@ -289,7 +289,7 @@ impl App {
             if should_layout || self.tray_window.should_redraw() {
                 let render_context = self.render_context.as_ref().unwrap();
                 self.tray_window
-                    .draw(should_layout, &self.config.ui, &render_context)?;
+                    .draw(should_layout, &self.config.ui, render_context)?;
             }
         }
 

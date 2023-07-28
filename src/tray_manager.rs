@@ -157,17 +157,15 @@ impl<C: Connection> TrayManager<C> {
                 if event.atom == self.atoms._XEMBED_INFO && self.icons.contains(&event.window) =>
             {
                 log::info!("change xembed info (icon: {})", event.window);
-                get_xembed_info(event.window, self.connection.as_ref(), &self.atoms)?.map(
-                    |xembed_info| {
-                        TrayEvent::VisibilityChanged(event.window, xembed_info.is_mapped())
-                    },
-                )
+                get_xembed_info(&*self.connection, &self.atoms, event.window)?.map(|xembed_info| {
+                    TrayEvent::VisibilityChanged(event.window, xembed_info.is_mapped())
+                })
             }
             (PropertyNotify(event), Ownership::Managed(_))
                 if event.atom == self.atoms._NET_WM_NAME && self.icons.contains(&event.window) =>
             {
                 log::info!("change window title (icon: {})", event.window);
-                let title = get_window_title(event.window, &*self.connection, &self.atoms)?
+                let title = get_window_title(&*self.connection, &self.atoms, event.window)?
                     .unwrap_or_default();
                 Some(TrayEvent::TitleChanged(event.window, title))
             }
@@ -175,11 +173,10 @@ impl<C: Connection> TrayManager<C> {
                 if event.event == event.window =>
             {
                 if event.parent == current_selection_owner {
-                    let title = get_window_title(event.window, &*self.connection, &self.atoms)?
+                    let title = get_window_title(&*self.connection, &self.atoms, event.window)?
                         .unwrap_or_default();
-                    let is_embdded =
-                        get_xembed_info(event.window, self.connection.as_ref(), &self.atoms)?
-                            .map_or(false, |xembed_info| xembed_info.is_mapped());
+                    let is_embdded = get_xembed_info(&*self.connection, &self.atoms, event.window)?
+                        .map_or(false, |xembed_info| xembed_info.is_mapped());
                     self.icons
                         .contains(&event.window)
                         .then(|| TrayEvent::IconAdded(event.window, title, is_embdded))
@@ -265,7 +262,7 @@ impl<C: Connection> TrayManager<C> {
         log::info!("clear embeddings");
 
         for icon in mem::take(&mut self.icons) {
-            release_embedding(icon, &*self.connection, self.screen_num)?;
+            release_embedding(&*self.connection, self.screen_num, icon)?;
         }
 
         self.ownership = Ownership::Unmanaged;
@@ -318,13 +315,13 @@ impl<C: Connection> TrayManager<C> {
         if self.icons.contains(&icon) {
             log::warn!("duplicated icon (icon: {})", icon);
         } else {
-            if let Some(xembed_info) = get_xembed_info(icon, &*self.connection, &self.atoms)? {
+            if let Some(xembed_info) = get_xembed_info(&*self.connection, &self.atoms, icon)? {
                 begin_embedding(
+                    &*self.connection,
+                    &self.atoms,
                     icon,
                     selection_owner,
                     xembed_info,
-                    &*self.connection,
-                    &self.atoms,
                 )?;
                 self.icons.push(icon);
             }
@@ -478,12 +475,12 @@ fn intern_system_tray_selection_atom(
     Ok(atom)
 }
 
-fn begin_embedding<C: Connection>(
+fn begin_embedding(
+    connection: &impl Connection,
+    atoms: &Atoms,
     icon: xproto::Window,
     selection_owner: xproto::Window,
     xembed_info: XEmbedInfo,
-    connection: &C,
-    atoms: &Atoms,
 ) -> anyhow::Result<()> {
     log::info!("begin embedding for icon (icon: {})", icon);
 
@@ -530,10 +527,10 @@ fn begin_embedding<C: Connection>(
     Ok(())
 }
 
-fn release_embedding<C: Connection>(
-    icon: xproto::Window,
-    connection: &C,
+fn release_embedding(
+    connection: &impl Connection,
     screen_num: usize,
+    icon: xproto::Window,
 ) -> anyhow::Result<()> {
     log::info!("release embedding for icon (icon: {})", icon);
 
@@ -561,9 +558,9 @@ fn release_embedding<C: Connection>(
 }
 
 fn get_window_title(
-    window: xproto::Window,
     connection: &impl Connection,
     atoms: &Atoms,
+    window: xproto::Window,
 ) -> anyhow::Result<Option<String>> {
     let reply = connection
         .get_property(
@@ -607,9 +604,9 @@ fn get_window_title(
 }
 
 fn get_xembed_info(
-    window: xproto::Window,
     connection: &impl Connection,
     atoms: &Atoms,
+    window: xproto::Window,
 ) -> anyhow::Result<Option<XEmbedInfo>> {
     let reply = connection
         .get_property(
