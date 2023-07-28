@@ -358,7 +358,12 @@ impl App {
 impl Drop for App {
     fn drop(&mut self) {
         self.ungrab_global_keys().ok();
-        self.tray_manager.release_tray_selection().ok();
+        if let Err(error) = self.tray_manager.release_tray_selection() {
+            log::error!(
+                "an error occurred while releasing tray selection: {}",
+                error
+            );
+        }
     }
 }
 
