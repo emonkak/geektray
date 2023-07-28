@@ -48,19 +48,7 @@ impl<C: Connection> TrayManager<C> {
         orientation: SystemTrayOrientation,
         colors: SystemTrayColors,
     ) -> anyhow::Result<()> {
-        let current_manager = self
-            .connection
-            .get_selection_owner(self.system_tray_selection_atom)?
-            .reply()
-            .context("get selection owner")?
-            .owner;
         let new_manager = self.create_manager_window(embedder, orientation, colors)?;
-
-        log::info!(
-            "acquire tray selection (current_manager: {}, new_manager: {})",
-            current_manager,
-            new_manager,
-        );
 
         self.connection
             .set_selection_owner(
@@ -69,24 +57,9 @@ impl<C: Connection> TrayManager<C> {
                 x11rb::CURRENT_TIME,
             )?
             .check()
-            .context("set selection owner")?;
+            .context("acquire tray selection")?;
 
-        if current_manager == x11rb::NONE {
-            self.broadcast_manager_message(new_manager)?;
-            self.selection_status = SelectionStatus::Managed {
-                manager: new_manager,
-                embedder,
-            };
-        } else {
-            self.wait_for_destroy_selection_owner(current_manager)?;
-            self.selection_status = SelectionStatus::Pending {
-                current_manager,
-                pending_manager: new_manager,
-                embedder,
-            };
-        }
-
-        Ok(())
+        self.update_selection_status(new_manager, embedder)
     }
 
     pub fn release_tray_selection(&mut self) -> anyhow::Result<()> {
@@ -204,21 +177,17 @@ impl<C: Connection> TrayManager<C> {
             (
                 DestroyNotify(event),
                 SelectionStatus::Pending {
-                    current_manager,
-                    pending_manager,
+                    old_manager,
+                    new_manager,
                     embedder,
                 },
-            ) if event.window == current_manager => {
+            ) if event.window == old_manager => {
                 log::info!(
-                    "destroyed previous selection owner (current_manager: {}, pending_manager: {})",
-                    current_manager,
-                    pending_manager
+                    "destroyed previous selection owner (old_manager: {}, new_manager: {})",
+                    old_manager,
+                    new_manager
                 );
-                self.broadcast_manager_message(pending_manager)?;
-                self.selection_status = SelectionStatus::Managed {
-                    manager: pending_manager,
-                    embedder,
-                };
+                self.update_selection_status(new_manager, embedder)?;
                 None
             }
             (DestroyNotify(event), SelectionStatus::Managed { .. }) => self
@@ -419,6 +388,40 @@ impl<C: Connection> TrayManager<C> {
         Ok(())
     }
 
+    fn update_selection_status(
+        &mut self,
+        new_manager: xproto::Window,
+        embedder: xproto::Window,
+    ) -> anyhow::Result<()> {
+        log::info!("set selection owner (manager: {})", new_manager);
+
+        let current_manager = self
+            .connection
+            .get_selection_owner(self.system_tray_selection_atom)?
+            .reply()
+            .context("get selection owner")?
+            .owner;
+
+        if current_manager == new_manager {
+            self.broadcast_manager_message(new_manager)?;
+            self.selection_status = SelectionStatus::Managed {
+                manager: new_manager,
+                embedder,
+            };
+        } else if current_manager != x11rb::NONE {
+            self.wait_for_destroy_selection_owner(current_manager)?;
+            self.selection_status = SelectionStatus::Pending {
+                old_manager: current_manager,
+                new_manager,
+                embedder,
+            };
+        } else {
+            self.selection_status = SelectionStatus::Unmanaged;
+        }
+
+        Ok(())
+    }
+
     fn wait_for_destroy_selection_owner(
         &mut self,
         current_manager: xproto::Window,
@@ -560,8 +563,8 @@ impl SystemTrayColors {
 enum SelectionStatus {
     Unmanaged,
     Pending {
-        current_manager: xproto::Window,
-        pending_manager: xproto::Window,
+        old_manager: xproto::Window,
+        new_manager: xproto::Window,
         embedder: xproto::Window,
     },
     Managed {
