@@ -19,7 +19,7 @@ use crate::config::{Action, Config, KeyBinding};
 use crate::event::{KeyState, Keysym, Modifiers};
 use crate::geometrics::Size;
 use crate::render_context::RenderContext;
-use crate::tray_manager::{TrayEvent, TrayManager};
+use crate::tray_manager::{SystemTrayColors, SystemTrayOrientation, TrayEvent, TrayManager};
 use crate::tray_window::TrayWindow;
 use crate::xkbcommon;
 
@@ -60,22 +60,12 @@ impl App {
 
         let action_table = build_action_table(&config.key_bindings);
 
-        for key_binding in config
-            .key_bindings
-            .iter()
-            .filter(|key_binding| key_binding.global())
-        {
-            let keycode = xkb_state
-                .lookup_keycode(key_binding.keysym())
-                .context("lookup keycode")?;
-            grab_key(&*connection, screen_num, keycode, key_binding.modifiers())?;
-        }
-
         let window_size = Size {
             width: config.window.default_width,
             height: config.ui.icon_size.max(config.ui.text_size) + config.ui.item_padding * 2.0,
         }
         .snap();
+
         let tray_window = TrayWindow::new(
             connection.clone(),
             screen_num,
@@ -101,52 +91,132 @@ impl App {
     }
 
     pub fn run(&mut self) -> anyhow::Result<()> {
-        self.tray_manager
-            .acquire_tray_selection(self.tray_window.window())?;
+        self.grab_global_keys()?;
+
+        self.tray_manager.acquire_tray_selection(
+            self.tray_window.window(),
+            SystemTrayOrientation::HORZONTAL,
+            SystemTrayColors::single(self.config.window.icon_theme_color),
+        )?;
 
         self.run_event_loop()?;
 
         Ok(())
     }
 
-    fn run_event_loop(&mut self) -> anyhow::Result<()> {
-        let epoll_fd = epoll::epoll_create()?;
+    fn grab_global_keys(&self) -> anyhow::Result<()> {
+        for key_binding in self
+            .config
+            .key_bindings
+            .iter()
+            .filter(|key_binding| key_binding.global())
+        {
+            let keycode = self
+                .xkb_state
+                .lookup_keycode(key_binding.keysym())
+                .context("lookup keycode")?;
+            grab_key(
+                &*self.connection,
+                self.screen_num,
+                keycode,
+                key_binding.modifiers(),
+            )?;
+        }
+        Ok(())
+    }
 
-        add_interest_entry(epoll_fd, &*self.connection, EVENT_KIND_X11)?;
-        add_interest_entry(epoll_fd, &self.signal_fd, EVENT_KIND_SIGNAL)?;
-
-        let mut epoll_events = vec![epoll::EpollEvent::empty(); 2];
-
-        'outer: loop {
-            let available_fds = epoll::epoll_wait(epoll_fd, &mut epoll_events, -1).unwrap_or(0);
-            let mut control_flow = ControlFlow::Continue(());
-
-            for epoll_event in &epoll_events[0..available_fds] {
-                if epoll_event.data() == EVENT_KIND_X11 {
-                    while let Some(event) = self.connection.poll_for_event()? {
-                        self.handle_x11_event(&event, &mut control_flow)?;
-
-                        if matches!(control_flow, ControlFlow::Break(())) {
-                            break 'outer;
-                        }
-                    }
-                } else if epoll_event.data() == EVENT_KIND_SIGNAL {
-                    if let Some(signal) = self.signal_fd.read_signal()? {
-                        self.handle_signal(signal, &mut control_flow)?;
-
-                        if matches!(control_flow, ControlFlow::Break(())) {
-                            break 'outer;
-                        }
-                    }
-                } else {
-                    unreachable!();
+    fn handle_key_binding(&mut self, index: usize) -> anyhow::Result<()> {
+        let key_binding = &self.config.key_bindings[index];
+        for action in key_binding.actions() {
+            match action {
+                Action::HideWindow => {
+                    self.tray_window.hide()?;
                 }
+                Action::ShowWindow => {
+                    self.tray_window.show()?;
+                }
+                Action::ToggleWindow => {
+                    if self.tray_window.is_mapped() {
+                        self.tray_window.hide()?;
+                    } else {
+                        self.tray_window.show()?;
+                    }
+                }
+                Action::DeselectItem => {
+                    self.tray_window.deselect_item();
+                }
+                Action::SelectItem { index } => {
+                    self.tray_window.select_item(*index);
+                }
+                Action::SelectNextItem => {
+                    self.tray_window.select_next_item();
+                }
+                Action::SelectPreviousItem => {
+                    self.tray_window.select_previous_item();
+                }
+                Action::ClickSelectedItem { button } => {
+                    self.tray_window.click_selected_item(*button)?;
+                }
+            }
+        }
+        Ok(())
+    }
 
-                self.handle_tick()?;
+    fn handle_signal(
+        &mut self,
+        signal: siginfo,
+        control_flow: &mut ControlFlow<()>,
+    ) -> anyhow::Result<()> {
+        log::info!("signal {:?} received", signal.ssi_signo);
+
+        *control_flow = ControlFlow::Break(());
+
+        Ok(())
+    }
+
+    fn handle_tick(&mut self) -> anyhow::Result<()> {
+        if self.tray_window.is_mapped() {
+            let should_layout = self.tray_window.should_layout() || self.render_context.is_none();
+
+            if should_layout {
+                let new_size = self.tray_window.layout(&self.config.ui)?;
+                self.render_context = Some(RenderContext::new(
+                    self.connection.clone(),
+                    self.screen_num,
+                    self.tray_window.window(),
+                    new_size,
+                )?);
+            }
+
+            if should_layout || self.tray_window.should_redraw() {
+                let render_context = self.render_context.as_ref().unwrap();
+                self.tray_window
+                    .draw(should_layout, &self.config.ui, render_context)?;
             }
         }
 
         Ok(())
+    }
+
+    fn handle_tray_event(&mut self, event: TrayEvent) {
+        match event {
+            TrayEvent::IconAdded(icon, title, is_embdded) => {
+                self.tray_window.add_icon(icon, title, is_embdded);
+            }
+            TrayEvent::IconRemoved(icon) => {
+                self.tray_window.remove_icon(icon);
+            }
+            TrayEvent::VisibilityChanged(icon, is_embdded) => {
+                self.tray_window.change_visibility(icon, is_embdded);
+            }
+            TrayEvent::TitleChanged(icon, title) => {
+                self.tray_window.change_title(icon, title);
+            }
+            TrayEvent::MessageReceived(_message) => {}
+            TrayEvent::SelectionCleared => {
+                self.tray_window.clear_icons();
+            }
+        }
     }
 
     fn handle_x11_event(
@@ -223,126 +293,72 @@ impl App {
         Ok(())
     }
 
-    fn handle_signal(
-        &mut self,
-        signal: siginfo,
-        control_flow: &mut ControlFlow<()>,
-    ) -> anyhow::Result<()> {
-        log::info!("signal {:?} received", signal.ssi_signo);
+    fn run_event_loop(&mut self) -> anyhow::Result<()> {
+        let epoll_fd = epoll::epoll_create()?;
 
-        *control_flow = ControlFlow::Break(());
+        add_interest_entry(epoll_fd, &*self.connection, EVENT_KIND_X11)?;
+        add_interest_entry(epoll_fd, &self.signal_fd, EVENT_KIND_SIGNAL)?;
 
-        Ok(())
-    }
+        let mut epoll_events = vec![epoll::EpollEvent::empty(); 2];
 
-    fn handle_key_binding(&mut self, index: usize) -> anyhow::Result<()> {
-        let key_binding = &self.config.key_bindings[index];
-        for action in key_binding.actions() {
-            match action {
-                Action::HideWindow => {
-                    self.tray_window.hide()?;
-                }
-                Action::ShowWindow => {
-                    self.tray_window.show()?;
-                }
-                Action::ToggleWindow => {
-                    if self.tray_window.is_mapped() {
-                        self.tray_window.hide()?;
-                    } else {
-                        self.tray_window.show()?;
+        'outer: loop {
+            let available_fds = epoll::epoll_wait(epoll_fd, &mut epoll_events, -1).unwrap_or(0);
+            let mut control_flow = ControlFlow::Continue(());
+
+            for epoll_event in &epoll_events[0..available_fds] {
+                if epoll_event.data() == EVENT_KIND_X11 {
+                    while let Some(event) = self.connection.poll_for_event()? {
+                        self.handle_x11_event(&event, &mut control_flow)?;
+
+                        if matches!(control_flow, ControlFlow::Break(())) {
+                            break 'outer;
+                        }
                     }
-                }
-                Action::DeselectItem => {
-                    self.tray_window.deselect_item();
-                }
-                Action::SelectItem { index } => {
-                    self.tray_window.select_item(*index);
-                }
-                Action::SelectNextItem => {
-                    self.tray_window.select_next_item();
-                }
-                Action::SelectPreviousItem => {
-                    self.tray_window.select_previous_item();
-                }
-                Action::ClickSelectedItem { button } => {
-                    self.tray_window.click_selected_item(*button)?;
-                }
-            }
-        }
-        Ok(())
-    }
+                } else if epoll_event.data() == EVENT_KIND_SIGNAL {
+                    if let Some(signal) = self.signal_fd.read_signal()? {
+                        self.handle_signal(signal, &mut control_flow)?;
 
-    fn handle_tick(&mut self) -> anyhow::Result<()> {
-        if self.tray_window.is_mapped() {
-            let should_layout = self.tray_window.should_layout() || self.render_context.is_none();
+                        if matches!(control_flow, ControlFlow::Break(())) {
+                            break 'outer;
+                        }
+                    }
+                } else {
+                    unreachable!();
+                }
 
-            if should_layout {
-                let new_size = self.tray_window.layout(&self.config.ui)?;
-                self.render_context = Some(RenderContext::new(
-                    self.connection.clone(),
-                    self.screen_num,
-                    self.tray_window.window(),
-                    new_size,
-                )?);
-            }
-
-            if should_layout || self.tray_window.should_redraw() {
-                let render_context = self.render_context.as_ref().unwrap();
-                self.tray_window
-                    .draw(should_layout, &self.config.ui, render_context)?;
+                self.handle_tick()?;
             }
         }
 
         Ok(())
     }
 
-    fn handle_tray_event(&mut self, event: TrayEvent) {
-        match event {
-            TrayEvent::IconAdded(icon, title, is_embdded) => {
-                self.tray_window.add_icon(icon, title, is_embdded);
-            }
-            TrayEvent::IconRemoved(icon) => {
-                self.tray_window.remove_icon(icon);
-            }
-            TrayEvent::VisibilityChanged(icon, is_embdded) => {
-                self.tray_window.change_visibility(icon, is_embdded);
-            }
-            TrayEvent::TitleChanged(icon, title) => {
-                self.tray_window.change_title(icon, title);
-            }
-            TrayEvent::MessageReceived(_message) => {}
-            TrayEvent::SelectionCleared => {
-                self.tray_window.clear_icons();
-            }
-        }
-    }
-}
-
-impl Drop for App {
-    fn drop(&mut self) {
-        self.tray_manager.release_tray_selection().ok();
-
+    fn ungrab_global_keys(&self) -> anyhow::Result<()> {
         for key_binding in self
             .config
             .key_bindings
             .iter()
             .filter(|key_binding| key_binding.global())
         {
-            if let Some(keycode) = self
+            let keycode = self
                 .xkb_state
                 .lookup_keycode(key_binding.keysym())
-                .context("lookup keycode")
-                .ok()
-            {
-                ungrab_key(
-                    &*self.connection,
-                    self.screen_num,
-                    keycode,
-                    key_binding.modifiers(),
-                )
-                .ok();
-            }
+                .context("lookup keycode")?;
+            ungrab_key(
+                &*self.connection,
+                self.screen_num,
+                keycode,
+                key_binding.modifiers(),
+            )?;
         }
+        Ok(())
+    }
+}
+
+impl Drop for App {
+    fn drop(&mut self) {
+        self.ungrab_global_keys().ok();
+        self.tray_manager.release_tray_selection().ok();
     }
 }
 

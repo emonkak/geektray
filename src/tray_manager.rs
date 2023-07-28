@@ -1,13 +1,13 @@
 use anyhow::Context as _;
-use std::mem;
 use std::rc::Rc;
 use std::str;
 use x11rb::connection::Connection;
 use x11rb::protocol;
-use x11rb::protocol::xproto;
-use x11rb::protocol::xproto::ConnectionExt;
+use x11rb::protocol::xproto::{self, ConnectionExt as _};
+use x11rb::wrapper::ConnectionExt as _;
 
 use crate::atoms::Atoms;
+use crate::color::Color;
 
 const SYSTEM_TRAY_REQUEST_DOCK: u32 = 0;
 const SYSTEM_TRAY_BEGIN_MESSAGE: u32 = 1;
@@ -21,7 +21,7 @@ pub struct TrayManager<C: Connection> {
     screen_num: usize,
     system_tray_selection_atom: xproto::Atom,
     atoms: Rc<Atoms>,
-    ownership: Ownership,
+    selection_status: SelectionStatus,
     icons: Vec<xproto::Window>,
     balloon_messages: Vec<BalloonMessage>,
 }
@@ -36,7 +36,7 @@ impl<C: Connection> TrayManager<C> {
             screen_num,
             atoms,
             system_tray_selection_atom,
-            ownership: Ownership::Unmanaged,
+            selection_status: SelectionStatus::Unmanaged,
             icons: Vec::new(),
             balloon_messages: Vec::new(),
         })
@@ -44,46 +44,55 @@ impl<C: Connection> TrayManager<C> {
 
     pub fn acquire_tray_selection(
         &mut self,
-        new_selection_owner: xproto::Window,
+        embedder: xproto::Window,
+        orientation: SystemTrayOrientation,
+        colors: SystemTrayColors,
     ) -> anyhow::Result<()> {
-        let current_selection_owner = self
+        let current_manager = self
             .connection
             .get_selection_owner(self.system_tray_selection_atom)?
             .reply()
             .context("get selection owner")?
             .owner;
+        let new_manager = self.create_manager_window(embedder, orientation, colors)?;
 
         log::info!(
-            "acquire tray selection (current_selection_owner: {}, new_selection_owner: {})",
-            current_selection_owner,
-            new_selection_owner,
+            "acquire tray selection (current_manager: {}, new_manager: {})",
+            current_manager,
+            new_manager,
         );
 
         self.connection
             .set_selection_owner(
-                new_selection_owner,
+                new_manager,
                 self.system_tray_selection_atom,
                 x11rb::CURRENT_TIME,
             )?
             .check()
             .context("set selection owner")?;
 
-        if current_selection_owner == x11rb::NONE {
-            self.broadcast_manager_message(new_selection_owner)?;
+        if current_manager == x11rb::NONE {
+            self.broadcast_manager_message(new_manager)?;
+            self.selection_status = SelectionStatus::Managed {
+                manager: new_manager,
+                embedder,
+            };
         } else {
-            self.wait_for_destroy_selection_owner(current_selection_owner, new_selection_owner)?;
+            self.wait_for_destroy_selection_owner(current_manager)?;
+            self.selection_status = SelectionStatus::Pending {
+                current_manager,
+                pending_manager: new_manager,
+                embedder,
+            };
         }
 
         Ok(())
     }
 
     pub fn release_tray_selection(&mut self) -> anyhow::Result<()> {
-        match self.ownership {
-            Ownership::Managed(current_selection_owner) => {
-                log::info!(
-                    "release tray selection (current_selection_owner: {})",
-                    current_selection_owner
-                );
+        match self.selection_status {
+            SelectionStatus::Managed { manager, .. } => {
+                log::info!("release tray selection (manager: {})", manager);
 
                 self.connection
                     .set_selection_owner(
@@ -94,12 +103,17 @@ impl<C: Connection> TrayManager<C> {
                     .check()
                     .context("reset tray selection")?;
 
+                self.connection
+                    .destroy_window(manager)?
+                    .check()
+                    .context("destory manager window")?;
+
                 self.clear_embeddings()?;
             }
             _ => {}
         }
 
-        self.ownership = Ownership::Unmanaged;
+        self.selection_status = SelectionStatus::Unmanaged;
 
         Ok(())
     }
@@ -110,15 +124,15 @@ impl<C: Connection> TrayManager<C> {
     ) -> anyhow::Result<Option<TrayEvent>> {
         use x11rb::protocol::Event::*;
 
-        let event = match (event, self.ownership) {
-            (ClientMessage(event), Ownership::Managed(current_selection_owner))
+        let event = match (event, self.selection_status) {
+            (ClientMessage(event), SelectionStatus::Managed { embedder, .. })
                 if event.type_ == self.atoms._NET_SYSTEM_TRAY_OPCODE =>
             {
                 let data = event.data.as_data32();
                 let opcode = data[1];
                 if opcode == SYSTEM_TRAY_REQUEST_DOCK {
                     let icon = data[2];
-                    self.request_dock(icon, current_selection_owner)?;
+                    self.request_dock(icon, embedder)?;
                 } else if opcode == SYSTEM_TRAY_BEGIN_MESSAGE {
                     log::info!("begin message (icon: {})", event.window);
                     let [_, _, timeout, length, id] = event.data.as_data32();
@@ -131,7 +145,7 @@ impl<C: Connection> TrayManager<C> {
                 }
                 None
             }
-            (ClientMessage(event), Ownership::Managed(_))
+            (ClientMessage(event), SelectionStatus::Managed { .. })
                 if event.type_ == self.atoms._NET_SYSTEM_TRAY_MESSAGE_DATA =>
             {
                 if let Some(balloon_message) = self.receive_message(event.window, &event.data) {
@@ -146,22 +160,21 @@ impl<C: Connection> TrayManager<C> {
                     None
                 }
             }
-            (SelectionClear(event), Ownership::Managed(current_selection_owner))
-                if event.selection == self.system_tray_selection_atom
-                    && event.owner == current_selection_owner =>
+            (SelectionClear(event), SelectionStatus::Managed { manager, .. })
+                if event.selection == self.system_tray_selection_atom && event.owner == manager =>
             {
                 self.clear_embeddings()?;
                 Some(TrayEvent::SelectionCleared)
             }
-            (PropertyNotify(event), Ownership::Managed(_))
+            (PropertyNotify(event), SelectionStatus::Managed { .. })
                 if event.atom == self.atoms._XEMBED_INFO && self.icons.contains(&event.window) =>
             {
                 log::info!("change xembed info (icon: {})", event.window);
-                get_xembed_info(&*self.connection, &self.atoms, event.window)?.map(|xembed_info| {
-                    TrayEvent::VisibilityChanged(event.window, xembed_info.is_mapped())
-                })
+                let is_embdded = get_xembed_info(&*self.connection, &self.atoms, event.window)?
+                    .map_or(false, |xembed_info| xembed_info.is_mapped());
+                Some(TrayEvent::VisibilityChanged(event.window, is_embdded))
             }
-            (PropertyNotify(event), Ownership::Managed(_))
+            (PropertyNotify(event), SelectionStatus::Managed { .. })
                 if event.atom == self.atoms._NET_WM_NAME && self.icons.contains(&event.window) =>
             {
                 log::info!("change window title (icon: {})", event.window);
@@ -169,17 +182,20 @@ impl<C: Connection> TrayManager<C> {
                     .unwrap_or_default();
                 Some(TrayEvent::TitleChanged(event.window, title))
             }
-            (ReparentNotify(event), Ownership::Managed(current_selection_owner))
+            (ReparentNotify(event), SelectionStatus::Managed { embedder, .. })
                 if event.event == event.window =>
             {
-                if event.parent == current_selection_owner {
-                    let title = get_window_title(&*self.connection, &self.atoms, event.window)?
-                        .unwrap_or_default();
-                    let is_embdded = get_xembed_info(&*self.connection, &self.atoms, event.window)?
-                        .map_or(false, |xembed_info| xembed_info.is_mapped());
-                    self.icons
-                        .contains(&event.window)
-                        .then(|| TrayEvent::IconAdded(event.window, title, is_embdded))
+                if event.parent == embedder {
+                    if self.icons.contains(&event.window) {
+                        let title = get_window_title(&*self.connection, &self.atoms, event.window)?
+                            .unwrap_or_default();
+                        let is_embdded =
+                            get_xembed_info(&*self.connection, &self.atoms, event.window)?
+                                .map_or(false, |xembed_info| xembed_info.is_mapped());
+                        Some(TrayEvent::IconAdded(event.window, title, is_embdded))
+                    } else {
+                        None
+                    }
                 } else {
                     self.quit_dock(event.window)
                         .then(|| TrayEvent::IconRemoved(event.window))
@@ -187,17 +203,25 @@ impl<C: Connection> TrayManager<C> {
             }
             (
                 DestroyNotify(event),
-                Ownership::Pending(old_selection_owner, new_selection_owner),
-            ) if event.window == old_selection_owner => {
+                SelectionStatus::Pending {
+                    current_manager,
+                    pending_manager,
+                    embedder,
+                },
+            ) if event.window == current_manager => {
                 log::info!(
-                    "destroyed previous selection owner (old_selection_owner: {}, new_selection_owner: {})",
-                    old_selection_owner,
-                    new_selection_owner
+                    "destroyed previous selection owner (current_manager: {}, pending_manager: {})",
+                    current_manager,
+                    pending_manager
                 );
-                self.broadcast_manager_message(new_selection_owner)?;
+                self.broadcast_manager_message(pending_manager)?;
+                self.selection_status = SelectionStatus::Managed {
+                    manager: pending_manager,
+                    embedder,
+                };
                 None
             }
-            (DestroyNotify(event), Ownership::Managed(_)) => self
+            (DestroyNotify(event), SelectionStatus::Managed { .. }) => self
                 .quit_dock(event.window)
                 .then(|| TrayEvent::IconRemoved(event.window)),
             _ => None,
@@ -215,10 +239,7 @@ impl<C: Connection> TrayManager<C> {
         self.balloon_messages.push(balloon_message);
     }
 
-    fn broadcast_manager_message(
-        &mut self,
-        new_selection_owner: xproto::Window,
-    ) -> anyhow::Result<()> {
+    fn broadcast_manager_message(&mut self, new_manager: xproto::Window) -> anyhow::Result<()> {
         log::info!("broadcast MANAGER message");
 
         let screen = &self.connection.setup().roots[self.screen_num];
@@ -229,7 +250,7 @@ impl<C: Connection> TrayManager<C> {
             [
                 x11rb::CURRENT_TIME,
                 self.system_tray_selection_atom,
-                new_selection_owner,
+                new_manager,
                 0,
                 0,
             ],
@@ -247,8 +268,6 @@ impl<C: Connection> TrayManager<C> {
 
         self.connection.flush()?;
 
-        self.ownership = Ownership::Managed(new_selection_owner);
-
         Ok(())
     }
 
@@ -261,13 +280,86 @@ impl<C: Connection> TrayManager<C> {
     fn clear_embeddings(&mut self) -> anyhow::Result<()> {
         log::info!("clear embeddings");
 
-        for icon in mem::take(&mut self.icons) {
+        self.balloon_messages.clear();
+
+        for icon in self.icons.drain(..) {
             release_embedding(&*self.connection, self.screen_num, icon)?;
         }
 
-        self.ownership = Ownership::Unmanaged;
+        self.connection
+            .flush()
+            .context("flush after release embeddings")?;
+
+        self.selection_status = SelectionStatus::Unmanaged;
 
         Ok(())
+    }
+
+    fn create_manager_window(
+        &self,
+        embedder: xproto::Window,
+        orientation: SystemTrayOrientation,
+        colors: SystemTrayColors,
+    ) -> anyhow::Result<xproto::Window> {
+        let window = self.connection.generate_id()?;
+        let screen = &self.connection.setup().roots[self.screen_num];
+        let values = xproto::CreateWindowAux::new().event_mask(xproto::EventMask::PROPERTY_CHANGE);
+
+        self.connection
+            .create_window(
+                x11rb::COPY_DEPTH_FROM_PARENT,
+                window,
+                screen.root,
+                0, // x
+                0, // y
+                1, // width
+                1, // height
+                0, // border_width
+                xproto::WindowClass::INPUT_ONLY,
+                x11rb::COPY_FROM_PARENT,
+                &values,
+            )?
+            .check()?;
+
+        let embedder_attributes = self
+            .connection
+            .get_window_attributes(embedder)?
+            .reply()
+            .context("get embedder attributes")?;
+
+        self.connection
+            .change_property32(
+                xproto::PropMode::REPLACE,
+                window,
+                self.atoms._NET_SYSTEM_TRAY_VISUAL,
+                xproto::AtomEnum::VISUALID,
+                &[embedder_attributes.visual],
+            )?
+            .check()?;
+
+        self.connection
+            .change_property32(
+                xproto::PropMode::REPLACE,
+                window,
+                self.atoms._NET_SYSTEM_TRAY_ORIENTATION,
+                xproto::AtomEnum::CARDINAL,
+                &[orientation.0],
+            )?
+            .check()?;
+
+        self.connection
+            .change_property(
+                xproto::PropMode::REPLACE,
+                window,
+                self.atoms._NET_SYSTEM_TRAY_COLORS,
+                xproto::AtomEnum::CARDINAL,
+                32,
+                12,
+                colors.as_bytes(),
+            )?
+            .check()?;
+
+        Ok(window)
     }
 
     fn quit_dock(&mut self, icon: xproto::Window) -> bool {
@@ -308,7 +400,7 @@ impl<C: Connection> TrayManager<C> {
     fn request_dock(
         &mut self,
         icon: xproto::Window,
-        selection_owner: xproto::Window,
+        embedder: xproto::Window,
     ) -> anyhow::Result<()> {
         log::info!("request dock (icon: {})", icon);
 
@@ -316,13 +408,10 @@ impl<C: Connection> TrayManager<C> {
             log::warn!("duplicated icon (icon: {})", icon);
         } else {
             if let Some(xembed_info) = get_xembed_info(&*self.connection, &self.atoms, icon)? {
-                begin_embedding(
-                    &*self.connection,
-                    &self.atoms,
-                    icon,
-                    selection_owner,
-                    xembed_info,
-                )?;
+                begin_embedding(&*self.connection, &self.atoms, icon, embedder, xembed_info)?;
+                self.connection
+                    .flush()
+                    .context("flush after begin embedding")?;
                 self.icons.push(icon);
             }
         }
@@ -332,8 +421,7 @@ impl<C: Connection> TrayManager<C> {
 
     fn wait_for_destroy_selection_owner(
         &mut self,
-        current_selection_owner: xproto::Window,
-        new_selection_owner: xproto::Window,
+        current_manager: xproto::Window,
     ) -> anyhow::Result<()> {
         log::info!("wait until the current selection selection_owner will be destroyed");
 
@@ -341,10 +429,8 @@ impl<C: Connection> TrayManager<C> {
             .event_mask(Some(xproto::EventMask::STRUCTURE_NOTIFY.into()));
 
         self.connection
-            .change_window_attributes(current_selection_owner, &values)?
+            .change_window_attributes(current_manager, &values)?
             .check()?;
-
-        self.ownership = Ownership::Pending(current_selection_owner, new_selection_owner);
 
         Ok(())
     }
@@ -408,11 +494,80 @@ impl BalloonMessage {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct SystemTrayOrientation(u32);
+
+#[allow(unused)]
+impl SystemTrayOrientation {
+    pub const HORZONTAL: Self = Self(0);
+    pub const VERTICAL: Self = Self(1);
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct SystemTrayColors {
+    normal: [u32; 3],
+    error: [u32; 3],
+    warning: [u32; 3],
+    success: [u32; 3],
+}
+
+impl SystemTrayColors {
+    pub const fn new(normal: Color, success: Color, warning: Color, error: Color) -> Self {
+        let normal_components = normal.to_u16_components();
+        let success_components = success.to_u16_components();
+        let warning_components = warning.to_u16_components();
+        let error_components = error.to_u16_components();
+        Self {
+            normal: [
+                normal_components[0] as u32,
+                normal_components[1] as u32,
+                normal_components[2] as u32,
+            ],
+            success: [
+                success_components[0] as u32,
+                success_components[1] as u32,
+                success_components[2] as u32,
+            ],
+            warning: [
+                warning_components[0] as u32,
+                warning_components[1] as u32,
+                warning_components[2] as u32,
+            ],
+            error: [
+                error_components[0] as u32,
+                error_components[1] as u32,
+                error_components[2] as u32,
+            ],
+        }
+    }
+
+    pub const fn single(color: Color) -> Self {
+        Self::new(color, color, color, color)
+    }
+
+    fn as_bytes(&self) -> &[u8] {
+        unsafe {
+            std::slice::from_raw_parts(
+                (self as *const Self) as *const u8,
+                std::mem::size_of::<Self>(),
+            )
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum Ownership {
+enum SelectionStatus {
     Unmanaged,
-    Pending(xproto::Window, xproto::Window),
-    Managed(xproto::Window),
+    Pending {
+        current_manager: xproto::Window,
+        pending_manager: xproto::Window,
+        embedder: xproto::Window,
+    },
+    Managed {
+        manager: xproto::Window,
+        embedder: xproto::Window,
+    },
 }
 
 #[allow(dead_code)]
@@ -455,39 +610,23 @@ impl XEmbedInfo {
     }
 }
 
-fn intern_system_tray_selection_atom(
-    connection: &impl Connection,
-    screen_num: usize,
-) -> anyhow::Result<xproto::Atom> {
-    let atom = connection
-        .intern_atom(
-            false,
-            &format!("_NET_SYSTEM_TRAY_S{}", screen_num).as_bytes(),
-        )?
-        .reply()
-        .context("intern _NET_SYSTEM_TRAY_S{N}")?
-        .atom;
-    Ok(atom)
-}
-
 fn begin_embedding(
     connection: &impl Connection,
     atoms: &Atoms,
     icon: xproto::Window,
-    selection_owner: xproto::Window,
+    embedder: xproto::Window,
     xembed_info: XEmbedInfo,
 ) -> anyhow::Result<()> {
     log::info!("begin embedding for icon (icon: {})", icon);
 
-    {
-        let values = xproto::ChangeWindowAttributesAux::new().event_mask(Some(
-            (xproto::EventMask::PROPERTY_CHANGE | xproto::EventMask::STRUCTURE_NOTIFY).into(),
-        ));
-        connection
-            .change_window_attributes(icon, &values)?
-            .check()
-            .context("set icon event mask")?;
-    }
+    let values = xproto::ChangeWindowAttributesAux::new().event_mask(Some(
+        (xproto::EventMask::PROPERTY_CHANGE | xproto::EventMask::STRUCTURE_NOTIFY).into(),
+    ));
+
+    connection
+        .change_window_attributes(icon, &values)?
+        .check()
+        .context("set icon event mask")?;
 
     connection
         .change_save_set(xproto::SetMode::INSERT, icon)?
@@ -495,7 +634,7 @@ fn begin_embedding(
         .context("change icon save set")?;
 
     connection
-        .reparent_window(icon, selection_owner, 0, 0)?
+        .reparent_window(icon, embedder, 0, 0)?
         .check()
         .context("reparent icon window")?;
 
@@ -507,7 +646,7 @@ fn begin_embedding(
             x11rb::CURRENT_TIME,
             XEmbedMessage::EmbeddedNotify.into(),
             0, // detail
-            selection_owner,
+            embedder,
             xembed_info.version,
         ],
     );
@@ -516,38 +655,6 @@ fn begin_embedding(
         .send_event(false, icon, xproto::EventMask::STRUCTURE_NOTIFY, event)?
         .check()
         .context("send _XEMBED message")?;
-
-    connection.flush().context("flush")?;
-
-    Ok(())
-}
-
-fn release_embedding(
-    connection: &impl Connection,
-    screen_num: usize,
-    icon: xproto::Window,
-) -> anyhow::Result<()> {
-    log::info!("release embedding for icon (icon: {})", icon);
-
-    let screen = &connection.setup().roots[screen_num];
-
-    {
-        let values = xproto::ChangeWindowAttributesAux::new()
-            .event_mask(Some(xproto::EventMask::NO_EVENT.into()));
-        connection
-            .change_window_attributes(icon, &values)?
-            .check()
-            .context("restore icon event mask")?;
-    }
-
-    connection.unmap_window(icon)?.check()?;
-
-    connection
-        .reparent_window(icon, screen.root, 0, 0)?
-        .check()
-        .context("restore icon parent")?;
-
-    connection.flush().context("flush")?;
 
     Ok(())
 }
@@ -626,4 +733,47 @@ fn get_xembed_info(
     } else {
         Ok(None)
     }
+}
+
+fn intern_system_tray_selection_atom(
+    connection: &impl Connection,
+    screen_num: usize,
+) -> anyhow::Result<xproto::Atom> {
+    let atom = connection
+        .intern_atom(
+            false,
+            &format!("_NET_SYSTEM_TRAY_S{}", screen_num).as_bytes(),
+        )?
+        .reply()
+        .context("intern _NET_SYSTEM_TRAY_S{N}")?
+        .atom;
+    Ok(atom)
+}
+
+fn release_embedding(
+    connection: &impl Connection,
+    screen_num: usize,
+    icon: xproto::Window,
+) -> anyhow::Result<()> {
+    log::info!("release embedding for icon (icon: {})", icon);
+
+    let screen = &connection.setup().roots[screen_num];
+
+    {
+        let values = xproto::ChangeWindowAttributesAux::new()
+            .event_mask(Some(xproto::EventMask::NO_EVENT.into()));
+        connection
+            .change_window_attributes(icon, &values)?
+            .check()
+            .context("restore icon event mask")?;
+    }
+
+    connection.unmap_window(icon)?.check()?;
+
+    connection
+        .reparent_window(icon, screen.root, 0, 0)?
+        .check()
+        .context("restore icon parent")?;
+
+    Ok(())
 }

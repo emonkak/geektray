@@ -9,7 +9,6 @@ use x11rb::wrapper::ConnectionExt;
 use x11rb::{properties, protocol};
 
 use crate::atoms::Atoms;
-use crate::color::Color;
 use crate::config::{UIConfig, WindowConfig};
 use crate::event::MouseButton;
 use crate::font::FontDescription;
@@ -83,47 +82,6 @@ impl<C: Connection> TrayWindow<C> {
             .context("create tray window")?;
 
         set_size_hints(&*connection, window, size)?;
-
-        connection
-            .change_property32(
-                xproto::PropMode::REPLACE,
-                window,
-                atoms._NET_SYSTEM_TRAY_ORIENTATION,
-                xproto::AtomEnum::CARDINAL,
-                &[SystemTrayOrientation::HORZONTAL.0],
-            )?
-            .check()
-            .context("set _NET_SYSTEM_TRAY_ORIENTATION")?;
-
-        connection
-            .change_property32(
-                xproto::PropMode::REPLACE,
-                window,
-                atoms._NET_SYSTEM_TRAY_VISUAL,
-                xproto::AtomEnum::VISUALID,
-                &[screen.root_visual],
-            )?
-            .check()
-            .context("set _NET_SYSTEM_TRAY_VISUAL")?;
-
-        connection
-            .change_property(
-                xproto::PropMode::REPLACE,
-                window,
-                atoms._NET_SYSTEM_TRAY_COLORS,
-                xproto::AtomEnum::CARDINAL,
-                32,
-                12,
-                SystemTrayColors::new(
-                    config.icon_theme_color,
-                    config.icon_theme_color,
-                    config.icon_theme_color,
-                    config.icon_theme_color,
-                )
-                .as_bytes(),
-            )?
-            .check()
-            .context("set _NET_SYSTEM_TRAY_COLORS")?;
 
         connection
             .change_property32(
@@ -311,7 +269,7 @@ impl<C: Connection> TrayWindow<C> {
         log::debug!("draw tray window");
 
         let size = context.size().unsnap();
-        let fonts = Fonts::new(ui_config);
+        let font_instances = FontInstances::new(ui_config);
 
         context.draw_rect(
             Rect {
@@ -327,12 +285,12 @@ impl<C: Connection> TrayWindow<C> {
             for (index, tray_item) in self.tray_items.iter_mut().enumerate() {
                 let is_selected = self.selected_index.map_or(false, |i| i == index);
 
-                tray_item.draw(index, is_selected, &fonts, ui_config, context);
+                tray_item.draw(index, is_selected, &font_instances, ui_config, context);
             }
         } else {
             context.draw_text(
                 "No tray items found",
-                &fonts.item_font,
+                &font_instances.item_font,
                 ui_config.text_size,
                 HAlign::Center,
                 VAlign::Middle,
@@ -665,7 +623,7 @@ impl TrayItem {
         &self,
         index: usize,
         is_selected: bool,
-        fonts: &Fonts,
+        font_instances: &FontInstances,
         ui_config: &UIConfig,
         context: &RenderContext,
     ) {
@@ -673,13 +631,13 @@ impl TrayItem {
             (
                 ui_config.selected_item_background,
                 ui_config.selected_item_foreground,
-                &fonts.selected_item_font,
+                &font_instances.selected_item_font,
             )
         } else {
             (
                 ui_config.normal_item_background,
                 ui_config.normal_item_foreground,
-                &fonts.item_font,
+                &font_instances.item_font,
             )
         };
 
@@ -720,74 +678,16 @@ impl TrayItem {
     }
 }
 
-struct Fonts {
+struct FontInstances {
     item_font: FontDescription,
     selected_item_font: FontDescription,
 }
 
-impl Fonts {
+impl FontInstances {
     fn new(ui_config: &UIConfig) -> Self {
         Self {
             item_font: ui_config.normal_item_font.to_font_description(),
             selected_item_font: ui_config.selected_item_font.to_font_description(),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-struct SystemTrayOrientation(u32);
-
-#[allow(unused)]
-impl SystemTrayOrientation {
-    pub const HORZONTAL: Self = Self(0);
-    pub const VERTICAL: Self = Self(1);
-}
-
-#[repr(C)]
-#[derive(Debug)]
-struct SystemTrayColors {
-    normal: [u32; 3],
-    error: [u32; 3],
-    warning: [u32; 3],
-    success: [u32; 3],
-}
-
-impl SystemTrayColors {
-    const fn new(normal: Color, success: Color, warning: Color, error: Color) -> Self {
-        let normal_components = normal.to_u16_components();
-        let success_components = success.to_u16_components();
-        let warning_components = warning.to_u16_components();
-        let error_components = error.to_u16_components();
-        Self {
-            normal: [
-                normal_components[0] as u32,
-                normal_components[1] as u32,
-                normal_components[2] as u32,
-            ],
-            success: [
-                success_components[0] as u32,
-                success_components[1] as u32,
-                success_components[2] as u32,
-            ],
-            warning: [
-                warning_components[0] as u32,
-                warning_components[1] as u32,
-                warning_components[2] as u32,
-            ],
-            error: [
-                error_components[0] as u32,
-                error_components[1] as u32,
-                error_components[2] as u32,
-            ],
-        }
-    }
-
-    fn as_bytes(&self) -> &[u8] {
-        unsafe {
-            std::slice::from_raw_parts(
-                (self as *const Self) as *const u8,
-                std::mem::size_of::<Self>(),
-            )
         }
     }
 }
