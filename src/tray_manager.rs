@@ -143,9 +143,9 @@ impl<C: Connection> TrayManager<C> {
                 if event.atom == self.atoms._XEMBED_INFO && self.icons.contains(&event.window) =>
             {
                 log::info!("change xembed info (icon: {})", event.window);
-                let is_embdded = get_xembed_info(&*self.connection, &self.atoms, event.window)?
+                let should_map = get_xembed_info(&*self.connection, &self.atoms, event.window)?
                     .map_or(false, |xembed_info| xembed_info.is_mapped());
-                Some(TrayEvent::VisibilityChanged(event.window, is_embdded))
+                Some(TrayEvent::VisibilityChanged(event.window, should_map))
             }
             (PropertyNotify(event), SelectionStatus::Managed { .. })
                 if event.atom == self.atoms._NET_WM_NAME && self.icons.contains(&event.window) =>
@@ -162,10 +162,10 @@ impl<C: Connection> TrayManager<C> {
                     if self.icons.contains(&event.window) {
                         let title = get_window_title(&*self.connection, &self.atoms, event.window)?
                             .unwrap_or_default();
-                        let is_embdded =
+                        let should_map =
                             get_xembed_info(&*self.connection, &self.atoms, event.window)?
                                 .map_or(false, |xembed_info| xembed_info.is_mapped());
-                        Some(TrayEvent::IconAdded(event.window, title, is_embdded))
+                        Some(TrayEvent::IconAdded(event.window, title, should_map))
                     } else {
                         None
                     }
