@@ -19,8 +19,8 @@ use crate::config::{Action, Config, KeyBinding};
 use crate::event::{KeyState, Keysym, Modifiers};
 use crate::geometrics::Size;
 use crate::render_context::RenderContext;
+use crate::tray_embedder::TrayEmbedder;
 use crate::tray_manager::{SystemTrayColors, SystemTrayOrientation, TrayEvent, TrayManager};
-use crate::tray_window::TrayWindow;
 use crate::xkbcommon;
 
 type ActionTable = HashMap<(Keysym, Modifiers), usize>;
@@ -35,7 +35,7 @@ pub struct App {
     atoms: Rc<Atoms>,
     xkb_state: xkbcommon::State,
     signal_fd: SignalFd,
-    tray_window: TrayWindow<XCBConnection>,
+    tray_embedder: TrayEmbedder<XCBConnection>,
     tray_manager: TrayManager<XCBConnection>,
     action_table: ActionTable,
     render_context: Option<RenderContext>,
@@ -66,7 +66,7 @@ impl App {
         }
         .snap();
 
-        let tray_window = TrayWindow::new(
+        let tray_embedder = TrayEmbedder::new(
             connection.clone(),
             screen_num,
             &*atoms,
@@ -83,7 +83,7 @@ impl App {
             atoms,
             xkb_state,
             signal_fd,
-            tray_window,
+            tray_embedder,
             tray_manager,
             action_table,
             render_context: None,
@@ -94,7 +94,7 @@ impl App {
         self.grab_global_keys()?;
 
         self.tray_manager.acquire_tray_selection(
-            self.tray_window.window(),
+            self.tray_embedder.window(),
             SystemTrayOrientation::HORZONTAL,
             SystemTrayColors::single(self.config.window.icon_theme_color),
         )?;
@@ -130,32 +130,32 @@ impl App {
         for action in key_binding.actions() {
             match action {
                 Action::HideWindow => {
-                    self.tray_window.hide()?;
+                    self.tray_embedder.hide()?;
                 }
                 Action::ShowWindow => {
-                    self.tray_window.show()?;
+                    self.tray_embedder.show()?;
                 }
                 Action::ToggleWindow => {
-                    if self.tray_window.is_mapped() {
-                        self.tray_window.hide()?;
+                    if self.tray_embedder.is_mapped() {
+                        self.tray_embedder.hide()?;
                     } else {
-                        self.tray_window.show()?;
+                        self.tray_embedder.show()?;
                     }
                 }
                 Action::DeselectItem => {
-                    self.tray_window.deselect_item();
+                    self.tray_embedder.deselect_item();
                 }
                 Action::SelectItem { index } => {
-                    self.tray_window.select_item(*index);
+                    self.tray_embedder.select_item(*index);
                 }
                 Action::SelectNextItem => {
-                    self.tray_window.select_next_item();
+                    self.tray_embedder.select_next_item();
                 }
                 Action::SelectPreviousItem => {
-                    self.tray_window.select_previous_item();
+                    self.tray_embedder.select_previous_item();
                 }
                 Action::ClickSelectedItem { button } => {
-                    self.tray_window.click_selected_item(*button)?;
+                    self.tray_embedder.click_selected_item(*button)?;
                 }
             }
         }
@@ -175,22 +175,22 @@ impl App {
     }
 
     fn handle_tick(&mut self) -> anyhow::Result<()> {
-        if self.tray_window.is_mapped() {
-            let should_layout = self.tray_window.should_layout() || self.render_context.is_none();
+        if self.tray_embedder.is_mapped() {
+            let should_layout = self.tray_embedder.should_layout() || self.render_context.is_none();
 
             if should_layout {
-                let new_size = self.tray_window.layout(&self.config.ui)?;
+                let new_size = self.tray_embedder.layout(&self.config.ui)?;
                 self.render_context = Some(RenderContext::new(
                     self.connection.clone(),
                     self.screen_num,
-                    self.tray_window.window(),
+                    self.tray_embedder.window(),
                     new_size,
                 )?);
             }
 
-            if should_layout || self.tray_window.should_redraw() {
+            if should_layout || self.tray_embedder.should_redraw() {
                 let render_context = self.render_context.as_ref().unwrap();
-                self.tray_window
+                self.tray_embedder
                     .draw(should_layout, &self.config.ui, render_context)?;
             }
         }
@@ -200,21 +200,21 @@ impl App {
 
     fn handle_tray_event(&mut self, event: TrayEvent) {
         match event {
-            TrayEvent::IconAdded(icon, title, is_embdded) => {
-                self.tray_window.add_icon(icon, title, is_embdded);
+            TrayEvent::IconAdded(icon, title, should_map) => {
+                self.tray_embedder.add_icon(icon, title, should_map);
             }
             TrayEvent::IconRemoved(icon) => {
-                self.tray_window.remove_icon(icon);
+                self.tray_embedder.remove_icon(icon);
             }
-            TrayEvent::VisibilityChanged(icon, is_embdded) => {
-                self.tray_window.change_visibility(icon, is_embdded);
+            TrayEvent::VisibilityChanged(icon, should_map) => {
+                self.tray_embedder.change_visibility(icon, should_map);
             }
             TrayEvent::TitleChanged(icon, title) => {
-                self.tray_window.change_title(icon, title);
+                self.tray_embedder.change_title(icon, title);
             }
             TrayEvent::MessageReceived(_message) => {}
             TrayEvent::SelectionCleared => {
-                self.tray_window.clear_icons();
+                self.tray_embedder.clear_icons();
             }
         }
     }
@@ -231,9 +231,9 @@ impl App {
                 if self.config.window.auto_hide
                     && event.mode == xproto::NotifyMode::NORMAL
                     && event.detail == xproto::NotifyDetail::NONLINEAR
-                    && event.event == self.tray_window.window()
+                    && event.event == self.tray_embedder.window()
                 {
-                    self.tray_window.hide()?;
+                    self.tray_embedder.hide()?;
                 }
             }
             KeyPress(event) => {
@@ -252,9 +252,9 @@ impl App {
                 if self.config.window.auto_hide
                     && event.mode == xproto::NotifyMode::NORMAL
                     && event.detail == xproto::NotifyDetail::ANCESTOR
-                    && event.event == self.tray_window.window()
+                    && event.event == self.tray_embedder.window()
                 {
-                    self.tray_window.hide()?;
+                    self.tray_embedder.hide()?;
                 }
             }
             ClientMessage(event)
@@ -275,16 +275,16 @@ impl App {
                         )
                         .context("reply _NET_WM_PING")?;
                 } else if protocol == self.atoms._NET_WM_SYNC_REQUEST {
-                    self.tray_window.request_redraw();
+                    self.tray_embedder.request_redraw();
                 } else if protocol == self.atoms.WM_DELETE_WINDOW {
-                    self.tray_window.hide()?;
+                    self.tray_embedder.hide()?;
                 }
             }
             XkbStateNotify(event) => self.xkb_state.update_mask(&event),
             _ => {}
         }
 
-        self.tray_window.handle_x11_event(&event, control_flow)?;
+        self.tray_embedder.handle_x11_event(&event, control_flow)?;
 
         if let Some(tray_event) = self.tray_manager.translate_event(&event)? {
             self.handle_tray_event(tray_event);
@@ -300,10 +300,10 @@ impl App {
         add_interest_entry(epoll_fd, &self.signal_fd, EVENT_KIND_SIGNAL)?;
 
         let mut epoll_events = vec![epoll::EpollEvent::empty(); 2];
+        let mut control_flow = ControlFlow::Continue(());
 
         'outer: loop {
             let available_fds = epoll::epoll_wait(epoll_fd, &mut epoll_events, -1).unwrap_or(0);
-            let mut control_flow = ControlFlow::Continue(());
 
             for epoll_event in &epoll_events[0..available_fds] {
                 if epoll_event.data() == EVENT_KIND_X11 {

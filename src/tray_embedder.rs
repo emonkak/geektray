@@ -15,7 +15,7 @@ use crate::font::FontDescription;
 use crate::geometrics::{PhysicalPoint, PhysicalSize, Rect, Size};
 use crate::render_context::{HAlign, RenderContext, VAlign};
 
-pub struct TrayWindow<C: Connection> {
+pub struct TrayEmbedder<C: Connection> {
     connection: Rc<C>,
     screen_num: usize,
     window: xproto::Window,
@@ -27,7 +27,7 @@ pub struct TrayWindow<C: Connection> {
     should_redraw: bool,
 }
 
-impl<C: Connection> TrayWindow<C> {
+impl<C: Connection> TrayEmbedder<C> {
     pub fn new(
         connection: Rc<C>,
         screen_num: usize,
@@ -199,8 +199,8 @@ impl<C: Connection> TrayWindow<C> {
         })
     }
 
-    pub fn add_icon(&mut self, icon: xproto::Window, title: String, is_embdded: bool) {
-        let tray_item = TrayItem::new(icon, title, is_embdded);
+    pub fn add_icon(&mut self, icon: xproto::Window, title: String, should_map: bool) {
+        let tray_item = TrayItem::new(icon, title, should_map);
         self.tray_items.push(tray_item);
         self.should_layout = true;
     }
@@ -216,13 +216,13 @@ impl<C: Connection> TrayWindow<C> {
         }
     }
 
-    pub fn change_visibility(&mut self, icon: xproto::Window, is_embdded: bool) {
+    pub fn change_visibility(&mut self, icon: xproto::Window, should_map: bool) {
         if let Some(tray_item) = self
             .tray_items
             .iter_mut()
             .find(|tray_item| tray_item.icon == icon)
         {
-            tray_item.is_embdded = is_embdded;
+            tray_item.should_map = should_map;
             self.should_redraw = true;
         }
     }
@@ -307,7 +307,7 @@ impl<C: Connection> TrayWindow<C> {
         context.flush()?;
 
         for tray_item in &self.tray_items {
-            if !tray_item.is_embdded {
+            if !tray_item.should_map {
                 continue;
             }
 
@@ -591,7 +591,7 @@ impl<C: Connection> TrayWindow<C> {
     }
 }
 
-impl<C: Connection> Drop for TrayWindow<C> {
+impl<C: Connection> Drop for TrayEmbedder<C> {
     fn drop(&mut self) {
         self.connection.destroy_window(self.window).ok();
     }
@@ -601,18 +601,18 @@ impl<C: Connection> Drop for TrayWindow<C> {
 struct TrayItem {
     icon: xproto::Window,
     title: String,
-    is_embdded: bool,
+    should_map: bool,
     is_mapped: bool,
     is_pressed: bool,
     bounds: Rect,
 }
 
 impl TrayItem {
-    fn new(icon: xproto::Window, title: String, is_embdded: bool) -> Self {
+    fn new(icon: xproto::Window, title: String, should_map: bool) -> Self {
         Self {
             icon,
             title,
-            is_embdded,
+            should_map,
             is_mapped: false,
             is_pressed: false,
             bounds: Rect::ZERO,
