@@ -364,7 +364,6 @@ pub enum TrayEvent {
 pub struct BalloonMessage {
     icon: xproto::Window,
     id: u32,
-    length: usize,
     timeout_millis: u32,
     buffer: Vec<u8>,
 }
@@ -374,7 +373,6 @@ impl BalloonMessage {
         Self {
             icon,
             id,
-            length,
             timeout_millis,
             buffer: Vec::with_capacity(length),
         }
@@ -399,16 +397,13 @@ impl BalloonMessage {
     }
 
     fn remaining_len(&self) -> usize {
-        self.length.saturating_sub(self.buffer.len())
+        self.buffer.capacity().saturating_sub(self.buffer.len())
     }
 
     fn write_message(&mut self, bytes: &[u8]) {
         let incoming_len = self.remaining_len().min(20);
         if incoming_len > 0 {
             self.buffer.extend_from_slice(&bytes[..incoming_len]);
-            if self.remaining_len() == 0 {
-                assert_eq!(self.buffer.capacity(), self.buffer.len());
-            }
         }
     }
 }
