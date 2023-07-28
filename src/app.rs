@@ -169,7 +169,12 @@ impl App {
     ) -> anyhow::Result<()> {
         log::info!("signal {:?} received", signal.ssi_signo);
 
-        *control_flow = ControlFlow::Break(());
+        match Signal::try_from(signal.ssi_signo as i32) {
+            Ok(Signal::SIGINT) | Ok(Signal::SIGKILL) | Ok(Signal::SIGTERM) => {
+                *control_flow = ControlFlow::Break(());
+            }
+            _ => {}
+        }
 
         Ok(())
     }
