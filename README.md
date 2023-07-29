@@ -68,7 +68,7 @@ You can customize the key bindings and more by the configuration file. It is ava
 
 ## Known Bugs
 
-### *A title is blank for Wine's application tray icons*
+### A title is blank for Wine's application tray icons
 
 The tray icon window created by Wine isn't set a title. Additionally, The process that created window is not the application itself, but exeplorer.exe. So we can't get any information for the tray icon.
 
@@ -76,6 +76,6 @@ There is the [patch](https://github.com/emonkak/config/blob/master/gentoo/etc/po
 
 ## FAQ
 
-### *Is it supports freedesktop.org's StatusNotifierItem?*
+### Is it supports freedesktop.org's StatusNotifierItem?
 
 No, because there are few applications using StatusNotifierItem at this time.

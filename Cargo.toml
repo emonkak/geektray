@@ -1,8 +1,8 @@
 [package]
 name = "geektray"
-description = "A keyboard-oriented freedesktop.org system tray implementation for X11"
+description = "A keyboard-oriented X11 system tray implementation"
 license = "MIT"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Shota Nozaki <emonkak@gmail.com>"]
 edition = "2021"
 
