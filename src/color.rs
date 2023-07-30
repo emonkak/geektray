@@ -142,9 +142,9 @@ impl From<num::ParseIntError> for ColorParseError {
 impl fmt::Display for ColorParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::MissingPrefix => f.write_str("Missing leading '#' descriptor"),
+            Self::MissingPrefix => f.write_str("missing leading '#' descriptor"),
             Self::InvalidLength(len) => {
-                write!(f, "Expected string of length 6 or 8, but got {}", len)
+                write!(f, "expected length 6 or 8, but got {}", len)
             }
             Self::ParseIntError(error) => error.fmt(f),
         }
