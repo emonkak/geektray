@@ -105,7 +105,7 @@ impl<C: Connection> TrayManager<C> {
                 let opcode = data[1];
                 if opcode == SYSTEM_TRAY_REQUEST_DOCK {
                     let icon = data[2];
-                    self.request_dock(icon, embedder)?;
+                    self.beign_dock(icon, embedder)?;
                 } else if opcode == SYSTEM_TRAY_BEGIN_MESSAGE {
                     log::info!("begin message (icon: {})", event.window);
                     let [_, _, timeout, length, id] = event.data.as_data32();
@@ -208,6 +208,24 @@ impl<C: Connection> TrayManager<C> {
         self.balloon_messages.push(balloon_message);
     }
 
+    fn beign_dock(&mut self, icon: xproto::Window, embedder: xproto::Window) -> anyhow::Result<()> {
+        log::info!("begin dock (icon: {})", icon);
+
+        if self.icons.contains(&icon) {
+            log::warn!("duplicated icon (icon: {})", icon);
+        } else {
+            if let Some(xembed_info) = get_xembed_info(&*self.connection, &self.atoms, icon)? {
+                begin_embedding(&*self.connection, &self.atoms, icon, embedder, xembed_info)?;
+                self.connection
+                    .flush()
+                    .context("flush after begin embedding")?;
+                self.icons.push(icon);
+            }
+        }
+
+        Ok(())
+    }
+
     fn broadcast_manager_message(&mut self, new_manager: xproto::Window) -> anyhow::Result<()> {
         log::info!("broadcast MANAGER message");
 
@@ -252,7 +270,7 @@ impl<C: Connection> TrayManager<C> {
         self.balloon_messages.clear();
 
         for icon in self.icons.drain(..) {
-            release_embedding(&*self.connection, self.screen_num, icon)?;
+            quit_embedding(&*self.connection, self.screen_num, icon)?;
         }
 
         self.connection
@@ -364,28 +382,6 @@ impl<C: Connection> TrayManager<C> {
         } else {
             None
         }
-    }
-
-    fn request_dock(
-        &mut self,
-        icon: xproto::Window,
-        embedder: xproto::Window,
-    ) -> anyhow::Result<()> {
-        log::info!("request dock (icon: {})", icon);
-
-        if self.icons.contains(&icon) {
-            log::warn!("duplicated icon (icon: {})", icon);
-        } else {
-            if let Some(xembed_info) = get_xembed_info(&*self.connection, &self.atoms, icon)? {
-                begin_embedding(&*self.connection, &self.atoms, icon, embedder, xembed_info)?;
-                self.connection
-                    .flush()
-                    .context("flush after begin embedding")?;
-                self.icons.push(icon);
-            }
-        }
-
-        Ok(())
     }
 
     fn update_selection_status(
@@ -753,7 +749,7 @@ fn intern_system_tray_selection_atom(
     Ok(atom)
 }
 
-fn release_embedding(
+fn quit_embedding(
     connection: &impl Connection,
     screen_num: usize,
     icon: xproto::Window,
