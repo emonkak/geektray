@@ -13,6 +13,7 @@ use crate::config::{UIConfig, WindowConfig};
 use crate::event::MouseButton;
 use crate::geometrics::{PhysicalPoint, PhysicalSize, Rect, Size};
 use crate::render_context::{HAlign, RenderContext, VAlign};
+use crate::xembed::XEmbedInfo;
 
 pub struct TrayEmbedder<C: Connection> {
     connection: Rc<C>,
@@ -198,8 +199,8 @@ impl<C: Connection> TrayEmbedder<C> {
         })
     }
 
-    pub fn add_icon(&mut self, icon: xproto::Window, title: String, should_map: bool) {
-        let tray_item = TrayItem::new(icon, title, should_map);
+    pub fn add_icon(&mut self, icon: xproto::Window, title: String, xembed_info: XEmbedInfo) {
+        let tray_item = TrayItem::new(icon, title, xembed_info);
         self.tray_items.push(tray_item);
         self.should_layout = true;
     }
@@ -215,13 +216,13 @@ impl<C: Connection> TrayEmbedder<C> {
         }
     }
 
-    pub fn change_visibility(&mut self, icon: xproto::Window, should_map: bool) {
+    pub fn change_xembed_info(&mut self, icon: xproto::Window, xembed_info: XEmbedInfo) {
         if let Some(tray_item) = self
             .tray_items
             .iter_mut()
             .find(|tray_item| tray_item.icon == icon)
         {
-            tray_item.should_map = should_map;
+            tray_item.should_map = xembed_info.is_mapped();
             self.should_redraw = true;
         }
     }
@@ -282,7 +283,6 @@ impl<C: Connection> TrayEmbedder<C> {
         if self.tray_items.len() > 0 {
             for (index, tray_item) in self.tray_items.iter_mut().enumerate() {
                 let is_selected = self.selected_index.map_or(false, |i| i == index);
-
                 tray_item.draw(index, is_selected, ui_config, context);
             }
         } else {
@@ -465,19 +465,19 @@ impl<C: Connection> TrayEmbedder<C> {
         let window_size = self.size.unsnap();
         let item_height =
             ui_config.icon_size.max(ui_config.text_size) + ui_config.item_padding * 2.0;
-        let mut v_offset = ui_config.window_padding;
+        let mut y_offset = ui_config.window_padding;
         let mut total_height = ui_config.window_padding * 2.0;
 
         if self.tray_items.len() > 0 {
             for (i, tray_item) in self.tray_items.iter_mut().enumerate() {
                 let bounds = Rect {
                     x: ui_config.window_padding,
-                    y: v_offset,
+                    y: y_offset,
                     width: window_size.width - ui_config.item_padding * 2.0,
                     height: item_height,
                 };
 
-                v_offset += bounds.height + ui_config.item_gap;
+                y_offset += bounds.height + ui_config.item_gap;
                 total_height += bounds.height;
 
                 if i > 0 {
@@ -606,11 +606,11 @@ struct TrayItem {
 }
 
 impl TrayItem {
-    fn new(icon: xproto::Window, title: String, should_map: bool) -> Self {
+    fn new(icon: xproto::Window, title: String, xembed_info: XEmbedInfo) -> Self {
         Self {
             icon,
             title,
-            should_map,
+            should_map: xembed_info.is_mapped(),
             is_mapped: false,
             is_pressed: false,
             bounds: Rect::ZERO,

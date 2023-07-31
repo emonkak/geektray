@@ -8,6 +8,7 @@ mod geometrics;
 mod render_context;
 mod tray_embedder;
 mod tray_manager;
+mod xembed;
 mod xkbcommon;
 mod xkbcommon_sys;
 

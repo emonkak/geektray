@@ -8,12 +8,11 @@ use x11rb::wrapper::ConnectionExt as _;
 
 use crate::atoms::Atoms;
 use crate::color::Color;
+use crate::xembed::{get_xembed_info, XEmbedInfo, XEmbedMessage};
 
 const SYSTEM_TRAY_REQUEST_DOCK: u32 = 0;
 const SYSTEM_TRAY_BEGIN_MESSAGE: u32 = 1;
 const SYSTEM_TRAY_CANCEL_MESSAGE: u32 = 2;
-
-const XEMBED_MAPPED: u32 = 1 << 0;
 
 #[derive(Debug)]
 pub struct TrayManager<C: Connection> {
@@ -143,9 +142,8 @@ impl<C: Connection> TrayManager<C> {
                 if event.atom == self.atoms._XEMBED_INFO && self.icons.contains(&event.window) =>
             {
                 log::info!("change xembed info (icon: {})", event.window);
-                let should_map = get_xembed_info(&*self.connection, &self.atoms, event.window)?
-                    .map_or(false, |xembed_info| xembed_info.is_mapped());
-                Some(TrayEvent::VisibilityChanged(event.window, should_map))
+                get_xembed_info(&*self.connection, &self.atoms, event.window)?
+                    .map(|xembed_info| TrayEvent::XEmbedInfoChanged(event.window, xembed_info))
             }
             (PropertyNotify(event), SelectionStatus::Managed { .. })
                 if event.atom == self.atoms._NET_WM_NAME && self.icons.contains(&event.window) =>
@@ -162,10 +160,9 @@ impl<C: Connection> TrayManager<C> {
                     if self.icons.contains(&event.window) {
                         let title = get_window_title(&*self.connection, &self.atoms, event.window)?
                             .unwrap_or_default();
-                        let should_map =
-                            get_xembed_info(&*self.connection, &self.atoms, event.window)?
-                                .map_or(false, |xembed_info| xembed_info.is_mapped());
-                        Some(TrayEvent::IconAdded(event.window, title, should_map))
+                        get_xembed_info(&*self.connection, &self.atoms, event.window)?.map(
+                            |xembed_info| TrayEvent::IconAdded(event.window, title, xembed_info),
+                        )
                     } else {
                         None
                     }
@@ -437,10 +434,10 @@ impl<C: Connection> TrayManager<C> {
 
 #[derive(Debug)]
 pub enum TrayEvent {
-    IconAdded(xproto::Window, String, bool),
+    IconAdded(xproto::Window, String, XEmbedInfo),
     IconRemoved(xproto::Window),
-    VisibilityChanged(xproto::Window, bool),
     TitleChanged(xproto::Window, String),
+    XEmbedInfoChanged(xproto::Window, XEmbedInfo),
     MessageReceived(BalloonMessage),
     SelectionCleared,
 }
@@ -569,46 +566,6 @@ enum SelectionStatus {
     },
 }
 
-#[allow(dead_code)]
-#[derive(Clone, Copy, Debug)]
-#[repr(u32)]
-enum XEmbedMessage {
-    EmbeddedNotify = 0,
-    WindowActivate = 1,
-    WindowDeactivate = 2,
-    RequestFocus = 3,
-    FocusIn = 4,
-    FocusOut = 5,
-    FocusNext = 6,
-    FocusPrev = 7,
-    GrabKey = 8,
-    UngrabKey = 9,
-    ModalityOn = 10,
-    ModalityOff = 11,
-    RegisterAccelerator = 12,
-    UnregisterAccelerator = 13,
-    ActivateAccelerator = 14,
-}
-
-impl From<XEmbedMessage> for u32 {
-    fn from(value: XEmbedMessage) -> Self {
-        value as u32
-    }
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct XEmbedInfo {
-    pub version: u32,
-    pub flags: u32,
-}
-
-impl XEmbedInfo {
-    pub fn is_mapped(&self) -> bool {
-        self.flags & XEMBED_MAPPED != 0
-    }
-}
-
 fn begin_embedding(
     connection: &impl Connection,
     atoms: &Atoms,
@@ -646,7 +603,7 @@ fn begin_embedding(
             XEmbedMessage::EmbeddedNotify.into(),
             0, // detail
             embedder,
-            xembed_info.version,
+            xembed_info.version(),
         ],
     );
 
@@ -702,36 +659,6 @@ fn get_window_title(
     }
 
     Ok(None)
-}
-
-fn get_xembed_info(
-    connection: &impl Connection,
-    atoms: &Atoms,
-    window: xproto::Window,
-) -> anyhow::Result<Option<XEmbedInfo>> {
-    let reply = connection
-        .get_property(
-            false,
-            window,
-            atoms._XEMBED_INFO,
-            xproto::AtomEnum::ANY,
-            0,
-            2,
-        )?
-        .reply()
-        .context("get _XEMBED_INFO property")?;
-    if let Some(data) = reply
-        .value32()
-        .map(|iter| iter.collect::<Vec<_>>())
-        .filter(|data| data.len() == 2)
-    {
-        Ok(Some(XEmbedInfo {
-            version: data[0],
-            flags: data[1],
-        }))
-    } else {
-        Ok(None)
-    }
 }
 
 fn intern_system_tray_selection_atom(

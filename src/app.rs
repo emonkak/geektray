@@ -205,17 +205,17 @@ impl App {
 
     fn handle_tray_event(&mut self, event: TrayEvent) {
         match event {
-            TrayEvent::IconAdded(icon, title, should_map) => {
-                self.tray_embedder.add_icon(icon, title, should_map);
+            TrayEvent::IconAdded(icon, title, xembed_info) => {
+                self.tray_embedder.add_icon(icon, title, xembed_info);
             }
             TrayEvent::IconRemoved(icon) => {
                 self.tray_embedder.remove_icon(icon);
             }
-            TrayEvent::VisibilityChanged(icon, should_map) => {
-                self.tray_embedder.change_visibility(icon, should_map);
-            }
             TrayEvent::TitleChanged(icon, title) => {
                 self.tray_embedder.change_title(icon, title);
+            }
+            TrayEvent::XEmbedInfoChanged(icon, xembed_info) => {
+                self.tray_embedder.change_xembed_info(icon, xembed_info);
             }
             TrayEvent::MessageReceived(_message) => {}
             TrayEvent::SelectionCleared => {
