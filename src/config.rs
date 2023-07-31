@@ -233,10 +233,10 @@ pub struct UIConfig {
     pub item_padding: f64,
     pub item_gap: f64,
     pub item_corner_radius: f64,
-    pub normal_item_font: FontConfig,
+    pub normal_item_font: FontDescription,
     pub normal_item_background: Color,
     pub normal_item_foreground: Color,
-    pub selected_item_font: FontConfig,
+    pub selected_item_font: FontDescription,
     pub selected_item_background: Color,
     pub selected_item_foreground: Color,
 }
@@ -259,13 +259,20 @@ impl Default for UIConfig {
             item_padding: 8.0,
             item_gap: 8.0,
             item_corner_radius: 4.0,
-            normal_item_font: FontConfig::default(),
+            normal_item_font: FontDescription::new(
+                &FontFamily::default(),
+                FontStyle::Normal,
+                FontWeight::NORMAL,
+                FontStretch::Normal,
+            ),
             normal_item_background: Color::from_rgb(0x334454),
             normal_item_foreground: Color::from_rgb(0xd1dbe7),
-            selected_item_font: FontConfig {
-                weight: FontWeight::BOLD,
-                ..FontConfig::default()
-            },
+            selected_item_font: FontDescription::new(
+                &FontFamily::default(),
+                FontStyle::Normal,
+                FontWeight::BOLD,
+                FontStretch::Normal,
+            ),
             selected_item_background: Color::from_rgb(0x5686d7),
             selected_item_foreground: Color::from_rgb(0xd1dbe7),
         }
@@ -279,12 +286,6 @@ pub struct FontConfig {
     pub weight: FontWeight,
     pub style: FontStyle,
     pub stretch: FontStretch,
-}
-
-impl FontConfig {
-    pub fn to_font_description(&self) -> FontDescription {
-        FontDescription::new(&self.family, self.style, self.weight, self.stretch)
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

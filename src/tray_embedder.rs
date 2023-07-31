@@ -11,7 +11,6 @@ use x11rb::{properties, protocol};
 use crate::atoms::Atoms;
 use crate::config::{UIConfig, WindowConfig};
 use crate::event::MouseButton;
-use crate::font::FontDescription;
 use crate::geometrics::{PhysicalPoint, PhysicalSize, Rect, Size};
 use crate::render_context::{HAlign, RenderContext, VAlign};
 
@@ -269,7 +268,6 @@ impl<C: Connection> TrayEmbedder<C> {
         log::debug!("draw tray window");
 
         let size = context.size().unsnap();
-        let font_instances = FontInstances::new(ui_config);
 
         context.draw_rect(
             Rect {
@@ -285,12 +283,12 @@ impl<C: Connection> TrayEmbedder<C> {
             for (index, tray_item) in self.tray_items.iter_mut().enumerate() {
                 let is_selected = self.selected_index.map_or(false, |i| i == index);
 
-                tray_item.draw(index, is_selected, &font_instances, ui_config, context);
+                tray_item.draw(index, is_selected, ui_config, context);
             }
         } else {
             context.draw_text(
                 "No tray items found",
-                &font_instances.item_font,
+                &ui_config.normal_item_font,
                 ui_config.text_size,
                 HAlign::Center,
                 VAlign::Middle,
@@ -619,25 +617,18 @@ impl TrayItem {
         }
     }
 
-    fn draw(
-        &self,
-        index: usize,
-        is_selected: bool,
-        font_instances: &FontInstances,
-        ui_config: &UIConfig,
-        context: &RenderContext,
-    ) {
+    fn draw(&self, index: usize, is_selected: bool, ui_config: &UIConfig, context: &RenderContext) {
         let (background, foreground, font) = if is_selected {
             (
                 ui_config.selected_item_background,
                 ui_config.selected_item_foreground,
-                &font_instances.selected_item_font,
+                &ui_config.selected_item_font,
             )
         } else {
             (
                 ui_config.normal_item_background,
                 ui_config.normal_item_foreground,
-                &font_instances.item_font,
+                &ui_config.normal_item_font,
             )
         };
 
@@ -675,20 +666,6 @@ impl TrayItem {
             text_bounds,
             foreground,
         );
-    }
-}
-
-struct FontInstances {
-    item_font: FontDescription,
-    selected_item_font: FontDescription,
-}
-
-impl FontInstances {
-    fn new(ui_config: &UIConfig) -> Self {
-        Self {
-            item_font: ui_config.normal_item_font.to_font_description(),
-            selected_item_font: ui_config.selected_item_font.to_font_description(),
-        }
     }
 }
 
