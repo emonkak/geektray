@@ -23,7 +23,6 @@ impl XEmbedInfo {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 #[repr(u32)]
 pub enum XEmbedMessage {

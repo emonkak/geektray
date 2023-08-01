@@ -304,7 +304,7 @@ impl App {
         add_interest_entry(epoll_fd, &*self.connection, EVENT_KIND_X11)?;
         add_interest_entry(epoll_fd, &self.signal_fd, EVENT_KIND_SIGNAL)?;
 
-        let mut epoll_events = vec![epoll::EpollEvent::empty(); 2];
+        let mut epoll_events = [epoll::EpollEvent::empty(); 2];
         let mut control_flow = ControlFlow::Continue(());
 
         'outer: loop {
