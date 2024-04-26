@@ -45,12 +45,16 @@ impl Args {
 fn main() -> anyhow::Result<()> {
     let args = Args::parse_from_env().context("parse args")?;
 
-    let config = match args.config.map(PathBuf::from).or_else(get_config_path) {
-        Some(path) => {
-            if path.exists() {
-                load_config(path)?
+    let config = match args.config.map(PathBuf::from).or_else(get_config_dir) {
+        Some(config_dir) => {
+            let config_path = config_dir.join("config.toml");
+            if config_path.exists() {
+                load_config(config_path)?
             } else {
-                save_default_config(path)?;
+                if !config_dir.exists() {
+                    fs::create_dir_all(config_dir).context("create config dir")?;
+                }
+                save_default_config(config_path)?;
                 Config::default()
             }
         }
@@ -65,11 +69,11 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn get_config_path() -> Option<PathBuf> {
+fn get_config_dir() -> Option<PathBuf> {
     env::var("XDG_CONFIG_HOME")
         .map(|config_dir| Path::new(&config_dir).to_path_buf())
         .or_else(|_| env::var("HOME").map(|home_dir| Path::new(&home_dir).join(".config")))
-        .map(|config_dir| config_dir.join("geektray").join("config.toml"))
+        .map(|config_dir| config_dir.join("geektray"))
         .ok()
 }
 
